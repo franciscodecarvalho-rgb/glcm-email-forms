@@ -14,7 +14,122 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      arquivos: {
+        Row: {
+          caso_id: string
+          created_at: string
+          id: string
+          mime_type: string | null
+          nome: string
+          storage_path: string
+          tipo: string | null
+        }
+        Insert: {
+          caso_id: string
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          nome: string
+          storage_path: string
+          tipo?: string | null
+        }
+        Update: {
+          caso_id?: string
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          nome?: string
+          storage_path?: string
+          tipo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "arquivos_caso_id_fkey"
+            columns: ["caso_id"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      casos: {
+        Row: {
+          contracheques: Json | null
+          cpf: string | null
+          created_at: string
+          created_by: string | null
+          documentos_gerados: Json | null
+          endereco: Json | null
+          erro_processamento: string | null
+          id: string
+          nome_cliente: string | null
+          numero_pasta: string | null
+          origem: string
+          rg: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          contracheques?: Json | null
+          cpf?: string | null
+          created_at?: string
+          created_by?: string | null
+          documentos_gerados?: Json | null
+          endereco?: Json | null
+          erro_processamento?: string | null
+          id?: string
+          nome_cliente?: string | null
+          numero_pasta?: string | null
+          origem?: string
+          rg?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          contracheques?: Json | null
+          cpf?: string | null
+          created_at?: string
+          created_by?: string | null
+          documentos_gerados?: Json | null
+          endereco?: Json | null
+          erro_processamento?: string | null
+          id?: string
+          nome_cliente?: string | null
+          numero_pasta?: string | null
+          origem?: string
+          rg?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      templates: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          storage_path: string
+          tipo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome: string
+          storage_path: string
+          tipo: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          storage_path?: string
+          tipo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
