@@ -62,6 +62,7 @@ export type Database = {
           endereco: Json | null
           erro_processamento: string | null
           id: string
+          message_id: string | null
           nome_cliente: string | null
           numero_pasta: string | null
           origem: string
@@ -78,6 +79,7 @@ export type Database = {
           endereco?: Json | null
           erro_processamento?: string | null
           id?: string
+          message_id?: string | null
           nome_cliente?: string | null
           numero_pasta?: string | null
           origem?: string
@@ -94,6 +96,7 @@ export type Database = {
           endereco?: Json | null
           erro_processamento?: string | null
           id?: string
+          message_id?: string | null
           nome_cliente?: string | null
           numero_pasta?: string | null
           origem?: string
