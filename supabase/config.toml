@@ -1,0 +1,10 @@
+project_id = "kaopnizsbkzxqdzmocwa"
+
+[functions.webhook-n8n]
+verify_jwt = false
+
+[functions.extract-case-data]
+verify_jwt = false
+
+[functions.generate-documents]
+verify_jwt = false
