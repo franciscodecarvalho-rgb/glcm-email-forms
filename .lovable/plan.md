@@ -1,106 +1,92 @@
+# Plano: Resend Inbound + Outbound em `glcm.app` (raiz)
 
-# Sistema Jurídico — Plano de Implementação
+Substitui o fluxo via n8n por **Resend** no domínio raiz. Recebimento de documentos em `documentos@glcm.app` e envio de notificações de `notificacoes@glcm.app`.
 
-## Visão Geral
-Sistema web em React + Lovable Cloud (Supabase) para receber documentos jurídicos (manualmente ou via N8N por email), extrair dados com IA (Lovable AI / Gemini com visão), revisar em duas telas e gerar 4 documentos DOCX preenchidos a partir de templates.
+## 1. Configuração no painel da Resend (você faz)
 
-## Stack
-- **Frontend**: React + Vite + Tailwind + shadcn/ui (já configurado)
-- **Backend**: Lovable Cloud (Supabase: Auth, Postgres, Storage, Edge Functions, Realtime)
-- **IA**: Lovable AI Gateway (`google/gemini-2.5-pro` para visão em PDFs/imagens)
-- **DOCX**: biblioteca `docxtemplater` + `pizzip` (preenche `{{variaveis}}` em templates .docx mantendo formatação)
-- **ZIP**: `jszip` para "Baixar Todos"
+**a) Adicionar domínio**
+- Resend → **Domains** → **Add Domain** → `glcm.app` (raiz, sem subdomínio) → região `us-east-1`
+- A Resend mostra ~4 registros DNS (MX, SPF TXT, DKIM TXT, DMARC TXT) — copia tudo
 
-## Estrutura de Telas / Rotas
+**b) Adicionar registros DNS no seu registrador**
+- Você adiciona MX/SPF/DKIM/DMARC no painel onde o `glcm.app` está hospedado (mesmo lugar do A record que aponta pro Lovable: 185.158.133.1)
+- Os A records do site **não são afetados** — coexistem
+- Volta na Resend → **Verify DNS Records** (leva 5–30 min)
+
+**c) Criar API Key**
+- Resend → **API Keys** → `lovable-glcm` (full access) → copia o valor
+
+**d) Configurar Inbound (depois do domínio verificado)**
+- Resend → **Inbound** → **Add Address**
+- Endereço: `documentos@glcm.app`
+- Webhook URL: `https://kaopnizsbkzxqdzmocwa.supabase.co/functions/v1/resend-inbound`
+- Copia o **signing secret** que a Resend gera
+
+## 2. Conectar Resend no Lovable (eu faço)
+
+Uso o conector nativo Resend do Lovable → você seleciona a conta Resend → secrets `RESEND_API_KEY` ficam disponíveis automaticamente nas edge functions.
+
+Adiciono também o secret `RESEND_WEBHOOK_SECRET` (valor copiado no passo 1d).
+
+## 3. Código — edge functions (eu faço)
+
+### `resend-inbound` (substitui `webhook-n8n`)
+Recebe POST JSON da Resend com payload do email:
+- Valida header `svix-signature` com `RESEND_WEBHOOK_SECRET` (HMAC)
+- Idempotência por `message_id` (header `svix-id` ou `headers.message-id` do email)
+- Cria registro em `casos` com `status=novo`, `origem=email`, `nome_cliente` = nome do remetente, `message_id`
+- Para cada anexo (`attachments[]`): baixa via `content_url` ou decodifica base64 do `content`
+- Valida tipo (PDF/JPG/PNG/WEBP/HEIC), tamanho (≤10MB/arquivo, ≤50MB total, ≤20 anexos)
+- Upload para bucket `casos-arquivos` (mesmo path pattern `{caso_id}/{uuid}-{nome}`)
+- Insere em `arquivos`
+- Atualiza `casos.status=em_analise` e invoca `extract-case-data` (mesma lógica do n8n)
+- `verify_jwt = false` no `config.toml` (Resend não envia JWT)
+
+### `send-email` (novo, para enviar notificações)
+- `verify_jwt = true` (só usuários autenticados podem disparar)
+- Body: `{ to, subject, html, attachments? }` validado com Zod
+- Envia via gateway: `POST https://connector-gateway.lovable.dev/resend/emails` com `from: "GLCM <notificacoes@glcm.app>"`
+- Headers: `Authorization: Bearer ${LOVABLE_API_KEY}` + `X-Connection-Api-Key: ${RESEND_API_KEY}`
+- Retorna o `id` da Resend
+
+## 4. Cleanup (eu faço)
+
+- Deletar `supabase/functions/webhook-n8n/`
+- Deletar a função no Supabase via `delete_edge_functions`
+- Remover secret `N8N_WEBHOOK_SECRET`
+- Atualizar textos da UI que falavam de n8n (se existirem) para "email"
+
+## 5. Não muda
+
+- Tabelas `casos`, `arquivos`, `templates` e suas RLS
+- Buckets `casos-arquivos`, `casos-documentos`, `templates`
+- Função `extract-case-data` (continua sendo invocada igual)
+- Função `generate-documents`
+- Dashboard, Realtime, telas de upload manual, screens 1/2/download
+
+## 6. Ordem de execução
+
+```text
+VOCÊ                                     EU
+─────                                    ──
+1a. Add domínio glcm.app na Resend
+1b. Adicionar DNS records no registrador
+    → aguardar verificação (5–30 min)
+1c. Criar API Key                ──→
+                                         2. Conectar Resend no Lovable
+                                         3. Criar resend-inbound + send-email
+1d. Add inbound documentos@glcm.app  ──→
+                                         (configurar RESEND_WEBHOOK_SECRET)
+                                         4. Testar com curl + email real
+                                         5. Cleanup webhook-n8n
 ```
-/login                    → Login (email/senha)
-/                         → Dashboard (lista de casos)
-/casos/novo               → Upload manual de arquivos → cria caso
-/casos/:id                → Roteador interno por status:
-                              ├─ Em Análise   → tela de processamento
-                              ├─ Aguardando Confirmação → Tela 1
-                              ├─ Aguardando Nº da Pasta → Tela 2
-                              └─ Concluído    → Tela de Download
-/templates                → Admin: upload dos 4 templates .docx
-```
 
-## Banco de Dados (migrations)
+## Aviso importante sobre o domínio raiz
 
-**casos**
-- `id uuid pk`, `created_at`, `user_id uuid` (dono), `status text`, `origem text` ('manual'|'n8n')
-- `nome_cliente`, `cpf`, `rg`, `endereco jsonb`
-- `contracheques jsonb` — `[{id, label, valor_hra, valor_ahra}]`
-- `numero_pasta text`, `documentos_gerados jsonb`
+- Como MX vai no raiz, qualquer email para `*@glcm.app` cai no Resend (hoje você não tem nada, então OK)
+- Se um dia quiser usar `@glcm.app` em outro provedor (Google Workspace, Lovable Email), vai precisar consolidar SPF e talvez mover pra subdomínio
+- Recomendação: criar uma única caixa "catch-all" no Resend ou só usar `documentos@` mesmo
 
-**arquivos**
-- `id`, `caso_id fk`, `nome`, `tipo`, `storage_path`, `created_at`
+## Pergunta para começar
 
-**templates** (1 linha por tipo)
-- `id`, `tipo text` ('peticao'|'contrato'|'procuracao'|'termo'), `storage_path`, `updated_at`
-
-**Storage buckets** (privados):
-- `casos-arquivos/{caso_id}/...` — uploads de entrada
-- `casos-documentos/{caso_id}/...` — DOCX gerados
-- `templates/...` — templates .docx
-
-**RLS**: usuários autenticados acessam apenas seus próprios casos/arquivos. Webhook usa `service_role` (Edge Function) para criar casos sem usuário associado (`user_id null` = visível a todos os autenticados, ou atribuído por regra a definir).
-
-## Edge Functions
-
-1. **`webhook-n8n`** (público, `verify_jwt=false`)
-   - Recebe `multipart/form-data` (arquivos + opcional metadata)
-   - Cria registro em `casos` com status "Novo"
-   - Sobe arquivos no bucket `casos-arquivos`
-   - URL: `https://<project>.supabase.co/functions/v1/webhook-n8n`
-
-2. **`extract-case-data`** (autenticado)
-   - Input: `caso_id`
-   - Baixa arquivos, envia para Lovable AI Gateway com prompt estruturado (tool calling) para retornar JSON com nome, CPF, RG, endereço e contracheques (HRA/AHRA)
-   - Atualiza caso → status "Aguardando Confirmação"
-   - Trata erros 429/402 e devolve mensagens amigáveis
-
-3. **`generate-documents`** (autenticado)
-   - Input: `caso_id`
-   - Baixa os 4 templates do Storage
-   - Usa `docxtemplater` para preencher `{{NOME_CLIENTE}}`, `{{CPF}}`, `{{TOTAL_HRA}}`, etc.
-   - Salva 4 .docx em `casos-documentos/{caso_id}/`
-   - Atualiza `documentos_gerados` e status → "Concluído"
-
-## Fluxo do Usuário
-
-1. **Login** → Dashboard
-2. **Dashboard**: tabela de casos com filtro por status, badges coloridos, ações (abrir, cancelar). Realtime para novos casos do N8N + toast "Novo caso recebido por email — abrir?".
-3. **Novo caso (manual)**: upload múltiplo (RG, CPF, comprovante de residência, contracheques) → cria caso "Novo" → dispara `extract-case-data` → tela de processamento ("Em Análise") → Tela 1.
-4. **Tela 1 — Confirmação**: formulário editável (nome, CPF, RG, endereço) + tabela editável de contracheques (adicionar/remover linha, editar HRA/AHRA). Botões: Confirmar e Avançar / Cancelar Caso.
-5. **Tela 2 — Cálculos**: resumo + soma de HRA, AHRA, total geral, input obrigatório "Número da Pasta". Botões: Gerar Documentos / Voltar / Cancelar.
-6. **Geração**: invoca `generate-documents` → tela de Download com 4 botões individuais + "Baixar Todos (ZIP)" (montado no cliente com `jszip`) + Voltar ao Dashboard.
-
-## Templates ({{variáveis}})
-Mapeamento direto da spec: `NOME_CLIENTE`, `CPF`, `RG`, `ENDERECO_COMPLETO`, `LOGRADOURO`, `NUMERO`, `BAIRRO`, `CIDADE`, `ESTADO`, `CEP`, `TOTAL_HRA`, `TOTAL_AHRA`, `TOTAL_GERAL`, `NUMERO_PASTA`, `DATA_ATUAL`. Tela `/templates` permite re-upload a qualquer momento.
-
-## Status × Cores (badges via Tailwind tokens semânticos)
-- Novo (azul) · Em Análise (amarelo) · Aguardando Confirmação (verde claro) · Aguardando Nº da Pasta (roxo) · Concluído (verde escuro) · Cancelado (vermelho).
-Definidos em `index.css` como tokens HSL + variantes de Badge.
-
-## Segurança
-- RLS em todas as tabelas e buckets
-- Edge Functions validam JWT (exceto webhook)
-- Validação Zod no `webhook-n8n` (limite de arquivos/tamanho)
-- Sem chamadas diretas ao Lovable AI no cliente
-- Inputs validados client + server (Zod)
-
-## Ordem de Implementação
-1. Habilitar Lovable Cloud + criar tabelas, buckets, RLS
-2. Auth (login) + layout base + design tokens com badges
-3. Dashboard (lista, filtro, realtime, badges, ação cancelar)
-4. Tela "Novo Caso" (upload manual) + tela `/templates`
-5. Edge Function `webhook-n8n` + toast realtime
-6. Edge Function `extract-case-data` (Lovable AI com vision)
-7. Tela 1 (confirmação) + Tela 2 (cálculos)
-8. Edge Function `generate-documents` (docxtemplater)
-9. Tela de Download + ZIP
-
-## Pré-requisitos do Usuário
-- Após o primeiro deploy: subir os 4 templates `.docx` em `/templates` (com placeholders `{{...}}`).
-- Configurar o N8N para fazer POST na URL do webhook (será exibida na tela `/templates` ou em uma aba "Integração").
-
+Confirma o plano? Se sim, próximo passo é **você fazer 1a + 1b na Resend** e me avisar o registrador (Registro.br, Cloudflare, etc.) caso queira ajuda com os DNS records.
