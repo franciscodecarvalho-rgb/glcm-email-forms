@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.generate-documents]
 verify_jwt = false
+
+[functions.resend-inbound]
+verify_jwt = false
