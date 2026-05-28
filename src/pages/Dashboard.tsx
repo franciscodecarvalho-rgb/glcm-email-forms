@@ -12,12 +12,18 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
+import { CasoFlagBadge } from "@/components/CasoFlagBadge";
+
 type Caso = {
   id: string;
   created_at: string;
   status: string;
   origem: string;
   nome_cliente: string | null;
+  mesclado_em: string | null;
+  mesclado_at: string | null;
+  possivel_duplicata_de: string | null;
+  cliente_recorrente_ref: string | null;
 };
 
 export default function Dashboard() {
