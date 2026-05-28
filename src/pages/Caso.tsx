@@ -95,16 +95,6 @@ export default function Caso() {
           </div>
         </div>
 
-        {(caso.status === "novo" || caso.status === "em_analise") && <TelaProcessando caso={caso} />}
-        {caso.status === "aguardando_confirmacao" && <TelaConfirmacao caso={caso} onCancel={cancelar} />}
-        {caso.status === "aguardando_pasta" && <TelaCalculos caso={caso} onCancel={cancelar} />}
-        {caso.status === "concluido" && <TelaDownload caso={caso} />}
-        {caso.status === "cancelado" && (
-          <div className="rounded-lg border bg-card p-8 text-center">
-            <p className="text-lg font-medium">Este caso foi cancelado.</p>
-            <p className="mt-1 text-sm text-muted-foreground">Crie um novo caso para reprocessar os documentos.</p>
-          </div>
-        )}
         <BlocoDuplicata
           casoId={caso.id}
           status={caso.status}
@@ -115,6 +105,7 @@ export default function Caso() {
           casosMesclados={mesclados}
           onChange={recarregar}
         />
+
 
         {(caso.status === "novo" || caso.status === "em_analise") && <TelaProcessando caso={caso} />}
         {caso.status === "aguardando_confirmacao" && <TelaConfirmacao caso={caso} onCancel={cancelar} />}
