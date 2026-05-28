@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.webhook-resend-inbound]
 verify_jwt = false
+
+[functions.pre-extract-cpf]
+verify_jwt = false
+
+[functions.merge-casos]
+verify_jwt = false
