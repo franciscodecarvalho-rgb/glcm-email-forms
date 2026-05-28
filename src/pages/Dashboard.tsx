@@ -125,7 +125,13 @@ export default function Dashboard() {
                   <TableCell>{format(new Date(c.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</TableCell>
                   <TableCell>{c.nome_cliente ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell><span className="text-xs uppercase tracking-wide text-muted-foreground">{c.origem}</span></TableCell>
-                  <TableCell><StatusBadge status={c.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      <StatusBadge status={c.status} />
+                      {c.possivel_duplicata_de && <CasoFlagBadge flag="possivel_duplicata" />}
+                      {c.cliente_recorrente_ref && <CasoFlagBadge flag="cliente_recorrente" />}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" onClick={() => nav(`/casos/${c.id}`)}>
                       <FolderOpen className="mr-1 h-4 w-4" />Abrir
