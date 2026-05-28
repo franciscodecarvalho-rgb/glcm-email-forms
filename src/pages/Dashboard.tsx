@@ -12,12 +12,18 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
+import { CasoFlagBadge } from "@/components/CasoFlagBadge";
+
 type Caso = {
   id: string;
   created_at: string;
   status: string;
   origem: string;
   nome_cliente: string | null;
+  mesclado_em: string | null;
+  mesclado_at: string | null;
+  possivel_duplicata_de: string | null;
+  cliente_recorrente_ref: string | null;
 };
 
 export default function Dashboard() {
@@ -29,7 +35,7 @@ export default function Dashboard() {
     let ignore = false;
     supabase
       .from("casos")
-      .select("id, created_at, status, origem, nome_cliente")
+      .select("id, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref")
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error("Erro ao carregar casos");
@@ -65,7 +71,9 @@ export default function Dashboard() {
     if (error) toast.error("Falha ao cancelar"); else toast.success("Caso cancelado");
   };
 
-  const filtered = filter === "all" ? casos : casos.filter((c) => c.status === filter);
+  // Oculta casos que foram mesclados em outros (continuam acessíveis pelo redirect)
+  const visiveis = casos.filter((c) => !c.mesclado_em);
+  const filtered = filter === "all" ? visiveis : visiveis.filter((c) => c.status === filter);
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -117,7 +125,13 @@ export default function Dashboard() {
                   <TableCell>{format(new Date(c.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</TableCell>
                   <TableCell>{c.nome_cliente ?? <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell><span className="text-xs uppercase tracking-wide text-muted-foreground">{c.origem}</span></TableCell>
-                  <TableCell><StatusBadge status={c.status} /></TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      <StatusBadge status={c.status} />
+                      {c.possivel_duplicata_de && <CasoFlagBadge flag="possivel_duplicata" />}
+                      {c.cliente_recorrente_ref && <CasoFlagBadge flag="cliente_recorrente" />}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="sm" onClick={() => nav(`/casos/${c.id}`)}>
                       <FolderOpen className="mr-1 h-4 w-4" />Abrir

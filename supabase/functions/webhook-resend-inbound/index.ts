@@ -194,6 +194,11 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[webhook-resend-inbound] concluído caso=${caso.id} arquivos=${uploaded}`);
+
+    // Dispara pré-extração de CPF/nome (fire-and-forget)
+    supabase.functions.invoke("pre-extract-cpf", { body: { caso_id: caso.id } })
+      .catch((err) => console.error("[webhook-resend-inbound] falha invoke pre-extract-cpf:", err));
+
     return json({ success: true, caso_id: caso.id, arquivos: uploaded });
   } catch (e) {
     console.error("[webhook-resend-inbound] erro:", e);

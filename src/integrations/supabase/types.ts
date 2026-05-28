@@ -17,6 +17,7 @@ export type Database = {
       arquivos: {
         Row: {
           caso_id: string
+          caso_id_origem: string | null
           created_at: string
           id: string
           mime_type: string | null
@@ -26,6 +27,7 @@ export type Database = {
         }
         Insert: {
           caso_id: string
+          caso_id_origem?: string | null
           created_at?: string
           id?: string
           mime_type?: string | null
@@ -35,6 +37,7 @@ export type Database = {
         }
         Update: {
           caso_id?: string
+          caso_id_origem?: string | null
           created_at?: string
           id?: string
           mime_type?: string | null
@@ -54,57 +57,97 @@ export type Database = {
       }
       casos: {
         Row: {
+          cliente_recorrente_ref: string | null
           contracheques: Json | null
           cpf: string | null
+          cpf_pre_extraido: string | null
           created_at: string
           created_by: string | null
           documentos_gerados: Json | null
           endereco: Json | null
           erro_processamento: string | null
           id: string
+          mesclado_at: string | null
+          mesclado_em: string | null
           message_id: string | null
           nome_cliente: string | null
+          nome_pre_extraido: string | null
           numero_pasta: string | null
           origem: string
+          possivel_duplicata_de: string | null
           rg: string | null
           status: string
           updated_at: string
         }
         Insert: {
+          cliente_recorrente_ref?: string | null
           contracheques?: Json | null
           cpf?: string | null
+          cpf_pre_extraido?: string | null
           created_at?: string
           created_by?: string | null
           documentos_gerados?: Json | null
           endereco?: Json | null
           erro_processamento?: string | null
           id?: string
+          mesclado_at?: string | null
+          mesclado_em?: string | null
           message_id?: string | null
           nome_cliente?: string | null
+          nome_pre_extraido?: string | null
           numero_pasta?: string | null
           origem?: string
+          possivel_duplicata_de?: string | null
           rg?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
+          cliente_recorrente_ref?: string | null
           contracheques?: Json | null
           cpf?: string | null
+          cpf_pre_extraido?: string | null
           created_at?: string
           created_by?: string | null
           documentos_gerados?: Json | null
           endereco?: Json | null
           erro_processamento?: string | null
           id?: string
+          mesclado_at?: string | null
+          mesclado_em?: string | null
           message_id?: string | null
           nome_cliente?: string | null
+          nome_pre_extraido?: string | null
           numero_pasta?: string | null
           origem?: string
+          possivel_duplicata_de?: string | null
           rg?: string | null
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "casos_cliente_recorrente_ref_fkey"
+            columns: ["cliente_recorrente_ref"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "casos_mesclado_em_fkey"
+            columns: ["mesclado_em"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "casos_possivel_duplicata_de_fkey"
+            columns: ["possivel_duplicata_de"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       templates: {
         Row: {

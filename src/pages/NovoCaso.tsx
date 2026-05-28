@@ -42,7 +42,18 @@ export default function NovoCaso() {
         });
       }
 
-      // Disparar extração
+      // Pré-extração: detecta duplicatas/recorrentes antes de extrair tudo
+      const { data: pre } = await supabase.functions.invoke("pre-extract-cpf", {
+        body: { caso_id: caso.id },
+      });
+
+      if (pre?.acao === "mesclado_auto" && pre?.ref_id) {
+        toast.success("Caso mesclado automaticamente com cliente existente");
+        nav(`/casos/${pre.ref_id}`);
+        return;
+      }
+
+      // Disparar extração completa
       await supabase.from("casos").update({ status: "em_analise" }).eq("id", caso.id);
       supabase.functions.invoke("extract-case-data", { body: { caso_id: caso.id } }).catch(() => {});
 
