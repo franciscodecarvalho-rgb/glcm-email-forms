@@ -9,6 +9,7 @@ import { TelaConfirmacao } from "@/components/caso/TelaConfirmacao";
 import { TelaCalculos } from "@/components/caso/TelaCalculos";
 import { TelaDownload } from "@/components/caso/TelaDownload";
 import { TelaProcessando } from "@/components/caso/TelaProcessando";
+import { BlocoDuplicata } from "@/components/caso/BlocoDuplicata";
 import { toast } from "sonner";
 
 export type CasoData = {
@@ -22,6 +23,10 @@ export type CasoData = {
   numero_pasta: string | null;
   documentos_gerados: any;
   erro_processamento: string | null;
+  mesclado_em: string | null;
+  mesclado_at: string | null;
+  possivel_duplicata_de: string | null;
+  cliente_recorrente_ref: string | null;
 };
 
 export default function Caso() {
