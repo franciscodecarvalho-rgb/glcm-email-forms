@@ -1,92 +1,150 @@
-# Plano: Resend Inbound + Outbound em `glcm.app` (raiz)
+# Plano: Detecção de duplicatas e agrupamento por CPF+nome
 
-Substitui o fluxo via n8n por **Resend** no domínio raiz. Recebimento de documentos em `documentos@glcm.app` e envio de notificações de `notificacoes@glcm.app`.
+## 1. Migration SQL (tabela `casos`)
 
-## 1. Configuração no painel da Resend (você faz)
+```sql
+ALTER TABLE public.casos
+  ADD COLUMN mesclado_em uuid NULL REFERENCES public.casos(id) ON DELETE SET NULL,
+  ADD COLUMN possivel_duplicata_de uuid NULL REFERENCES public.casos(id) ON DELETE SET NULL,
+  ADD COLUMN cliente_recorrente_ref uuid NULL REFERENCES public.casos(id) ON DELETE SET NULL,
+  ADD COLUMN mesclado_at timestamptz NULL,
+  ADD COLUMN cpf_pre_extraido text NULL,
+  ADD COLUMN nome_pre_extraido text NULL;
 
-**a) Adicionar domínio**
-- Resend → **Domains** → **Add Domain** → `glcm.app` (raiz, sem subdomínio) → região `us-east-1`
-- A Resend mostra ~4 registros DNS (MX, SPF TXT, DKIM TXT, DMARC TXT) — copia tudo
+CREATE INDEX idx_casos_cpf_pre_extraido ON public.casos(cpf_pre_extraido);
+CREATE INDEX idx_casos_mesclado_em ON public.casos(mesclado_em);
+```
+Sem mudanças de RLS (políticas atuais já cobrem `authenticated`).
 
-**b) Adicionar registros DNS no seu registrador**
-- Você adiciona MX/SPF/DKIM/DMARC no painel onde o `glcm.app` está hospedado (mesmo lugar do A record que aponta pro Lovable: 185.158.133.1)
-- Os A records do site **não são afetados** — coexistem
-- Volta na Resend → **Verify DNS Records** (leva 5–30 min)
+## 2. Nova Edge Function: `pre-extract-cpf`
 
-**c) Criar API Key**
-- Resend → **API Keys** → `lovable-glcm` (full access) → copia o valor
+Arquivo: `supabase/functions/pre-extract-cpf/index.ts` (`verify_jwt = false` no `config.toml`).
 
-**d) Configurar Inbound (depois do domínio verificado)**
-- Resend → **Inbound** → **Add Address**
-- Endereço: `documentos@glcm.app`
-- Webhook URL: `https://kaopnizsbkzxqdzmocwa.supabase.co/functions/v1/resend-inbound`
-- Copia o **signing secret** que a Resend gera
+Fluxo:
+1. Recebe `{ caso_id }`.
+2. Baixa arquivos de `casos-arquivos` (apenas imagens + 1ª página de PDFs se for trivial — caso contrário envia tudo; é leve).
+3. Chama Lovable AI Gateway com **`google/gemini-2.5-flash-lite`** (mais barato e rápido; suporta visão). Tool call único `registrar_cpf_nome({ cpf, nome })` com `cpf` no formato `00000000000` (só dígitos) ou null.
+4. Persiste `cpf_pre_extraido` (normalizado, só dígitos, validação módulo-11) e `nome_pre_extraido`.
+5. Executa **matching** (ver seção 4) e seta flags / faz mescla.
+6. Retorna `{ acao: 'isolado' | 'mesclado_auto' | 'sugerido' | 'recorrente', ref_id? }`.
 
-## 2. Conectar Resend no Lovable (eu faço)
-
-Uso o conector nativo Resend do Lovable → você seleciona a conta Resend → secrets `RESEND_API_KEY` ficam disponíveis automaticamente nas edge functions.
-
-Adiciono também o secret `RESEND_WEBHOOK_SECRET` (valor copiado no passo 1d).
-
-## 3. Código — edge functions (eu faço)
-
-### `resend-inbound` (substitui `webhook-n8n`)
-Recebe POST JSON da Resend com payload do email:
-- Valida header `svix-signature` com `RESEND_WEBHOOK_SECRET` (HMAC)
-- Idempotência por `message_id` (header `svix-id` ou `headers.message-id` do email)
-- Cria registro em `casos` com `status=novo`, `origem=email`, `nome_cliente` = nome do remetente, `message_id`
-- Para cada anexo (`attachments[]`): baixa via `content_url` ou decodifica base64 do `content`
-- Valida tipo (PDF/JPG/PNG/WEBP/HEIC), tamanho (≤10MB/arquivo, ≤50MB total, ≤20 anexos)
-- Upload para bucket `casos-arquivos` (mesmo path pattern `{caso_id}/{uuid}-{nome}`)
-- Insere em `arquivos`
-- Atualiza `casos.status=em_analise` e invoca `extract-case-data` (mesma lógica do n8n)
-- `verify_jwt = false` no `config.toml` (Resend não envia JWT)
-
-### `send-email` (novo, para enviar notificações)
-- `verify_jwt = true` (só usuários autenticados podem disparar)
-- Body: `{ to, subject, html, attachments? }` validado com Zod
-- Envia via gateway: `POST https://connector-gateway.lovable.dev/resend/emails` com `from: "GLCM <notificacoes@glcm.app>"`
-- Headers: `Authorization: Bearer ${LOVABLE_API_KEY}` + `X-Connection-Api-Key: ${RESEND_API_KEY}`
-- Retorna o `id` da Resend
-
-## 4. Cleanup (eu faço)
-
-- Deletar `supabase/functions/webhook-n8n/`
-- Deletar a função no Supabase via `delete_edge_functions`
-- Remover secret `N8N_WEBHOOK_SECRET`
-- Atualizar textos da UI que falavam de n8n (se existirem) para "email"
-
-## 5. Não muda
-
-- Tabelas `casos`, `arquivos`, `templates` e suas RLS
-- Buckets `casos-arquivos`, `casos-documentos`, `templates`
-- Função `extract-case-data` (continua sendo invocada igual)
-- Função `generate-documents`
-- Dashboard, Realtime, telas de upload manual, screens 1/2/download
-
-## 6. Ordem de execução
-
-```text
-VOCÊ                                     EU
-─────                                    ──
-1a. Add domínio glcm.app na Resend
-1b. Adicionar DNS records no registrador
-    → aguardar verificação (5–30 min)
-1c. Criar API Key                ──→
-                                         2. Conectar Resend no Lovable
-                                         3. Criar resend-inbound + send-email
-1d. Add inbound documentos@glcm.app  ──→
-                                         (configurar RESEND_WEBHOOK_SECRET)
-                                         4. Testar com curl + email real
-                                         5. Cleanup webhook-n8n
+Prompt do sistema:
+```
+Você analisa documentos brasileiros (RG, CPF, comprovante, contracheque).
+Sua ÚNICA tarefa: identificar o CPF e o nome completo do titular principal.
+- CPF: 11 dígitos, apenas números, sem pontuação. Se não tiver certeza, retorne null.
+- Nome: completo, como aparece no documento de identidade. Se múltiplos nomes, escolha o titular do RG/CPF (não dependentes, não emissor).
+- Em caso de dúvida, prefira null a chutar.
+Retorne SEMPRE via tool call registrar_cpf_nome.
 ```
 
-## Aviso importante sobre o domínio raiz
+## 3. Custo estimado da pré-extração
 
-- Como MX vai no raiz, qualquer email para `*@glcm.app` cai no Resend (hoje você não tem nada, então OK)
-- Se um dia quiser usar `@glcm.app` em outro provedor (Google Workspace, Lovable Email), vai precisar consolidar SPF e talvez mover pra subdomínio
-- Recomendação: criar uma única caixa "catch-all" no Resend ou só usar `documentos@` mesmo
+- Modelo: `google/gemini-2.5-flash-lite` (visão).
+- Input típico: 2-4 imagens (~1–3 MB cada) ≈ 1.500–4.000 tokens de imagem + ~150 de prompt.
+- Output: ~30 tokens (só CPF+nome).
+- Custo aproximado por caso: **~US$ 0,0005 – 0,002** (sub-centavo de dólar). Para 1.000 casos/mês: ~US$ 0,50–2,00.
+- Comparativo: extração completa atual (Gemini 2.5 Pro/Flash) custa ~10–30× mais por caso.
 
-## Pergunta para começar
+## 4. Algoritmo de matching
 
-Confirma o plano? Se sim, próximo passo é **você fazer 1a + 1b na Resend** e me avisar o registrador (Registro.br, Cloudflare, etc.) caso queira ajuda com os DNS records.
+Passos depois da pré-extração:
+
+1. **Normalizar CPF**: só dígitos, validar dígito verificador. Se inválido → caso fica isolado.
+2. **Buscar candidatos**: `SELECT * FROM casos WHERE (cpf_pre_extraido = X OR cpf = X) AND id != caso_atual ORDER BY created_at DESC`.
+3. Para cada candidato, classificar:
+   - `status IN ('concluido','cancelado')` → **cliente recorrente** (pega o mais recente concluído; cancelado ignora).
+   - `status` ativo (`novo`, `em_analise`, `aguardando_confirmacao`, `aguardando_pasta`):
+     - Calcular similaridade de nome.
+     - `>= 0.90` → **mescla automática**.
+     - `< 0.90` ou nome ausente em algum dos lados → **sugere mesclagem**.
+4. Aplicar primeira regra que casar (ativo tem prioridade sobre concluído).
+
+### Similaridade de nome (≥90%)
+- Normalização: lowercase, remover acentos (`NFD` + strip diacríticos), remover pontuação, colapsar espaços, remover partículas comuns (`de`, `da`, `do`, `dos`, `das`).
+- Algoritmo: **token set ratio** baseado em Levenshtein normalizado.
+  - Tokeniza ambos, calcula interseção/união de tokens + similaridade Levenshtein no restante.
+  - Implementação inline em TS (~40 linhas), sem dependência externa.
+- Threshold: `score >= 0.90` → automática.
+- Fallback simples para casos limites: se um dos nomes é prefixo/subset completo do outro (ex.: "João Silva" vs "João da Silva Santos"), conta como ≥0.90.
+
+## 5. Ação de mescla automática
+
+Dentro da função `pre-extract-cpf` (transação lógica):
+1. `UPDATE arquivos SET caso_id = original WHERE caso_id = novo`.
+2. `UPDATE casos SET mesclado_em = original, mesclado_at = now(), status = 'cancelado' WHERE id = novo`.
+3. Não move storage paths (continuam em `<novo_id>/...`); apenas reapontamos `caso_id`. Tela do caso original lista tudo via `caso_id`.
+
+## 6. Webhook + upload manual
+
+- `webhook-resend-inbound/index.ts`: depois do upload dos anexos, invocar `pre-extract-cpf` via `supabase.functions.invoke` (fire-and-forget com `.catch(console.error)`). Não bloqueia resposta 200 ao Resend.
+- `src/pages/NovoCaso.tsx`: depois do `update status='em_analise'` e antes (ou em paralelo) do `extract-case-data`, invocar `pre-extract-cpf`. Decisão: **invocar `pre-extract-cpf` ANTES** e só depois `extract-case-data`, pois se for mescla automática não faz sentido extrair de novo. → ajuste: para upload manual, aguardar resposta de `pre-extract-cpf` e, se `acao === 'mesclado_auto'`, redirecionar para o caso original em vez de `extract-case-data`.
+
+## 7. Frontend
+
+### `src/lib/status.ts`
+Adicionar tipos/labels para flags (não são status — são badges adicionais):
+```ts
+export type CasoFlag = 'mesclado_auto' | 'possivel_duplicata' | 'cliente_recorrente';
+```
+
+### `src/components/CasoFlagBadge.tsx` (novo)
+Renderiza badge colorido conforme flag.
+- `mesclado_auto`: roxo, "Mesclado automaticamente"
+- `possivel_duplicata`: laranja, "⚠️ Possível duplicata"
+- `cliente_recorrente`: azul, "🔵 Cliente recorrente"
+
+### `src/pages/Dashboard.tsx`
+- `select` passa a incluir as 4 novas colunas relevantes (`mesclado_em`, `possivel_duplicata_de`, `cliente_recorrente_ref`, `mesclado_at`).
+- Renderiza badges na coluna Status (ou nova coluna "Flags").
+- Botões inline quando `possivel_duplicata_de`: "Mesclar com #X" / "Manter separado".
+- Botão "Desfazer mesclagem" quando recebeu mescla (linha do caso original) e `mesclado_at` < 7 dias e status não-final.
+- Filtra por padrão casos com `mesclado_em IS NULL` (mesclados ficam ocultos exceto se filtro "cancelado" ativo).
+
+### `src/pages/Caso.tsx`
+- Bloco no topo (acima do conteúdo de status) quando há flag:
+  - Mesclado automaticamente → "Este caso recebeu N arquivos vindos de outro envio. [Desfazer mesclagem]"
+  - Possível duplicata → "Este caso pode ser duplicata de #X. [Mesclar] [Manter separado]"
+  - Cliente recorrente → "Cliente já teve o caso #X concluído anteriormente."
+- Quando o caso atual TEM `mesclado_em`: redireciona para o caso original.
+
+## 8. Nova Edge Function: `merge-casos` (ação manual)
+
+`supabase/functions/merge-casos/index.ts` — usada pelos botões do dashboard:
+- `POST { acao: 'mesclar' | 'desfazer' | 'manter_separado', caso_id, alvo_id? }`
+- Mesmas operações da seção 5 + revert para "desfazer" (recria caso a partir do `mesclado_em`, move de volta `arquivos` que tinham aquele `caso_id` original — preservamos no campo `arquivos.caso_id_origem` ou usamos `storage_path` que começa com o UUID antigo).
+
+**Decisão técnica para "desfazer":** vou adicionar `arquivos.caso_id_origem uuid NULL` (preenchido no momento da mescla com o id do caso de origem), assim conseguimos reverter precisamente quais arquivos voltam.
+
+### Migration adicional
+```sql
+ALTER TABLE public.arquivos ADD COLUMN caso_id_origem uuid NULL;
+```
+
+## 9. Arquivos criados / editados
+
+**Criar:**
+- `supabase/functions/pre-extract-cpf/index.ts`
+- `supabase/functions/merge-casos/index.ts`
+- `src/components/CasoFlagBadge.tsx`
+- `src/components/caso/BlocoDuplicata.tsx` (bloco topo da tela de caso)
+
+**Editar:**
+- `supabase/config.toml` (registrar as 2 novas funções com `verify_jwt = false`)
+- `supabase/functions/webhook-resend-inbound/index.ts` (invoke `pre-extract-cpf` ao final)
+- `src/pages/NovoCaso.tsx` (invoke + redirecionar se mesclado)
+- `src/pages/Dashboard.tsx` (badges, filtros, botões inline)
+- `src/pages/Caso.tsx` (bloco de flag, redirect se mesclado)
+- `src/lib/status.ts` (tipos de flag)
+
+**Migration:** colunas em `casos` + `arquivos.caso_id_origem` + índices.
+
+## 10. Pontos abertos para você confirmar
+
+1. **Modelo da pré-extração:** OK com `google/gemini-2.5-flash-lite`? (alternativa: `google/gemini-3.1-flash-lite-preview`, mais novo mas preview).
+2. **Threshold 0.90:** confirma? Posso deixar configurável via constante no topo do arquivo.
+3. **Caso novo sem CPF detectado mas com nome:** fica isolado (sem flag) como você definiu, certo? (não tento matching por nome só).
+4. **"Manter separado":** ao clicar, limpa `possivel_duplicata_de` e nunca mais sugere para essa combinação? Ou pode sugerir de novo se outro caso aparecer?
+5. **Ordem no upload manual:** confirma que devo aguardar pré-extração antes de chamar `extract-case-data`? (adiciona ~3-5s ao fluxo).
+
+Aguardo sua confirmação para implementar.
