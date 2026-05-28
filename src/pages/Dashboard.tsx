@@ -71,7 +71,9 @@ export default function Dashboard() {
     if (error) toast.error("Falha ao cancelar"); else toast.success("Caso cancelado");
   };
 
-  const filtered = filter === "all" ? casos : casos.filter((c) => c.status === filter);
+  // Oculta casos que foram mesclados em outros (continuam acessíveis pelo redirect)
+  const visiveis = casos.filter((c) => !c.mesclado_em);
+  const filtered = filter === "all" ? visiveis : visiveis.filter((c) => c.status === filter);
 
   return (
     <div className="min-h-screen bg-muted/30">
