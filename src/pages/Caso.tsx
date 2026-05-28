@@ -34,22 +34,36 @@ export default function Caso() {
   const nav = useNavigate();
   const [caso, setCaso] = useState<CasoData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mesclados, setMesclados] = useState<{ id: string; mesclado_at: string | null }[]>([]);
+
+  const recarregar = async () => {
+    if (!id) return;
+    const { data, error } = await supabase.from("casos").select("*").eq("id", id).maybeSingle();
+    if (error || !data) { toast.error("Caso não encontrado"); nav("/"); return; }
+    // Se este caso foi mesclado em outro, redireciona
+    if ((data as any).mesclado_em) {
+      toast.message("Este caso foi mesclado em outro");
+      nav(`/casos/${(data as any).mesclado_em}`);
+      return;
+    }
+    setCaso(data as CasoData);
+    // Busca casos que foram mesclados aqui
+    const { data: ms } = await supabase
+      .from("casos").select("id, mesclado_at").eq("mesclado_em", id);
+    setMesclados((ms ?? []) as any);
+    setLoading(false);
+  };
 
   useEffect(() => {
     if (!id) return;
-    const fetchOne = async () => {
-      const { data, error } = await supabase.from("casos").select("*").eq("id", id).maybeSingle();
-      if (error || !data) { toast.error("Caso não encontrado"); nav("/"); return; }
-      setCaso(data as CasoData);
-      setLoading(false);
-    };
-    fetchOne();
+    recarregar();
     const ch = supabase
       .channel(`caso-${id}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "casos", filter: `id=eq.${id}` },
-        (p) => setCaso(p.new as CasoData))
+        () => recarregar())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, nav]);
 
   if (loading || !caso) {
