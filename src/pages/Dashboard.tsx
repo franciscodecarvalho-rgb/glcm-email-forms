@@ -35,7 +35,7 @@ export default function Dashboard() {
     let ignore = false;
     supabase
       .from("casos")
-      .select("id, created_at, status, origem, nome_cliente")
+      .select("id, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref")
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error("Erro ao carregar casos");
