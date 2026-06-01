@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import NovoCaso from "./pages/NovoCaso";
 import Caso from "./pages/Caso";
 import Templates from "./pages/Templates";
+import Usuarios from "./pages/Usuarios";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
             <Route path="/casos/novo" element={<ProtectedRoute><NovoCaso /></ProtectedRoute>} />
             <Route path="/casos/:id" element={<ProtectedRoute><Caso /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
+            <Route path="/usuarios" element={<ProtectedRoute><Usuarios /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
