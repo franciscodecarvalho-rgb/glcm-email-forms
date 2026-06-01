@@ -1,10 +1,12 @@
-import { Scale, LogOut, FileText, LayoutDashboard } from "lucide-react";
+import { Scale, LogOut, FileText, LayoutDashboard, Users } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Button } from "@/components/ui/button";
 
 export function AppHeader() {
   const { user, signOut } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const nav = useNavigate();
   return (
     <header className="border-b bg-card">
@@ -22,6 +24,11 @@ export function AppHeader() {
           <Button variant="ghost" size="sm" asChild>
             <Link to="/templates"><FileText className="mr-2 h-4 w-4" />Templates</Link>
           </Button>
+          {isAdmin && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/usuarios"><Users className="mr-2 h-4 w-4" />Usuários</Link>
+            </Button>
+          )}
           <span className="hidden text-sm text-muted-foreground md:inline">{user?.email}</span>
           <Button variant="outline" size="sm" onClick={async () => { await signOut(); nav("/login"); }}>
             <LogOut className="mr-2 h-4 w-4" />Sair
