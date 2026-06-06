@@ -27,6 +27,8 @@ export type CasoData = {
   mesclado_at: string | null;
   possivel_duplicata_de: string | null;
   cliente_recorrente_ref: string | null;
+  qualificacao: any;
+  empregadores: any;
 };
 
 export default function Caso() {
