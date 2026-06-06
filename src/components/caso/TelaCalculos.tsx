@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
+import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -19,6 +21,13 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
   const totAhra = useMemo(() => contras.reduce((a, c) => a + Number(c.valor_ahra || 0), 0), [contras]);
   const totGeral = totHra + totAhra;
 
+  // Motor de cálculo: IR a restituir (27,5%) sobre as rubricas HRA.
+  const calculo = useMemo(
+    () => calcularIrSobreHra(contrachequesLegadoParaMotor(contras)),
+    [contras],
+  );
+  const valorCausa = calculo.totalHistorico;
+
   const voltar = async () => {
     await supabase.from("casos").update({ status: "aguardando_confirmacao" }).eq("id", caso.id);
   };
@@ -26,7 +35,10 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
   const gerar = async () => {
     if (!pasta.trim()) { toast.error("Informe o número da pasta"); return; }
     setGenerating(true);
-    const { error: updErr } = await supabase.from("casos").update({ numero_pasta: pasta }).eq("id", caso.id);
+    const { error: updErr } = await supabase
+      .from("casos")
+      .update({ numero_pasta: pasta, valor_causa: valorCausa })
+      .eq("id", caso.id);
     if (updErr) { setGenerating(false); toast.error("Erro ao salvar"); return; }
     const { error } = await supabase.functions.invoke("generate-documents", { body: { caso_id: caso.id } });
     setGenerating(false);
@@ -63,15 +75,17 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
               <TableHead className="text-right">HRA</TableHead>
               <TableHead className="text-right">AHRA</TableHead>
               <TableHead className="text-right">Subtotal</TableHead>
+              <TableHead className="text-right">IR (27,5%)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {contras.map((c: any) => (
+            {contras.map((c: any, idx: number) => (
               <TableRow key={c.id}>
                 <TableCell>{c.label}</TableCell>
                 <TableCell className="text-right">{fmt(Number(c.valor_hra || 0))}</TableCell>
                 <TableCell className="text-right">{fmt(Number(c.valor_ahra || 0))}</TableCell>
                 <TableCell className="text-right font-medium">{fmt(Number(c.valor_hra || 0) + Number(c.valor_ahra || 0))}</TableCell>
+                <TableCell className="text-right">{fmt(calculo.linhas[idx]?.irMes ?? 0)}</TableCell>
               </TableRow>
             ))}
             <TableRow className="bg-muted/40 font-semibold">
@@ -79,9 +93,22 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
               <TableCell className="text-right">{fmt(totHra)}</TableCell>
               <TableCell className="text-right">{fmt(totAhra)}</TableCell>
               <TableCell className="text-right text-base">{fmt(totGeral)}</TableCell>
+              <TableCell className="text-right text-base">{fmt(valorCausa)}</TableCell>
             </TableRow>
           </TableBody>
         </Table>
+      </section>
+
+      <section className="rounded-lg border bg-primary/5 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-semibold">Valor da causa — IR a restituir</h2>
+            <p className="text-sm text-muted-foreground">
+              IR (27,5%) sobre as rubricas HRA de todas as competências, antes da correção pela Selic.
+            </p>
+          </div>
+          <span className="text-2xl font-bold">{fmt(valorCausa)}</span>
+        </div>
       </section>
 
       <section className="rounded-lg border bg-card p-6">
