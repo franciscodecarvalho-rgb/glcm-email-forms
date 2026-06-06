@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Upload, Check, Copy } from "lucide-react";
+import { Upload, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -46,8 +46,6 @@ export default function Templates() {
     }
   };
 
-  const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-n8n`;
-
   return (
     <div className="min-h-screen bg-muted/30">
       <AppHeader />
@@ -88,16 +86,6 @@ export default function Templates() {
             );
           })}
         </div>
-
-        <h2 className="mt-10 text-lg font-semibold">Webhook do N8N</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Configure seu fluxo do N8N para enviar <code>POST multipart/form-data</code> para esta URL:</p>
-        <div className="mt-2 flex items-center gap-2 rounded-md border bg-card p-3">
-          <code className="flex-1 truncate text-xs">{webhookUrl}</code>
-          <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success("Copiado"); }}>
-            <Copy className="mr-2 h-3 w-3" />Copiar
-          </Button>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">Campos esperados: <code>nome_cliente</code> (opcional) + arquivos como <code>files</code>.</p>
       </main>
     </div>
   );
