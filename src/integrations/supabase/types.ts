@@ -64,8 +64,11 @@ export type Database = {
           created_at: string
           created_by: string | null
           documentos_gerados: Json | null
+          empregadores: Json
           endereco: Json | null
           erro_processamento: string | null
+          escritorios: Json
+          honorarios_pct: number | null
           id: string
           mesclado_at: string | null
           mesclado_em: string | null
@@ -75,9 +78,12 @@ export type Database = {
           numero_pasta: string | null
           origem: string
           possivel_duplicata_de: string | null
+          qualificacao: Json
           rg: string | null
           status: string
+          tipo_acao: string
           updated_at: string
+          valor_causa: number | null
         }
         Insert: {
           cliente_recorrente_ref?: string | null
@@ -87,8 +93,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           documentos_gerados?: Json | null
+          empregadores?: Json
           endereco?: Json | null
           erro_processamento?: string | null
+          escritorios?: Json
+          honorarios_pct?: number | null
           id?: string
           mesclado_at?: string | null
           mesclado_em?: string | null
@@ -98,9 +107,12 @@ export type Database = {
           numero_pasta?: string | null
           origem?: string
           possivel_duplicata_de?: string | null
+          qualificacao?: Json
           rg?: string | null
           status?: string
+          tipo_acao?: string
           updated_at?: string
+          valor_causa?: number | null
         }
         Update: {
           cliente_recorrente_ref?: string | null
@@ -110,8 +122,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           documentos_gerados?: Json | null
+          empregadores?: Json
           endereco?: Json | null
           erro_processamento?: string | null
+          escritorios?: Json
+          honorarios_pct?: number | null
           id?: string
           mesclado_at?: string | null
           mesclado_em?: string | null
@@ -121,9 +136,12 @@ export type Database = {
           numero_pasta?: string | null
           origem?: string
           possivel_duplicata_de?: string | null
+          qualificacao?: Json
           rg?: string | null
           status?: string
+          tipo_acao?: string
           updated_at?: string
+          valor_causa?: number | null
         }
         Relationships: [
           {
