@@ -167,6 +167,91 @@ export type Database = {
           },
         ]
       }
+      contracheques: {
+        Row: {
+          arquivo_origem: string | null
+          caso_id: string
+          competencia: string | null
+          created_at: string
+          id: string
+          liquido: number | null
+          salario_base: number | null
+          total_descontos: number | null
+          total_proventos: number | null
+        }
+        Insert: {
+          arquivo_origem?: string | null
+          caso_id: string
+          competencia?: string | null
+          created_at?: string
+          id?: string
+          liquido?: number | null
+          salario_base?: number | null
+          total_descontos?: number | null
+          total_proventos?: number | null
+        }
+        Update: {
+          arquivo_origem?: string | null
+          caso_id?: string
+          competencia?: string | null
+          created_at?: string
+          id?: string
+          liquido?: number | null
+          salario_base?: number | null
+          total_descontos?: number | null
+          total_proventos?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracheques_caso_id_fkey"
+            columns: ["caso_id"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      itens_contracheque: {
+        Row: {
+          codigo: string | null
+          contracheque_id: string
+          created_at: string
+          descricao: string | null
+          familia_hra: string | null
+          id: string
+          tipo: string | null
+          valor: number | null
+        }
+        Insert: {
+          codigo?: string | null
+          contracheque_id: string
+          created_at?: string
+          descricao?: string | null
+          familia_hra?: string | null
+          id?: string
+          tipo?: string | null
+          valor?: number | null
+        }
+        Update: {
+          codigo?: string | null
+          contracheque_id?: string
+          created_at?: string
+          descricao?: string | null
+          familia_hra?: string | null
+          id?: string
+          tipo?: string | null
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "itens_contracheque_contracheque_id_fkey"
+            columns: ["contracheque_id"]
+            isOneToOne: false
+            referencedRelation: "contracheques"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       templates: {
         Row: {
           created_at: string
