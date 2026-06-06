@@ -6,13 +6,28 @@ import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+
+const TIPOS_ACAO = [{ id: "ir_sobre_hra", label: "IR sobre HRA (Tema 306)" }];
+const ESCRITORIOS_OPCOES = [
+  { id: "glcm", label: "GLCM" },
+  { id: "polkowski", label: "Polkowski" },
+];
 
 export default function NovoCaso() {
   const nav = useNavigate();
   const [files, setFiles] = useState<File[]>([]);
   const [nomeCliente, setNomeCliente] = useState("");
+  const [tipoAcao, setTipoAcao] = useState("ir_sobre_hra");
+  const [escritorios, setEscritorios] = useState<string[]>(["glcm", "polkowski"]);
+  const [honorarios, setHonorarios] = useState("20");
+  const [numeroPasta, setNumeroPasta] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const toggleEscritorio = (id: string) =>
+    setEscritorios((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]));
 
   const submit = async () => {
     if (files.length === 0) {
@@ -23,7 +38,15 @@ export default function NovoCaso() {
     try {
       const { data: caso, error } = await supabase
         .from("casos")
-        .insert({ status: "novo", origem: "manual", nome_cliente: nomeCliente || null })
+        .insert({
+          status: "novo",
+          origem: "manual",
+          nome_cliente: nomeCliente || null,
+          tipo_acao: tipoAcao,
+          escritorios,
+          honorarios_pct: honorarios ? Number(honorarios) : null,
+          numero_pasta: numeroPasta || null,
+        })
         .select()
         .single();
       if (error) throw error;
@@ -78,6 +101,39 @@ export default function NovoCaso() {
           <div className="space-y-2">
             <Label htmlFor="nome">Nome do cliente (opcional)</Label>
             <Input id="nome" value={nomeCliente} onChange={(e) => setNomeCliente(e.target.value)} placeholder="Será preenchido automaticamente" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Tipo de ação</Label>
+              <Select value={tipoAcao} onValueChange={setTipoAcao}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TIPOS_ACAO.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pasta">Número da pasta</Label>
+              <Input id="pasta" value={numeroPasta} onChange={(e) => setNumeroPasta(e.target.value)} placeholder="ex: 2026/0123" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hon">Honorários (%)</Label>
+              <Input id="hon" type="number" min="0" max="100" value={honorarios} onChange={(e) => setHonorarios(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Escritórios</Label>
+              <div className="flex items-center gap-4 pt-2">
+                {ESCRITORIOS_OPCOES.map((es) => (
+                  <label key={es.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox checked={escritorios.includes(es.id)} onCheckedChange={() => toggleEscritorio(es.id)} />
+                    {es.label}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="space-y-2">
