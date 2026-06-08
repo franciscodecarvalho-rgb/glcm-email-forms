@@ -35,6 +35,35 @@ Deno.serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
 
+    // Processa em background para evitar WORKER_RESOURCE_LIMIT (limite de CPU ~2s).
+    // O cliente acompanha o progresso via status do caso.
+    // @ts-ignore EdgeRuntime global
+    EdgeRuntime.waitUntil(
+      processarCaso(supabase, casoId, LOVABLE_API_KEY).catch(async (e: unknown) => {
+        const msg = e instanceof Error ? e.message : "Erro";
+        console.error("extract-case-data bg error:", msg);
+        await supabase.from("casos").update({ erro_processamento: msg }).eq("id", casoId);
+      }),
+    );
+
+    return new Response(JSON.stringify({ ok: true, status: "processing" }), {
+      status: 202,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Erro";
+    console.error("extract-case-data error:", msg);
+    if (casoId) {
+      await supabase.from("casos").update({ erro_processamento: msg }).eq("id", casoId);
+    }
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: string) {
     const { data: arquivos, error: aErr } = await supabase
       .from("arquivos")
       .select("*")
