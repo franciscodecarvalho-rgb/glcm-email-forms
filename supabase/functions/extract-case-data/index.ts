@@ -6,10 +6,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `Você é um assistente jurídico que extrai dados de documentos brasileiros (RG, CPF, comprovante de residência e contracheques).
-Para cada documento de identidade ou comprovante: extraia nome, CPF, RG e endereço completo.
-Para cada contracheque: identifique TODAS as linhas que contenham os códigos "HRA" ou "AHRA" e some os respectivos valores numéricos por contracheque.
-Retorne sempre via tool call.`;
+const SYSTEM_PROMPT = `Você é um assistente jurídico que extrai dados de documentos brasileiros (RG, CNH, CPF, comprovante de residência e contracheques) para uma ação de restituição de IR sobre HRA.
+
+DADOS PESSOAIS (do RG/CNH/CPF e do comprovante): nome completo, CPF, RG e endereço completo. Se constar, capture também nacionalidade, estado civil e profissão (em geral NÃO constam nesses documentos — deixe em branco se não aparecerem).
+
+EMPREGADOR(ES): do cabeçalho dos contracheques, capture a razão social e o CNPJ de cada empresa empregadora (deduplique).
+
+CONTRACHEQUES — rubricas HRA (a parte mais importante): para CADA contracheque, identifique TODAS as linhas de PROVENTO cuja DESCRIÇÃO indique Hora de Repouso e Alimentação, em qualquer variação ou erro de OCR. NÃO se baseie no código numérico — baseie-se na descrição conter "HRA"/"AHRA". Exemplos que CONTAM: "Adicional HRA", "Adic HRA Eventual", "AHRA", "AHRA/Dobra de Turno", "Dif AHRA Dobra", "Dif Adicional HRA", "HRA", e grafias com ruído ("AdiconalHRA", "Dobra de Tumo", "Adicionál HRA").
+EXCLUA: linhas de DESCONTO (ex: "Desc. Adicional HRA") e variantes marcadas como "Sem IR", "s/IRRF" ou "SEM IRRF" (não houve retenção nessas).
+Para cada contracheque, some: valor_hra = soma das rubricas do tipo "Adicional HRA"; valor_ahra = soma das demais rubricas HRA/AHRA (AHRA, Dobra de Turno, diferenças, HRA avulso). Use a competência (mês/ano) como identificação.
+
+Retorne SEMPRE via tool call.`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -82,14 +89,34 @@ Deno.serve(async (req) => {
                   cep: { type: "string" },
                 },
               },
+              qualificacao: {
+                type: "object",
+                description: "Qualificação do cliente, se constar (geralmente ausente nos documentos).",
+                properties: {
+                  nacionalidade: { type: "string" },
+                  estado_civil: { type: "string" },
+                  profissao: { type: "string" },
+                },
+              },
+              empregadores: {
+                type: "array",
+                description: "Empresas empregadoras, do cabeçalho dos contracheques (deduplicadas).",
+                items: {
+                  type: "object",
+                  properties: {
+                    razao_social: { type: "string" },
+                    cnpj: { type: "string" },
+                  },
+                },
+              },
               contracheques: {
                 type: "array",
                 items: {
                   type: "object",
                   properties: {
-                    label: { type: "string", description: "Identificação ex: 'Contracheque 01/2024'" },
-                    valor_hra: { type: "number", description: "Soma dos valores de linhas com código HRA" },
-                    valor_ahra: { type: "number", description: "Soma dos valores de linhas com código AHRA" },
+                    label: { type: "string", description: "Competência (mês/ano), ex: '07/2024'" },
+                    valor_hra: { type: "number", description: "Soma das rubricas de PROVENTO 'Adicional HRA' (pela descrição, não pelo código). Exclui descontos e variantes 'Sem IR'." },
+                    valor_ahra: { type: "number", description: "Soma das demais rubricas HRA/AHRA de PROVENTO (AHRA, Dobra de Turno, Dif AHRA/Dobra, HRA avulso). Exclui descontos e variantes 'Sem IR'." },
                   },
                   required: ["label", "valor_hra", "valor_ahra"],
                 },
@@ -139,6 +166,9 @@ Deno.serve(async (req) => {
       valor_ahra: Number(c.valor_ahra) || 0,
     }));
 
+    const qualificacao = extracted.qualificacao ?? null;
+    const empregadores = Array.isArray(extracted.empregadores) ? extracted.empregadores : [];
+
     await supabase
       .from("casos")
       .update({
@@ -147,6 +177,8 @@ Deno.serve(async (req) => {
         cpf: extracted.cpf ?? null,
         rg: extracted.rg ?? null,
         endereco: extracted.endereco ?? null,
+        qualificacao,
+        empregadores,
         contracheques: contras,
         erro_processamento: null,
       })
