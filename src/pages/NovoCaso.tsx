@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { safeStorageName } from "@/lib/storage";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,7 +53,7 @@ export default function NovoCaso() {
       if (error) throw error;
 
       for (const f of files) {
-        const path = `${caso.id}/${crypto.randomUUID()}-${f.name}`;
+        const path = `${caso.id}/${crypto.randomUUID()}-${safeStorageName(f.name)}`;
         const { error: upErr } = await supabase.storage.from("casos-arquivos").upload(path, f, {
           contentType: f.type || "application/octet-stream",
         });
