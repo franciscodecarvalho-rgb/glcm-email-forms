@@ -217,5 +217,6 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
         erro_processamento: null,
       })
       .eq("id", casoId);
+    console.timeEnd("total");
 }
 
