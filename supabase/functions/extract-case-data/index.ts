@@ -12,7 +12,7 @@ const corsHeaders = {
 };
 
 const TAMANHO_LOTE = 8; // arquivos por chamada de IA
-const CONCORRENCIA = 5; // lotes processados em paralelo
+const CONCORRENCIA = 2; // lotes em paralelo (conservador, evita saturação/rate limit)
 
 // Pro (não Flash): no teste A/B o Flash subcontou rubricas HRA (-22%).
 const MODELO = "google/gemini-2.5-pro";
@@ -188,6 +188,14 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
     valor_ahra: Number(c.valor_ahra) || 0,
   }));
 
+  // Guarda de segurança: muitos arquivos mas 0 contracheques = extração falhou.
+  // Errar alto (e permitir reprocessar) é melhor que salvar um valor zerado/errado.
+  if (arquivos.length >= 5 && contras.length === 0) {
+    throw new Error(
+      `Extração retornou 0 contracheques para ${arquivos.length} arquivos — provável falha. Clique em "Tentar novamente".`,
+    );
+  }
+
   await supabase
     .from("casos")
     .update({
@@ -205,65 +213,72 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
   console.timeEnd("total");
 }
 
-// Processa um lote de arquivos numa única chamada à IA.
-async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string): Promise<any | null> {
-  const content: any[] = [
-    { type: "text", text: "Analise os documentos a seguir e extraia os dados estruturados via tool call." },
-  ];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  const parts = await Promise.all(
-    lote.map(async (arq: any) => {
-      const { data: blob, error: dlErr } = await supabase.storage
-        .from("casos-arquivos")
-        .download(arq.storage_path);
-      if (dlErr || !blob) return null;
+// Baixa um arquivo do Storage como parte image_url (com 1 retry).
+async function baixarParte(supabase: any, arq: any): Promise<any | null> {
+  for (let t = 0; t < 2; t++) {
+    const { data: blob, error } = await supabase.storage
+      .from("casos-arquivos")
+      .download(arq.storage_path);
+    if (!error && blob) {
       const buf = new Uint8Array(await blob.arrayBuffer());
       let b64 = "";
       const ch = 0x8000;
-      for (let i = 0; i < buf.length; i += ch) {
-        b64 += String.fromCharCode(...buf.subarray(i, i + ch));
-      }
+      for (let i = 0; i < buf.length; i += ch) b64 += String.fromCharCode(...buf.subarray(i, i + ch));
       b64 = btoa(b64);
       const mime = arq.mime_type || "image/jpeg";
       return { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } };
-    }),
-  );
-  for (const p of parts) if (p) content.push(p);
-  if (content.length === 1) return null; // nenhum arquivo baixado
-
-  const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODELO,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content },
-      ],
-      tools: TOOLS,
-      tool_choice: { type: "function", function: { name: "registrar_dados_caso" } },
-    }),
-  });
-
-  if (!aiResp.ok) {
-    const txt = await aiResp.text();
-    console.error("AI error", aiResp.status, txt);
-    if (aiResp.status === 429) throw new Error("Limite de uso de IA excedido. Tente novamente em alguns minutos.");
-    if (aiResp.status === 402) throw new Error("Créditos de IA esgotados. Adicione créditos no workspace.");
-    throw new Error(`Falha na IA (${aiResp.status})`);
+    }
+    await sleep(400);
   }
+  return null;
+}
 
-  const aiJson = await aiResp.json();
-  const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-  if (!call) return null;
-  try {
-    return JSON.parse(call.function.arguments);
-  } catch {
-    return null;
+// Processa um lote numa chamada à IA, com até 3 tentativas. LANÇA erro em falha
+// persistente (em vez de retornar vazio em silêncio) — assim nunca produz um
+// R$ 0 enganoso: o caso vai para "erro" e o usuário reprocessa.
+async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string): Promise<any> {
+  let ultimoErro = "desconhecido";
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const content: any[] = [
+        { type: "text", text: "Analise os documentos a seguir e extraia os dados estruturados via tool call." },
+      ];
+      const partes = await Promise.all(lote.map((arq: any) => baixarParte(supabase, arq)));
+      for (const p of partes) if (p) content.push(p);
+      if (content.length === 1) throw new Error("nenhum arquivo do lote pôde ser baixado");
+
+      const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: MODELO,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content },
+          ],
+          tools: TOOLS,
+          tool_choice: { type: "function", function: { name: "registrar_dados_caso" } },
+        }),
+      });
+      if (aiResp.status === 402) throw new Error("Créditos de IA esgotados. Adicione créditos no workspace.");
+      if (!aiResp.ok) {
+        const txt = await aiResp.text().catch(() => "");
+        throw new Error(`IA ${aiResp.status}: ${txt.slice(0, 160)}`);
+      }
+      const aiJson = await aiResp.json();
+      const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
+      if (!call) throw new Error("IA não retornou tool call");
+      return JSON.parse(call.function.arguments);
+    } catch (e) {
+      ultimoErro = e instanceof Error ? e.message : String(e);
+      console.error(`processarLote tentativa ${tentativa}:`, ultimoErro);
+      if (ultimoErro.includes("Créditos")) throw e; // não adianta repetir
+      await sleep(800 * tentativa);
+    }
   }
+  throw new Error(`Lote falhou após 3 tentativas: ${ultimoErro}`);
 }
 
 // Junta os resultados parciais dos lotes num único conjunto.
