@@ -161,6 +161,7 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
       },
     ];
 
+    console.time("ai-call");
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -168,7 +169,7 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content },
@@ -177,6 +178,7 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
         tool_choice: { type: "function", function: { name: "registrar_dados_caso" } },
       }),
     });
+    console.timeEnd("ai-call");
 
     if (!aiResp.ok) {
       const txt = await aiResp.text();
