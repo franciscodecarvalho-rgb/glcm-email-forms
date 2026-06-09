@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, Circle } from "lucide-react";
 import type { CasoData } from "@/pages/Caso";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,27 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
 
   const isError = !!caso.erro_processamento;
 
+  // Busca arquivos e faz polling do progresso (coluna processado) enquanto analisa.
   useEffect(() => {
-    supabase.from("arquivos").select("*").eq("caso_id", caso.id).then(({ data }) => setArquivos(data ?? []));
-  }, [caso.id]);
+    let ativo = true;
+    const buscar = () =>
+      supabase
+        .from("arquivos")
+        .select("*")
+        .eq("caso_id", caso.id)
+        .then(({ data }) => {
+          if (ativo) setArquivos(data ?? []);
+        });
+    buscar();
+    if (isError) return () => { ativo = false; };
+    const t = setInterval(buscar, 2500);
+    return () => {
+      ativo = false;
+      clearInterval(t);
+    };
+  }, [caso.id, isError]);
 
-  // Cronômetro de "tempo processando" — alívio honesto enquanto a IA roda.
+  // Cronômetro de "tempo processando".
   useEffect(() => {
     if (isError) return;
     const t = setInterval(() => setSegundos((s) => s + 1), 1000);
@@ -33,6 +49,10 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
     setRetrying(false);
     if (error) toast.error("Falha ao reprocessar");
   };
+
+  const total = arquivos.length;
+  const processados = arquivos.filter((a) => a.processado).length;
+  const pct = total ? Math.round((processados / total) * 100) : 0;
 
   return (
     <div className="rounded-lg border bg-card p-8">
@@ -49,17 +69,18 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
           <>
             <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-primary" />
             <p className="text-lg font-medium">Analisando documentos com IA…</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Extraindo dados pessoais e contracheques de {arquivos.length} arquivo(s).
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">Extraindo dados pessoais e contracheques.</p>
 
             <div className="mx-auto mt-5 max-w-sm">
               <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div className="h-full w-full animate-pulse rounded-full bg-primary" />
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-500"
+                  style={{ width: `${Math.max(pct, 3)}%` }}
+                />
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Processando há <span className="font-mono font-medium">{fmtTempo(segundos)}</span>
-                {arquivos.length > 30 && " · muitos contracheques podem levar alguns minutos"}
+                <span className="font-medium">{processados} de {total}</span> processados ({pct}%) · há{" "}
+                <span className="font-mono">{fmtTempo(segundos)}</span>
               </p>
             </div>
           </>
@@ -67,12 +88,19 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
       </div>
 
       <div className="mt-6">
-        <h3 className="mb-2 text-sm font-semibold">Arquivos enviados ({arquivos.length})</h3>
+        <h3 className="mb-2 text-sm font-semibold">Arquivos ({total})</h3>
         <ul className="space-y-1 text-sm">
           {arquivos.map((a) => (
             <li key={a.id} className="flex items-center justify-between rounded border bg-muted/40 px-3 py-2">
-              <span className="truncate">{a.nome}</span>
-              <span className="text-xs text-muted-foreground">{a.mime_type ?? ""}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                {a.processado ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-status-concluido" />
+                ) : (
+                  <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                )}
+                <span className="truncate">{a.nome}</span>
+              </span>
+              <span className="ml-2 shrink-0 text-xs text-muted-foreground">{a.mime_type ?? ""}</span>
             </li>
           ))}
         </ul>
