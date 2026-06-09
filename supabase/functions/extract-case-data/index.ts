@@ -169,7 +169,9 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        // Pro (não Flash): no teste A/B do mesmo cliente, o Flash subcontou as
+        // rubricas HRA (valor da causa caiu ~22%). Precisão > velocidade aqui.
+        model: "google/gemini-2.5-pro",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content },
