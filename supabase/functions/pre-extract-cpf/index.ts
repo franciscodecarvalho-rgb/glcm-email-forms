@@ -175,8 +175,12 @@ Deno.serve(async (req) => {
       },
     }];
 
+    console.time("[pre-extract-cpf] ai-call");
+    const aiAbort = new AbortController();
+    const aiTimer = setTimeout(() => aiAbort.abort(), 90_000);
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
+      signal: aiAbort.signal,
       headers: {
         "Authorization": `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
@@ -190,7 +194,8 @@ Deno.serve(async (req) => {
         tools,
         tool_choice: { type: "function", function: { name: "registrar_cpf_nome" } },
       }),
-    });
+    }).finally(() => clearTimeout(aiTimer));
+    console.timeEnd("[pre-extract-cpf] ai-call");
 
     if (!aiResp.ok) {
       const txt = await aiResp.text().catch(() => "");
