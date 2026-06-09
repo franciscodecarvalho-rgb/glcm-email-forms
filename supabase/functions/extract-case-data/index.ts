@@ -64,6 +64,7 @@ Deno.serve(async (req) => {
 });
 
 async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: string) {
+    console.time("total");
     const { data: arquivos, error: aErr } = await supabase
       .from("arquivos")
       .select("*")
@@ -76,24 +77,26 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
       { type: "text", text: "Analise os documentos a seguir e extraia os dados estruturados via tool call." },
     ];
 
-    for (const arq of arquivos) {
-      const { data: blob, error: dlErr } = await supabase.storage
-        .from("casos-arquivos")
-        .download(arq.storage_path);
-      if (dlErr || !blob) continue;
-      const buf = new Uint8Array(await blob.arrayBuffer());
-      let b64 = "";
-      const chunk = 0x8000;
-      for (let i = 0; i < buf.length; i += chunk) {
-        b64 += String.fromCharCode(...buf.subarray(i, i + chunk));
-      }
-      b64 = btoa(b64);
-      const mime = arq.mime_type || "image/jpeg";
-      content.push({
-        type: "image_url",
-        image_url: { url: `data:${mime};base64,${b64}` },
-      });
-    }
+    console.time("download+encode");
+    const parts = await Promise.all(
+      arquivos.map(async (arq: any) => {
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from("casos-arquivos")
+          .download(arq.storage_path);
+        if (dlErr || !blob) return null;
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        let b64 = "";
+        const chunk = 0x8000;
+        for (let i = 0; i < buf.length; i += chunk) {
+          b64 += String.fromCharCode(...buf.subarray(i, i + chunk));
+        }
+        b64 = btoa(b64);
+        const mime = arq.mime_type || "image/jpeg";
+        return { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } };
+      }),
+    );
+    for (const p of parts) if (p) content.push(p);
+    console.timeEnd("download+encode");
 
     const tools = [
       {
