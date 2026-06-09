@@ -225,7 +225,8 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      // Pro (não Flash): o Flash subcontou rubricas HRA no teste A/B (-22%).
+      model: "google/gemini-2.5-pro",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content },
