@@ -130,24 +130,29 @@ Deno.serve(async (req) => {
       return json({ acao: "isolado", motivo: "sem_arquivos" });
     }
 
-    // Monta conteúdo multimodal
+    // Monta conteúdo multimodal (download + encode em paralelo)
     const content: any[] = [
       { type: "text", text: "Identifique CPF e nome do titular nos documentos a seguir." },
     ];
-    for (const arq of arquivos) {
-      const { data: blob, error: dlErr } = await supabase.storage
-        .from("casos-arquivos").download(arq.storage_path);
-      if (dlErr || !blob) { console.warn(`[pre-extract-cpf] falha download ${arq.storage_path}`); continue; }
-      const buf = new Uint8Array(await blob.arrayBuffer());
-      let bin = "";
-      const chunk = 0x8000;
-      for (let i = 0; i < buf.length; i += chunk) bin += String.fromCharCode(...buf.subarray(i, i + chunk));
-      const b64 = btoa(bin);
-      const mime = arq.mime_type || "image/jpeg";
-      // PDFs não são suportados como image_url pelo Gemini Flash Lite; pula
-      if (mime === "application/pdf") continue;
-      content.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
-    }
+    console.time("[pre-extract-cpf] download+encode");
+    const parts = await Promise.all(
+      arquivos.map(async (arq: any) => {
+        const mime = arq.mime_type || "image/jpeg";
+        // PDFs não são suportados como image_url pelo Gemini Flash Lite; pula
+        if (mime === "application/pdf") return null;
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from("casos-arquivos").download(arq.storage_path);
+        if (dlErr || !blob) { console.warn(`[pre-extract-cpf] falha download ${arq.storage_path}`); return null; }
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        let bin = "";
+        const chunk = 0x8000;
+        for (let i = 0; i < buf.length; i += chunk) bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+        const b64 = btoa(bin);
+        return { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } };
+      }),
+    );
+    for (const p of parts) if (p) content.push(p);
+    console.timeEnd("[pre-extract-cpf] download+encode");
 
     if (content.length === 1) {
       console.log(`[pre-extract-cpf] sem imagens utilizáveis (só PDFs?), isolado`);
@@ -170,8 +175,12 @@ Deno.serve(async (req) => {
       },
     }];
 
+    console.time("[pre-extract-cpf] ai-call");
+    const aiAbort = new AbortController();
+    const aiTimer = setTimeout(() => aiAbort.abort(), 90_000);
     const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
+      signal: aiAbort.signal,
       headers: {
         "Authorization": `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
@@ -185,7 +194,8 @@ Deno.serve(async (req) => {
         tools,
         tool_choice: { type: "function", function: { name: "registrar_cpf_nome" } },
       }),
-    });
+    }).finally(() => clearTimeout(aiTimer));
+    console.timeEnd("[pre-extract-cpf] ai-call");
 
     if (!aiResp.ok) {
       const txt = await aiResp.text().catch(() => "");
