@@ -5,23 +5,34 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+const fmtTempo = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
 export function TelaProcessando({ caso }: { caso: CasoData }) {
   const [arquivos, setArquivos] = useState<any[]>([]);
   const [retrying, setRetrying] = useState(false);
+  const [segundos, setSegundos] = useState(0);
+
+  const isError = !!caso.erro_processamento;
 
   useEffect(() => {
     supabase.from("arquivos").select("*").eq("caso_id", caso.id).then(({ data }) => setArquivos(data ?? []));
   }, [caso.id]);
 
+  // Cronômetro de "tempo processando" — alívio honesto enquanto a IA roda.
+  useEffect(() => {
+    if (isError) return;
+    const t = setInterval(() => setSegundos((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [isError]);
+
   const retry = async () => {
     setRetrying(true);
+    setSegundos(0);
     await supabase.from("casos").update({ status: "em_analise", erro_processamento: null }).eq("id", caso.id);
     const { error } = await supabase.functions.invoke("extract-case-data", { body: { caso_id: caso.id } });
     setRetrying(false);
     if (error) toast.error("Falha ao reprocessar");
   };
-
-  const isError = !!caso.erro_processamento;
 
   return (
     <div className="rounded-lg border bg-card p-8">
@@ -38,7 +49,19 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
           <>
             <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-primary" />
             <p className="text-lg font-medium">Analisando documentos com IA…</p>
-            <p className="mt-1 text-sm text-muted-foreground">Extraindo dados pessoais e contracheques.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Extraindo dados pessoais e contracheques de {arquivos.length} arquivo(s).
+            </p>
+
+            <div className="mx-auto mt-5 max-w-sm">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div className="h-full w-full animate-pulse rounded-full bg-primary" />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Processando há <span className="font-mono font-medium">{fmtTempo(segundos)}</span>
+                {arquivos.length > 30 && " · muitos contracheques podem levar alguns minutos"}
+              </p>
+            </div>
           </>
         )}
       </div>
