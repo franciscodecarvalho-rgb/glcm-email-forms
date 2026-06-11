@@ -36,8 +36,12 @@ export const STATUS_ORDER: CasoStatus[] = [
 export const TEMPLATE_TIPOS = [
   { id: "peticao", label: "Petição Inicial" },
   { id: "contrato", label: "Contrato" },
-  { id: "procuracao", label: "Procuração" },
-  { id: "termo", label: "Termo" },
+  { id: "procuracao_glcm", label: "Procuração — GLCM" },
+  { id: "procuracao_polkowski", label: "Procuração — Polkowski" },
+  { id: "termo_lgpd_glcm", label: "Termo LGPD — GLCM" },
+  { id: "termo_lgpd_polkowski", label: "Termo LGPD — Polkowski" },
+  { id: "termo_renuncia", label: "Termo de Renúncia" },
+  { id: "planilha", label: "Planilha de Cálculo" },
 ] as const;
 
 export type TemplateTipo = (typeof TEMPLATE_TIPOS)[number]["id"];
