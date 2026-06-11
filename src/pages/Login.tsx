@@ -7,7 +7,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 const schema = z.object({
@@ -15,6 +14,7 @@ const schema = z.object({
   password: z.string().min(6, "Mínimo 6 caracteres").max(72),
 });
 
+// Sem auto-cadastro: contas são criadas pelo administrador na área Usuários.
 export default function Login() {
   const { user } = useAuth();
   const nav = useNavigate();
@@ -24,7 +24,7 @@ export default function Login() {
 
   useEffect(() => { if (user) nav("/", { replace: true }); }, [user, nav]);
 
-  const handle = async (mode: "login" | "signup") => {
+  const entrar = async () => {
     const parsed = schema.safeParse({ email, password });
     if (!parsed.success) {
       toast.error(parsed.error.errors[0].message);
@@ -32,19 +32,9 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        toast.success("Login realizado");
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}/` },
-        });
-        if (error) throw error;
-        toast.success("Conta criada. Você já pode entrar.");
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      toast.success("Login realizado");
     } catch (e: any) {
       toast.error(e.message ?? "Falha na autenticação");
     } finally {
@@ -64,27 +54,25 @@ export default function Login() {
             <p className="text-sm text-muted-foreground">Acesse o painel de casos</p>
           </div>
         </div>
-        <Tabs defaultValue="login">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="login">Entrar</TabsTrigger>
-            <TabsTrigger value="signup">Criar conta</TabsTrigger>
-          </TabsList>
-          {(["login", "signup"] as const).map((mode) => (
-            <TabsContent key={mode} value={mode} className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label htmlFor={`${mode}-email`}>Email</Label>
-                <Input id={`${mode}-email`} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={`${mode}-pwd`}>Senha</Label>
-                <Input id={`${mode}-pwd`} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} />
-              </div>
-              <Button className="w-full" disabled={loading} onClick={() => handle(mode)}>
-                {loading ? "Aguarde…" : mode === "login" ? "Entrar" : "Criar conta"}
-              </Button>
-            </TabsContent>
-          ))}
-        </Tabs>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => { e.preventDefault(); entrar(); }}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="pwd">Senha</Label>
+            <Input id="pwd" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Aguarde…" : "Entrar"}
+          </Button>
+        </form>
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Não tem acesso? Solicite ao administrador do escritório.
+        </p>
       </div>
     </div>
   );
