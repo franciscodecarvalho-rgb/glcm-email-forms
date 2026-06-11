@@ -1,9 +1,12 @@
 // Extrai dados dos arquivos do caso usando Lovable AI (Gemini com visão).
-// Processa em LOTES PARALELOS: divide os arquivos em lotes pequenos e roda
-// vários em paralelo (pool com limite). Ao terminar cada lote, marca os
-// arquivos como processado=true — isso alimenta a barra de progresso e os
-// checks por arquivo, e deixa cada chamada menor (rápido E sem estourar o
-// limite de tempo da Edge Function que o single-call de 166 arquivos batia).
+//
+// Modelo RESUMÍVEL com memória por lote (tabela lotes_extracao):
+// - Os arquivos são divididos em lotes de 10; cada lote vira uma chamada à IA
+//   (gemini-2.5-pro) e SALVA seu resultado no banco ao terminar.
+// - Uma falha custa 1 lote, não o caso: "Tentar novamente" reprocessa SÓ os
+//   lotes pendentes/com erro — o que já deu certo nunca se perde.
+// - Falha nunca é silenciosa: lote sem resultado fica status='erro' e o caso
+//   ganha erro_processamento (em vez de salvar um valor zerado).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -11,8 +14,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const TAMANHO_LOTE = 8; // arquivos por chamada de IA
-const CONCORRENCIA = 2; // lotes em paralelo (conservador, evita saturação/rate limit)
+const TAMANHO_LOTE = 10; // arquivos por chamada de IA
+const CONCORRENCIA = 2; // lotes processados em paralelo (conservador)
 
 // Pro (não Flash): no teste A/B o Flash subcontou rubricas HRA (-22%).
 const MODELO = "google/gemini-2.5-pro";
@@ -110,7 +113,7 @@ Deno.serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
 
     // Processa em background (foge do limite de CPU). O cliente acompanha pelo
-    // status do caso e pela coluna arquivos.processado (barra/checks).
+    // status do caso e pelas tabelas lotes_extracao/arquivos.
     // @ts-ignore EdgeRuntime global
     EdgeRuntime.waitUntil(
       processarCaso(supabase, casoId, LOVABLE_API_KEY).catch(async (e: unknown) => {
@@ -143,43 +146,94 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: string) {
   console.time("total");
+
   const { data: arquivos, error: aErr } = await supabase
     .from("arquivos")
     .select("*")
     .eq("caso_id", casoId);
   if (aErr) throw aErr;
   if (!arquivos || arquivos.length === 0) throw new Error("Nenhum arquivo no caso");
+  const porId = new Map(arquivos.map((a: any) => [a.id, a]));
 
-  // Zera o progresso (importante em reprocessamento).
-  await supabase.from("arquivos").update({ processado: false }).eq("caso_id", casoId);
+  // 1) Garante o plano de lotes (cria na primeira execução; reusa nas seguintes).
+  let { data: lotes } = await supabase
+    .from("lotes_extracao")
+    .select("*")
+    .eq("caso_id", casoId)
+    .order("ordem");
 
-  const lotes = chunk(arquivos, TAMANHO_LOTE);
-  const resultados: any[] = [];
+  if (!lotes || lotes.length === 0) {
+    const grupos = chunk(arquivos, TAMANHO_LOTE);
+    const inserts = grupos.map((g, i) => ({
+      caso_id: casoId,
+      ordem: i,
+      arquivo_ids: g.map((a: any) => a.id),
+      status: "pendente",
+    }));
+    const { data: criados, error: insErr } = await supabase
+      .from("lotes_extracao")
+      .insert(inserts)
+      .select("*");
+    if (insErr) throw insErr;
+    lotes = (criados ?? []).sort((a: any, b: any) => a.ordem - b.ordem);
+    await supabase.from("arquivos").update({ processado: false }).eq("caso_id", casoId);
+  }
 
-  // Pool: até CONCORRENCIA lotes em paralelo. Workers puxam de um índice comum.
+  // 2) Processa SÓ o que falta (resume): pendente, erro, ou processando órfão.
+  const pendentes = lotes.filter((l: any) => l.status !== "concluido");
+  console.log(`lotes: ${lotes.length} total, ${pendentes.length} a processar`);
+
   let proximo = 0;
   async function worker() {
     while (true) {
       const i = proximo++;
-      if (i >= lotes.length) break;
-      const lote = lotes[i];
-      console.time(`lote-${i}`);
-      const parcial = await processarLote(supabase, lote, LOVABLE_API_KEY);
-      if (parcial) resultados.push(parcial);
+      if (i >= pendentes.length) break;
+      const lote = pendentes[i];
       await supabase
-        .from("arquivos")
-        .update({ processado: true })
-        .in("id", lote.map((a: any) => a.id));
-      console.timeEnd(`lote-${i}`);
+        .from("lotes_extracao")
+        .update({ status: "processando", erro: null, atualizado_em: new Date().toISOString() })
+        .eq("id", lote.id);
+      try {
+        const arqs = lote.arquivo_ids.map((id: string) => porId.get(id)).filter(Boolean);
+        const resultado = await processarLote(supabase, arqs, LOVABLE_API_KEY);
+        await supabase
+          .from("lotes_extracao")
+          .update({ status: "concluido", resultado, erro: null, atualizado_em: new Date().toISOString() })
+          .eq("id", lote.id);
+        await supabase.from("arquivos").update({ processado: true }).in("id", lote.arquivo_ids);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`lote ${lote.ordem} falhou:`, msg);
+        await supabase
+          .from("lotes_extracao")
+          .update({ status: "erro", erro: msg, atualizado_em: new Date().toISOString() })
+          .eq("id", lote.id);
+      }
     }
   }
   await Promise.all(
-    Array.from({ length: Math.min(CONCORRENCIA, lotes.length) }, () => worker()),
+    Array.from({ length: Math.min(CONCORRENCIA, Math.max(pendentes.length, 1)) }, () => worker()),
   );
 
-  const dados = mesclarResultados(resultados);
+  // 3) Releitura do estado final dos lotes.
+  const { data: finais } = await supabase
+    .from("lotes_extracao")
+    .select("*")
+    .eq("caso_id", casoId)
+    .order("ordem");
+  const comErro = (finais ?? []).filter((l: any) => l.status !== "concluido");
+  if (comErro.length > 0) {
+    throw new Error(
+      `${comErro.length} de ${finais.length} lote(s) falharam. Clique em "Tentar novamente" — só os lotes pendentes serão reprocessados.`,
+    );
+  }
+
+  // 4) Tudo concluído: mescla os resultados salvos e finaliza o caso.
+  const dados = mesclarResultados((finais ?? []).map((l: any) => l.resultado).filter(Boolean));
 
   const contras = (dados.contracheques ?? []).map((c: any, i: number) => ({
     id: crypto.randomUUID(),
@@ -188,8 +242,7 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
     valor_ahra: Number(c.valor_ahra) || 0,
   }));
 
-  // Guarda de segurança: muitos arquivos mas 0 contracheques = extração falhou.
-  // Errar alto (e permitir reprocessar) é melhor que salvar um valor zerado/errado.
+  // Guarda: muitos arquivos e 0 contracheques = algo errado; não salvar R$ 0.
   if (arquivos.length >= 5 && contras.length === 0) {
     throw new Error(
       `Extração retornou 0 contracheques para ${arquivos.length} arquivos — provável falha. Clique em "Tentar novamente".`,
@@ -213,8 +266,6 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
   console.timeEnd("total");
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 // Baixa um arquivo do Storage como parte image_url (com 1 retry).
 async function baixarParte(supabase: any, arq: any): Promise<any | null> {
   for (let t = 0; t < 2; t++) {
@@ -236,8 +287,7 @@ async function baixarParte(supabase: any, arq: any): Promise<any | null> {
 }
 
 // Processa um lote numa chamada à IA, com até 3 tentativas. LANÇA erro em falha
-// persistente (em vez de retornar vazio em silêncio) — assim nunca produz um
-// R$ 0 enganoso: o caso vai para "erro" e o usuário reprocessa.
+// persistente (nunca retorna vazio em silêncio).
 async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string): Promise<any> {
   let ultimoErro = "desconhecido";
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
@@ -247,7 +297,9 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
       ];
       const partes = await Promise.all(lote.map((arq: any) => baixarParte(supabase, arq)));
       for (const p of partes) if (p) content.push(p);
-      if (content.length === 1) throw new Error("nenhum arquivo do lote pôde ser baixado");
+      if (content.length - 1 < lote.length) {
+        throw new Error(`só ${content.length - 1}/${lote.length} arquivos do lote baixaram`);
+      }
 
       const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
