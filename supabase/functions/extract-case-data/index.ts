@@ -26,9 +26,11 @@ DADOS PESSOAIS (do RG/CNH/CPF e do comprovante): nome completo, CPF, RG e endere
 
 EMPREGADOR(ES): do cabeçalho dos contracheques, capture a razão social e o CNPJ de cada empresa empregadora (deduplique).
 
-CONTRACHEQUES — rubricas HRA (a parte mais importante): para CADA contracheque, identifique TODAS as linhas de PROVENTO cuja DESCRIÇÃO indique Hora de Repouso e Alimentação, em qualquer variação ou erro de OCR. NÃO se baseie no código numérico — baseie-se na descrição conter "HRA"/"AHRA". Exemplos que CONTAM: "Adicional HRA", "Adic HRA Eventual", "AHRA", "AHRA/Dobra de Turno", "Dif AHRA Dobra", "Dif Adicional HRA", "HRA", e grafias com ruído ("AdiconalHRA", "Dobra de Tumo", "Adicionál HRA").
-EXCLUA: linhas de DESCONTO (ex: "Desc. Adicional HRA") e variantes marcadas como "Sem IR", "s/IRRF" ou "SEM IRRF" (não houve retenção nessas).
-Para cada contracheque, some: valor_hra = soma das rubricas do tipo "Adicional HRA"; valor_ahra = soma das demais rubricas HRA/AHRA (AHRA, Dobra de Turno, diferenças, HRA avulso). Use a competência (mês/ano) como identificação.
+CONTRACHEQUES — para CADA contracheque:
+1. TRANSCREVA TODAS as linhas da folha em itens[]: código, descrição, valor e tipo ("provento" ou "desconto") — salário, adicionais, HRA, INSS, IR, empréstimos, planos, TUDO, na ordem em que aparecem. Não pule linha nenhuma.
+2. Capture também: salario_base, total_proventos, total_descontos e liquido (quando visíveis).
+3. Rubricas HRA (a parte mais importante do cálculo): identifique TODAS as linhas de PROVENTO cuja DESCRIÇÃO indique Hora de Repouso e Alimentação, em qualquer variação ou erro de OCR. NÃO se baseie no código numérico — baseie-se na descrição conter "HRA"/"AHRA". Exemplos que CONTAM: "Adicional HRA", "Adic HRA Eventual", "AHRA", "AHRA/Dobra de Turno", "Dif AHRA Dobra", "Dif Adicional HRA", "HRA", e grafias com ruído ("AdiconalHRA", "Dobra de Tumo", "Adicionál HRA"). EXCLUA da soma: linhas de DESCONTO (ex: "Desc. Adicional HRA") e variantes "Sem IR"/"s/IRRF"/"SEM IRRF" (sem retenção). Some: valor_hra = rubricas "Adicional HRA"; valor_ahra = demais rubricas HRA/AHRA (AHRA, Dobra de Turno, diferenças, HRA avulso).
+4. Use a competência (mês/ano) como label e informe em "arquivo" o nome do arquivo indicado no texto imediatamente antes de cada documento.
 
 Alguns documentos enviados podem não ser contracheques (ex: identidade, comprovante) — ignore-os para a lista de contracheques. Retorne SEMPRE via tool call.`;
 
@@ -81,10 +83,29 @@ const TOOLS = [
               type: "object",
               properties: {
                 label: { type: "string", description: "Competência (mês/ano), ex: '07/2024'" },
+                arquivo: { type: "string", description: "Nome do arquivo de origem (texto antes do documento)" },
+                salario_base: { type: "number" },
+                total_proventos: { type: "number" },
+                total_descontos: { type: "number" },
+                liquido: { type: "number" },
                 valor_hra: { type: "number", description: "Soma das rubricas de PROVENTO 'Adicional HRA' (pela descrição, não pelo código). Exclui descontos e variantes 'Sem IR'." },
                 valor_ahra: { type: "number", description: "Soma das demais rubricas HRA/AHRA de PROVENTO (AHRA, Dobra de Turno, Dif AHRA/Dobra, HRA avulso). Exclui descontos e variantes 'Sem IR'." },
+                itens: {
+                  type: "array",
+                  description: "TODAS as linhas da folha, na ordem (proventos e descontos).",
+                  items: {
+                    type: "object",
+                    properties: {
+                      codigo: { type: "string" },
+                      descricao: { type: "string" },
+                      valor: { type: "number" },
+                      tipo: { type: "string", description: "'provento' ou 'desconto'" },
+                    },
+                    required: ["descricao", "valor"],
+                  },
+                },
               },
-              required: ["label", "valor_hra", "valor_ahra"],
+              required: ["label", "valor_hra", "valor_ahra", "itens"],
             },
           },
         },
@@ -249,6 +270,10 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
     );
   }
 
+  // Persistência granular: TODA rubrica de TODO contracheque nas tabelas
+  // contracheques/itens_contracheque (decisão: o banco guarda tudo estruturado).
+  await persistirGranular(supabase, casoId, dados.contracheques ?? []);
+
   await supabase
     .from("casos")
     .update({
@@ -296,9 +321,16 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
         { type: "text", text: "Analise os documentos a seguir e extraia os dados estruturados via tool call." },
       ];
       const partes = await Promise.all(lote.map((arq: any) => baixarParte(supabase, arq)));
-      for (const p of partes) if (p) content.push(p);
-      if (content.length - 1 < lote.length) {
-        throw new Error(`só ${content.length - 1}/${lote.length} arquivos do lote baixaram`);
+      let baixados = 0;
+      partes.forEach((p, i) => {
+        if (!p) return;
+        // Nome do arquivo antes de cada documento (rastreabilidade: campo "arquivo").
+        content.push({ type: "text", text: `Arquivo: ${lote[i].nome ?? ""}` });
+        content.push(p);
+        baixados++;
+      });
+      if (baixados < lote.length) {
+        throw new Error(`só ${baixados}/${lote.length} arquivos do lote baixaram`);
       }
 
       const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -331,6 +363,76 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
     }
   }
   throw new Error(`Lote falhou após 3 tentativas: ${ultimoErro}`);
+}
+
+// ---------------- persistência granular (espelho de src/lib/hra-catalog.ts) ----------------
+// Classifica a família HRA pela DESCRIÇÃO (tolerante a OCR). Mantido inline:
+// Edge Functions deste projeto são arquivo único (deploy não maneja _shared).
+function normalizarDesc(s: string): string {
+  return (s ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function classificarFamiliaHra(descricao: string): string | null {
+  const n = normalizarDesc(descricao);
+  if (!/hra/.test(n)) return null;
+  if (/\bdif/.test(n) || /\bdi\b/.test(n)) return "dif_ahra";
+  if (/dobra/.test(n)) return "ahra_dobra";
+  if (/adic/.test(n)) return "adicional_hra";
+  if (/ahra/.test(n)) return "ahra";
+  return "hra";
+}
+
+const numOuNull = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Grava a folha completa: 1 linha por contracheque + 1 linha por rubrica.
+// Idempotente (delete + insert) para suportar reprocessamento.
+async function persistirGranular(supabase: any, casoId: string, contracheques: any[]) {
+  await supabase.from("contracheques").delete().eq("caso_id", casoId);
+  if (!contracheques.length) return;
+
+  const rows = contracheques.map((c: any) => ({
+    caso_id: casoId,
+    competencia: c.label ?? null,
+    salario_base: numOuNull(c.salario_base),
+    total_proventos: numOuNull(c.total_proventos),
+    total_descontos: numOuNull(c.total_descontos),
+    liquido: numOuNull(c.liquido),
+    arquivo_origem: c.arquivo ?? null,
+  }));
+  const { data: inseridos, error: insErr } = await supabase
+    .from("contracheques")
+    .insert(rows)
+    .select("id");
+  if (insErr) throw insErr;
+
+  const itens: any[] = [];
+  contracheques.forEach((c: any, i: number) => {
+    const lista = Array.isArray(c.itens) ? c.itens : [];
+    for (const it of lista) {
+      itens.push({
+        contracheque_id: inseridos[i].id,
+        codigo: it.codigo ?? null,
+        descricao: it.descricao ?? "",
+        valor: Number(it.valor) || 0,
+        tipo: String(it.tipo ?? "").toLowerCase().startsWith("desc") ? "desconto" : "provento",
+        familia_hra: classificarFamiliaHra(it.descricao ?? ""),
+      });
+    }
+  });
+  for (let i = 0; i < itens.length; i += 400) {
+    const { error: itErr } = await supabase.from("itens_contracheque").insert(itens.slice(i, i + 400));
+    if (itErr) throw itErr;
+  }
+  console.log(`granular: ${rows.length} contracheques, ${itens.length} itens`);
 }
 
 // Junta os resultados parciais dos lotes num único conjunto.
