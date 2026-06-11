@@ -5,7 +5,7 @@ import { saveAs } from "file-saver";
 import type { CasoData } from "@/pages/Caso";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { TEMPLATE_TIPOS } from "@/lib/status";
+import { PECA_LABELS } from "@/lib/status";
 import { toast } from "sonner";
 
 type Doc = { tipo: string; storage_path: string; nome: string };
@@ -13,7 +13,7 @@ type Doc = { tipo: string; storage_path: string; nome: string };
 export function TelaDownload({ caso }: { caso: CasoData }) {
   const nav = useNavigate();
   const docs: Doc[] = Array.isArray(caso.documentos_gerados) ? (caso.documentos_gerados as any) : [];
-  const labelOf = (tipo: string) => TEMPLATE_TIPOS.find((t) => t.id === tipo)?.label ?? tipo;
+  const labelOf = (tipo: string) => PECA_LABELS[tipo] ?? tipo;
 
   const downloadOne = async (d: Doc) => {
     const { data, error } = await supabase.storage.from("casos-documentos").download(d.storage_path);
