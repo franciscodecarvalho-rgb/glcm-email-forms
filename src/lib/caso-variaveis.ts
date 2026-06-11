@@ -2,7 +2,7 @@
 // Produz um mapa estável (chaves tipo NOME_CLIENTE) que a geração de documentos
 // usa para preencher as 8 peças. Função pura e testável.
 
-import { valorPorExtenso } from "./valor-extenso";
+import { valorPorExtenso, extensoInteiro } from "./valor-extenso";
 import type { EnderecoCaso, Qualificacao, EscritorioId } from "./caso-tipos";
 
 export type CasoParaDocumento = {
@@ -74,7 +74,13 @@ export function montarVariaveisCaso(
     NUMERO_PASTA: caso.numero_pasta ?? "",
     NUMERO_CONTRATO: caso.numero_contrato ?? "",
     HONORARIOS_PCT: caso.honorarios_pct != null ? String(caso.honorarios_pct) : "",
+    HONORARIOS_EXTENSO: caso.honorarios_pct != null ? extensoInteiro(Math.round(Number(caso.honorarios_pct))) : "",
     VALOR_CAUSA: fmtBRL(valor),
     VALOR_CAUSA_EXTENSO: valorPorExtenso(valor),
+    ANO: String(hoje.getFullYear()),
+    // Endereço da PFN varia por comarca — fica para revisão manual na peça.
+    ENDERECO_PFN: "[preencher endereço da PFN da comarca]",
+    EMAIL_CLIENTE: "",
+    TELEFONE_CLIENTE: "",
   };
 }

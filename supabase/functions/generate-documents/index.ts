@@ -1,15 +1,24 @@
-// Gera os 4 documentos DOCX a partir dos templates usando docxtemplater
+// Gera as peças DOCX do caso a partir dos templates ({VAR}, docxtemplater).
+//
+// Peças por escritório: peticao, contrato, termo_renuncia e planilha sempre;
+// procuracao_glcm/termo_lgpd_glcm só se o caso inclui GLCM; idem Polkowski.
+// A planilha usa loop {#linhas} com uma linha por competência.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import PizZip from "npm:pizzip@3.2.0";
 import Docxtemplater from "npm:docxtemplater@3.68.6";
+import { montarVariaveisCaso, fmtBRL } from "../_shared/variaveis.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const fmtBRL = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const ALIQUOTA = 0.275;
+
+// Peças geradas sempre / por escritório.
+const PECAS_BASE = ["peticao", "contrato", "termo_renuncia", "planilha"];
+const PECAS_GLCM = ["procuracao_glcm", "termo_lgpd_glcm"];
+const PECAS_POLKOWSKI = ["procuracao_polkowski", "termo_lgpd_polkowski"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -30,39 +39,43 @@ Deno.serve(async (req) => {
       .single();
     if (cErr || !caso) throw new Error("Caso não encontrado");
 
-    const { data: templates, error: tErr } = await supabase.from("templates").select("*");
+    // Quais peças este caso recebe (conforme escritórios selecionados).
+    const escritorios: string[] = Array.isArray(caso.escritorios) ? caso.escritorios : [];
+    const tipos = [...PECAS_BASE];
+    if (escritorios.length === 0 || escritorios.includes("glcm")) tipos.push(...PECAS_GLCM);
+    if (escritorios.length === 0 || escritorios.includes("polkowski")) tipos.push(...PECAS_POLKOWSKI);
+
+    const { data: templates, error: tErr } = await supabase
+      .from("templates")
+      .select("*")
+      .in("tipo", tipos);
     if (tErr) throw tErr;
     if (!templates || templates.length === 0) {
       throw new Error("Nenhum template configurado. Acesse /templates para enviar os modelos .docx.");
     }
 
-    const e = caso.endereco ?? {};
-    const enderecoCompleto = [e.logradouro, e.numero, e.bairro, e.cidade, e.estado, e.cep]
-      .filter(Boolean)
-      .join(", ");
-    const contras: any[] = caso.contracheques ?? [];
-    const totHra = contras.reduce((a, c) => a + Number(c.valor_hra || 0), 0);
-    const totAhra = contras.reduce((a, c) => a + Number(c.valor_ahra || 0), 0);
-    const totGeral = totHra + totAhra;
+    // Dados: variáveis do caso + linhas da planilha (uma por competência).
+    const contras: any[] = Array.isArray(caso.contracheques) ? caso.contracheques : [];
+    const linhas = contras.map((c) => {
+      const hra = Number(c.valor_hra) || 0;
+      const ahra = Number(c.valor_ahra) || 0;
+      return {
+        competencia: c.label ?? "",
+        hra: fmtBRL(hra),
+        ahra: fmtBRL(ahra),
+        subtotal: fmtBRL(hra + ahra),
+        ir: fmtBRL((hra + ahra) * ALIQUOTA),
+      };
+    });
+    const totalCalculado = contras.reduce(
+      (s, c) => s + ((Number(c.valor_hra) || 0) + (Number(c.valor_ahra) || 0)) * ALIQUOTA,
+      0,
+    );
+    // valor_causa salvo na revisão; recalcula como fallback.
+    const casoComValor = { ...caso, valor_causa: caso.valor_causa ?? totalCalculado };
+    const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
 
-    const data = {
-      NOME_CLIENTE: caso.nome_cliente ?? "",
-      CPF: caso.cpf ?? "",
-      RG: caso.rg ?? "",
-      ENDERECO_COMPLETO: enderecoCompleto,
-      LOGRADOURO: e.logradouro ?? "",
-      NUMERO: e.numero ?? "",
-      BAIRRO: e.bairro ?? "",
-      CIDADE: e.cidade ?? "",
-      ESTADO: e.estado ?? "",
-      CEP: e.cep ?? "",
-      TOTAL_HRA: fmtBRL(totHra),
-      TOTAL_AHRA: fmtBRL(totAhra),
-      TOTAL_GERAL: fmtBRL(totGeral),
-      NUMERO_PASTA: caso.numero_pasta ?? "",
-      DATA_ATUAL: new Date().toLocaleDateString("pt-BR"),
-    };
-
+    const faltantes = tipos.filter((t) => !templates.some((tp: any) => tp.tipo === t));
     const generated: { tipo: string; storage_path: string; nome: string }[] = [];
 
     for (const tpl of templates) {
@@ -71,6 +84,7 @@ Deno.serve(async (req) => {
         .download(tpl.storage_path);
       if (dlErr || !blob) {
         console.error("Falha ao baixar template", tpl.tipo, dlErr);
+        faltantes.push(tpl.tipo);
         continue;
       }
       const buf = new Uint8Array(await blob.arrayBuffer());
@@ -102,9 +116,10 @@ Deno.serve(async (req) => {
       .update({ documentos_gerados: generated, status: "concluido" })
       .eq("id", caso_id);
 
-    return new Response(JSON.stringify({ ok: true, generated }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: true, generated, faltantes: [...new Set(faltantes)] }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro";
     console.error("generate-documents error:", msg);
