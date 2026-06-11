@@ -7,6 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import PizZip from "npm:pizzip@3.2.0";
 import Docxtemplater from "npm:docxtemplater@3.68.6";
 import { montarVariaveisCaso, fmtBRL } from "../_shared/variaveis.ts";
+import { montarArquivosPlanilhaXlsx } from "../_shared/planilha-xlsx.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,8 +16,9 @@ const corsHeaders = {
 
 const ALIQUOTA = 0.275;
 
-// Peças geradas sempre / por escritório.
-const PECAS_BASE = ["peticao", "contrato", "termo_renuncia", "planilha"];
+// Peças geradas sempre / por escritório. A planilha NÃO usa template:
+// é gerada como .xlsx com fórmulas vivas (ver _shared/planilha-xlsx.ts).
+const PECAS_BASE = ["peticao", "contrato", "termo_renuncia"];
 const PECAS_GLCM = ["procuracao_glcm", "termo_lgpd_glcm"];
 const PECAS_POLKOWSKI = ["procuracao_polkowski", "termo_lgpd_polkowski"];
 
@@ -107,6 +109,29 @@ Deno.serve(async (req) => {
         });
       if (upErr) throw upErr;
       generated.push({ tipo: tpl.tipo, storage_path: path, nome: safeName });
+    }
+
+    // Planilha de cálculo: .xlsx gerado com fórmulas (sem template).
+    {
+      const linhasXlsx = contras.map((c: any) => ({
+        competencia: c.label ?? "",
+        hra: Number(c.valor_hra) || 0,
+        ahra: Number(c.valor_ahra) || 0,
+      }));
+      const partes = montarArquivosPlanilhaXlsx(caso.nome_cliente ?? "", linhasXlsx);
+      const zipPl = new PizZip();
+      for (const [caminho, conteudo] of Object.entries(partes)) zipPl.file(caminho, conteudo);
+      const outPl: Uint8Array = zipPl.generate({ type: "uint8array" });
+      const nomePl = `planilha-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
+      const pathPl = `${caso.id}/${nomePl}`;
+      const { error: upPlErr } = await supabase.storage
+        .from("casos-documentos")
+        .upload(pathPl, outPl, {
+          upsert: true,
+          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+      if (upPlErr) throw upPlErr;
+      generated.push({ tipo: "planilha", storage_path: pathPl, nome: nomePl });
     }
 
     if (generated.length === 0) throw new Error("Nenhum documento foi gerado.");

@@ -33,6 +33,8 @@ export const STATUS_ORDER: CasoStatus[] = [
   "cancelado",
 ];
 
+// Tipos com template .docx (upload na página Templates). A planilha de
+// cálculo NÃO entra aqui: é gerada como .xlsx com fórmulas, sem template.
 export const TEMPLATE_TIPOS = [
   { id: "peticao", label: "Petição Inicial" },
   { id: "contrato", label: "Contrato" },
@@ -41,7 +43,12 @@ export const TEMPLATE_TIPOS = [
   { id: "termo_lgpd_glcm", label: "Termo LGPD — GLCM" },
   { id: "termo_lgpd_polkowski", label: "Termo LGPD — Polkowski" },
   { id: "termo_renuncia", label: "Termo de Renúncia" },
-  { id: "planilha", label: "Planilha de Cálculo" },
 ] as const;
 
 export type TemplateTipo = (typeof TEMPLATE_TIPOS)[number]["id"];
+
+/** Rótulos das peças geradas (templates + planilha gerada). */
+export const PECA_LABELS: Record<string, string> = {
+  ...Object.fromEntries(TEMPLATE_TIPOS.map((t) => [t.id, t.label])),
+  planilha: "Planilha de Cálculo (Excel)",
+};
