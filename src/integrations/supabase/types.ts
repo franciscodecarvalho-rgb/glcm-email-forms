@@ -252,6 +252,47 @@ export type Database = {
           },
         ]
       }
+      lotes_extracao: {
+        Row: {
+          arquivo_ids: string[]
+          atualizado_em: string
+          caso_id: string
+          erro: string | null
+          id: string
+          ordem: number
+          resultado: Json | null
+          status: string
+        }
+        Insert: {
+          arquivo_ids: string[]
+          atualizado_em?: string
+          caso_id: string
+          erro?: string | null
+          id?: string
+          ordem: number
+          resultado?: Json | null
+          status?: string
+        }
+        Update: {
+          arquivo_ids?: string[]
+          atualizado_em?: string
+          caso_id?: string
+          erro?: string | null
+          id?: string
+          ordem?: number
+          resultado?: Json | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lotes_extracao_caso_id_fkey"
+            columns: ["caso_id"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       templates: {
         Row: {
           created_at: string
