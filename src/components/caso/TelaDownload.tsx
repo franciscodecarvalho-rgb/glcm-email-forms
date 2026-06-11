@@ -1,4 +1,5 @@
-import { Download, Package, ArrowLeft, FileText } from "lucide-react";
+import { useState } from "react";
+import { Download, Package, ArrowLeft, FileText, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
@@ -12,6 +13,19 @@ type Doc = { tipo: string; storage_path: string; nome: string };
 
 export function TelaDownload({ caso }: { caso: CasoData }) {
   const nav = useNavigate();
+  const [regerando, setRegerando] = useState(false);
+
+  // Regera as peças (após corrigir dados, atualizar template ou deploy novo).
+  // A tela atualiza sozinha via realtime quando documentos_gerados muda.
+  const regerar = async () => {
+    setRegerando(true);
+    const { data, error } = await supabase.functions.invoke("generate-documents", {
+      body: { caso_id: caso.id },
+    });
+    setRegerando(false);
+    if (error || (data as any)?.error) toast.error((data as any)?.error ?? "Falha ao regerar");
+    else toast.success("Documentos regerados");
+  };
   const docs: Doc[] = Array.isArray(caso.documentos_gerados) ? (caso.documentos_gerados as any) : [];
   const labelOf = (tipo: string) => PECA_LABELS[tipo] ?? tipo;
 
@@ -60,11 +74,17 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
         ))}
       </div>
 
-      <div className="flex justify-between">
+      <div className="flex flex-wrap justify-between gap-2">
         <Button variant="ghost" onClick={() => nav("/")}><ArrowLeft className="mr-2 h-4 w-4" />Dashboard</Button>
-        {docs.length > 0 && (
-          <Button onClick={downloadAll}><Package className="mr-2 h-4 w-4" />Baixar Todos (ZIP)</Button>
-        )}
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={regerar} disabled={regerando}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${regerando ? "animate-spin" : ""}`} />
+            {regerando ? "Regerando…" : "Gerar novamente"}
+          </Button>
+          {docs.length > 0 && (
+            <Button onClick={downloadAll}><Package className="mr-2 h-4 w-4" />Baixar Todos (ZIP)</Button>
+          )}
+        </div>
       </div>
     </div>
   );
