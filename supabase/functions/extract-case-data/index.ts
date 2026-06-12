@@ -1,12 +1,21 @@
 // Extrai dados dos arquivos do caso usando Lovable AI (Gemini com visão).
 //
-// Modelo RESUMÍVEL com memória por lote (tabela lotes_extracao):
-// - Os arquivos são divididos em lotes de 10; cada lote vira uma chamada à IA
-//   (gemini-2.5-pro) e SALVA seu resultado no banco ao terminar.
-// - Uma falha custa 1 lote, não o caso: "Tentar novamente" reprocessa SÓ os
-//   lotes pendentes/com erro — o que já deu certo nunca se perde.
-// - Falha nunca é silenciosa: lote sem resultado fica status='erro' e o caso
-//   ganha erro_processamento (em vez de salvar um valor zerado).
+// Arquitetura FAN-OUT (v3): tempo total ≈ tempo de UM lote, não a soma.
+// - dispatcher (body {caso_id}): garante o plano de lotes (5 arquivos cada) e
+//   dispara UMA invocação desta própria função por lote pendente. Retorna 202.
+// - worker (body {caso_id, lote_id}): processa SÓ o seu lote (1 chamada de IA),
+//   salva o resultado e, se for o último a terminar, finaliza o caso.
+// - progress (body {caso_id, progress}): devolve o estado dos lotes para a tela
+//   de progresso via service role (o front não depende de RLS para enxergar).
+//
+// Por que fan-out: a versão anterior processava todos os lotes numa invocação
+// única em background e o Edge Runtime mata o worker por wall-clock (~400s)
+// SEM passar pelo catch — o caso ficava "Em Análise" para sempre, sem erro.
+// Com 1 invocação por lote, cada uma cabe folgada no orçamento e os lotes
+// rodam em paralelo de verdade.
+// - Falha custa 1 lote: "Tentar novamente" reprocessa só pendente/erro/órfão.
+// - Worker morto deixa o lote 'processando' órfão: o retry o reivindica por
+//   idade (atualizado_em > 10 min).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -14,8 +23,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const TAMANHO_LOTE = 10; // arquivos por chamada de IA
-const CONCORRENCIA = 2; // lotes processados em paralelo (conservador)
+// 5 (e não 10): corpo da chamada menor, resposta da IA mais rápida, menos chance
+// de o modelo pular linhas nos últimos documentos, e mais paralelismo no fan-out.
+const TAMANHO_LOTE = 5;
+const STALE_MS = 10 * 60 * 1000; // 'processando' sem update há 10 min = worker morto
 
 // Pro (não Flash): no teste A/B o Flash subcontou rubricas HRA (-22%).
 const MODELO = "google/gemini-2.5-pro";
@@ -130,16 +141,47 @@ Deno.serve(async (req) => {
     casoId = body.caso_id;
     if (!casoId) throw new Error("caso_id obrigatório");
 
+    // Modo progress: estado dos lotes para a UI (service role ignora RLS).
+    if (body.progress) {
+      const { data } = await supabase
+        .from("lotes_extracao")
+        .select("id, ordem, arquivo_ids, status, erro, atualizado_em")
+        .eq("caso_id", casoId)
+        .order("ordem");
+      return new Response(JSON.stringify({ lotes: data ?? [] }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
 
-    // Processa em background (foge do limite de CPU). O cliente acompanha pelo
-    // status do caso e pelas tabelas lotes_extracao/arquivos.
+    // Modo worker: processa UM lote em background e devolve 202 já.
+    if (body.lote_id) {
+      // @ts-ignore EdgeRuntime global
+      EdgeRuntime.waitUntil(
+        trabalharLote(supabase, casoId, body.lote_id, LOVABLE_API_KEY).catch(async (e: unknown) => {
+          const msg = e instanceof Error ? e.message : "Erro";
+          console.error(`worker lote ${body.lote_id} error:`, msg);
+          await supabase
+            .from("lotes_extracao")
+            .update({ status: "erro", erro: msg, atualizado_em: new Date().toISOString() })
+            .eq("id", body.lote_id);
+        }),
+      );
+      return new Response(JSON.stringify({ ok: true, status: "worker" }), {
+        status: 202,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Modo dispatcher: garante o plano e dispara um worker por lote pendente.
     // @ts-ignore EdgeRuntime global
     EdgeRuntime.waitUntil(
-      processarCaso(supabase, casoId, LOVABLE_API_KEY).catch(async (e: unknown) => {
+      despachar(supabase, casoId).catch(async (e: unknown) => {
         const msg = e instanceof Error ? e.message : "Erro";
-        console.error("extract-case-data bg error:", msg);
+        console.error("dispatcher error:", msg);
         await supabase.from("casos").update({ erro_processamento: msg }).eq("id", casoId);
       }),
     );
@@ -168,24 +210,34 @@ function chunk<T>(arr: T[], n: number): T[][] {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const agoraIso = () => new Date().toISOString();
 
-async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: string) {
-  console.time("total");
+// ---------------- dispatcher ----------------
+async function despachar(supabase: any, casoId: string) {
+  // Limpa o claim de finalização de execuções anteriores (permite re-finalizar).
+  await supabase.from("finalizacoes_extracao").delete().eq("caso_id", casoId);
 
   const { data: arquivos, error: aErr } = await supabase
     .from("arquivos")
-    .select("*")
+    .select("id")
     .eq("caso_id", casoId);
   if (aErr) throw aErr;
   if (!arquivos || arquivos.length === 0) throw new Error("Nenhum arquivo no caso");
-  const porId = new Map(arquivos.map((a: any) => [a.id, a]));
 
-  // 1) Garante o plano de lotes (cria na primeira execução; reusa nas seguintes).
   let { data: lotes } = await supabase
     .from("lotes_extracao")
     .select("*")
     .eq("caso_id", casoId)
     .order("ordem");
+
+  // Replaneja com o tamanho atual se NADA foi concluído ainda (planos antigos
+  // eram de 10 arquivos por lote; o que já deu certo nunca é descartado).
+  const nadaConcluido = (lotes ?? []).every((l: any) => l.status !== "concluido");
+  const planoGrande = (lotes ?? []).some((l: any) => (l.arquivo_ids?.length ?? 0) > TAMANHO_LOTE);
+  if ((lotes ?? []).length > 0 && nadaConcluido && planoGrande) {
+    await supabase.from("lotes_extracao").delete().eq("caso_id", casoId);
+    lotes = [];
+  }
 
   if (!lotes || lotes.length === 0) {
     const grupos = chunk(arquivos, TAMANHO_LOTE);
@@ -204,57 +256,132 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
     await supabase.from("arquivos").update({ processado: false }).eq("caso_id", casoId);
   }
 
-  // 2) Processa SÓ o que falta (resume): pendente, erro, ou processando órfão.
-  const pendentes = lotes.filter((l: any) => l.status !== "concluido");
-  console.log(`lotes: ${lotes.length} total, ${pendentes.length} a processar`);
-
-  let proximo = 0;
-  async function worker() {
-    while (true) {
-      const i = proximo++;
-      if (i >= pendentes.length) break;
-      const lote = pendentes[i];
-      await supabase
-        .from("lotes_extracao")
-        .update({ status: "processando", erro: null, atualizado_em: new Date().toISOString() })
-        .eq("id", lote.id);
-      try {
-        const arqs = lote.arquivo_ids.map((id: string) => porId.get(id)).filter(Boolean);
-        const resultado = await processarLote(supabase, arqs, LOVABLE_API_KEY);
-        await supabase
-          .from("lotes_extracao")
-          .update({ status: "concluido", resultado, erro: null, atualizado_em: new Date().toISOString() })
-          .eq("id", lote.id);
-        await supabase.from("arquivos").update({ processado: true }).in("id", lote.arquivo_ids);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`lote ${lote.ordem} falhou:`, msg);
-        await supabase
-          .from("lotes_extracao")
-          .update({ status: "erro", erro: msg, atualizado_em: new Date().toISOString() })
-          .eq("id", lote.id);
-      }
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(CONCORRENCIA, Math.max(pendentes.length, 1)) }, () => worker()),
+  // Alvos: pendente, erro, ou 'processando' órfão (worker morreu sem atualizar).
+  const agora = Date.now();
+  const alvos = (lotes ?? []).filter(
+    (l: any) =>
+      l.status === "pendente" ||
+      l.status === "erro" ||
+      (l.status === "processando" && agora - new Date(l.atualizado_em).getTime() > STALE_MS),
   );
 
-  // 3) Releitura do estado final dos lotes.
-  const { data: finais } = await supabase
+  if (alvos.length === 0) {
+    // Nada a despachar: ou tudo concluiu (finaliza agora) ou há workers vivos.
+    await verificarConclusao(supabase, casoId);
+    return;
+  }
+
+  // Claim antes do disparo: evita disparo em dobro num retry simultâneo.
+  await supabase
+    .from("lotes_extracao")
+    .update({ status: "processando", erro: null, atualizado_em: agoraIso() })
+    .in("id", alvos.map((l: any) => l.id));
+
+  const base = Deno.env.get("SUPABASE_URL")!;
+  const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const disparos = alvos.map((l: any) =>
+    fetch(`${base}/functions/v1/extract-case-data`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${srk}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ caso_id: casoId, lote_id: l.id }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await r.text();
+      })
+      .catch(async (e) => {
+        const msg = `disparo falhou: ${e instanceof Error ? e.message : e}`;
+        console.error(`lote ${l.ordem}:`, msg);
+        await supabase
+          .from("lotes_extracao")
+          .update({ status: "erro", erro: msg, atualizado_em: agoraIso() })
+          .eq("id", l.id);
+      }),
+  );
+  await Promise.allSettled(disparos);
+  console.log(`dispatcher: ${alvos.length} lote(s) despachados de ${lotes.length}`);
+}
+
+// ---------------- worker (1 lote por invocação) ----------------
+async function trabalharLote(supabase: any, casoId: string, loteId: string, LOVABLE_API_KEY: string) {
+  const { data: lote, error: lErr } = await supabase
+    .from("lotes_extracao")
+    .select("*")
+    .eq("id", loteId)
+    .single();
+  if (lErr || !lote) throw new Error(`lote ${loteId} não encontrado`);
+
+  const { data: arqs, error: aErr } = await supabase
+    .from("arquivos")
+    .select("*")
+    .in("id", lote.arquivo_ids);
+  if (aErr) throw aErr;
+
+  try {
+    const resultado = await processarLote(supabase, arqs ?? [], LOVABLE_API_KEY);
+    await supabase
+      .from("lotes_extracao")
+      .update({ status: "concluido", resultado, erro: null, atualizado_em: agoraIso() })
+      .eq("id", loteId);
+    await supabase.from("arquivos").update({ processado: true }).in("id", lote.arquivo_ids);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`lote ${lote.ordem} falhou:`, msg);
+    await supabase
+      .from("lotes_extracao")
+      .update({ status: "erro", erro: msg, atualizado_em: agoraIso() })
+      .eq("id", loteId);
+  }
+
+  await verificarConclusao(supabase, casoId);
+}
+
+// Chamada por todo worker ao terminar: o último finaliza o caso. O claim por
+// PK em finalizacoes_extracao garante UM finalizador mesmo em empate.
+async function verificarConclusao(supabase: any, casoId: string) {
+  const { data: lotes } = await supabase
     .from("lotes_extracao")
     .select("*")
     .eq("caso_id", casoId)
     .order("ordem");
-  const comErro = (finais ?? []).filter((l: any) => l.status !== "concluido");
+  if (!lotes || lotes.length === 0) return;
+  if (lotes.some((l: any) => l.status === "pendente" || l.status === "processando")) return;
+
+  const comErro = lotes.filter((l: any) => l.status !== "concluido");
   if (comErro.length > 0) {
-    throw new Error(
-      `${comErro.length} de ${finais.length} lote(s) falharam. Clique em "Tentar novamente" — só os lotes pendentes serão reprocessados.`,
-    );
+    await supabase
+      .from("casos")
+      .update({
+        erro_processamento: `${comErro.length} de ${lotes.length} lote(s) falharam. Clique em "Reprocessar pendentes" — o que já deu certo é mantido.`,
+      })
+      .eq("id", casoId);
+    return;
   }
 
-  // 4) Tudo concluído: mescla os resultados salvos e finaliza o caso.
-  const dados = mesclarResultados((finais ?? []).map((l: any) => l.resultado).filter(Boolean));
+  let venceu = true;
+  const { data: claim, error: cErr } = await supabase
+    .from("finalizacoes_extracao")
+    .upsert({ caso_id: casoId }, { onConflict: "caso_id", ignoreDuplicates: true })
+    .select();
+  // Tabela ausente (migration não aplicada): segue sem claim — a finalização é
+  // idempotente e o risco de empate exato é pequeno.
+  if (!cErr) venceu = (claim ?? []).length > 0;
+  if (!venceu) return;
+
+  try {
+    await finalizarCaso(supabase, casoId, lotes);
+  } catch (e) {
+    // Erro de finalização é do CASO, não do lote — e libera o claim p/ retry.
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("finalizarCaso:", msg);
+    await supabase.from("finalizacoes_extracao").delete().eq("caso_id", casoId);
+    await supabase.from("casos").update({ erro_processamento: msg }).eq("id", casoId);
+  }
+}
+
+// Tudo concluído: mescla os resultados salvos e finaliza o caso.
+async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
+  const dados = mesclarResultados(lotes.map((l: any) => l.resultado).filter(Boolean));
 
   const contras = (dados.contracheques ?? []).map((c: any, i: number) => ({
     id: crypto.randomUUID(),
@@ -264,9 +391,13 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
   }));
 
   // Guarda: muitos arquivos e 0 contracheques = algo errado; não salvar R$ 0.
-  if (arquivos.length >= 5 && contras.length === 0) {
+  const { count: totalArquivos } = await supabase
+    .from("arquivos")
+    .select("id", { count: "exact", head: true })
+    .eq("caso_id", casoId);
+  if ((totalArquivos ?? 0) >= 5 && contras.length === 0) {
     throw new Error(
-      `Extração retornou 0 contracheques para ${arquivos.length} arquivos — provável falha. Clique em "Tentar novamente".`,
+      `Extração retornou 0 contracheques para ${totalArquivos} arquivos — provável falha. Clique em "Tentar novamente".`,
     );
   }
 
@@ -288,7 +419,7 @@ async function processarCaso(supabase: any, casoId: string, LOVABLE_API_KEY: str
       erro_processamento: null,
     })
     .eq("id", casoId);
-  console.timeEnd("total");
+  console.log(`caso ${casoId} finalizado: ${contras.length} contracheques`);
 }
 
 // Baixa um arquivo do Storage como parte image_url (com 1 retry).
@@ -359,7 +490,9 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
       ultimoErro = e instanceof Error ? e.message : String(e);
       console.error(`processarLote tentativa ${tentativa}:`, ultimoErro);
       if (ultimoErro.includes("Créditos")) throw e; // não adianta repetir
-      await sleep(800 * tentativa);
+      // 429/503 (rate limit do gateway com o fan-out): espera mais antes de repetir.
+      const espera = /IA (429|503)/.test(ultimoErro) ? 5000 * tentativa : 800 * tentativa;
+      await sleep(espera);
     }
   }
   throw new Error(`Lote falhou após 3 tentativas: ${ultimoErro}`);
