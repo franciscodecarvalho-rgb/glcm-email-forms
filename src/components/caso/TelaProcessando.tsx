@@ -12,9 +12,13 @@ type Lote = {
   ordem: number;
   arquivo_ids: string[];
   status: "pendente" | "processando" | "concluido" | "erro";
-  resultado: any;
   erro: string | null;
+  atualizado_em: string;
 };
+
+// Sem mudança de status há mais que isso = workers provavelmente mortos.
+// Maior que os 10 min do backend: o retry já encontra os lotes "órfãos".
+const TRAVADO_MS = 12 * 60 * 1000;
 
 export function TelaProcessando({ caso }: { caso: CasoData }) {
   const [arquivos, setArquivos] = useState<any[]>([]);
@@ -24,20 +28,23 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
 
   const isError = !!caso.erro_processamento;
 
-  // Polling: arquivos + lotes (caixinhas) enquanto processa.
+  // Polling: arquivos direto do banco; lotes via edge function (modo progress),
+  // que lê com service role — funciona mesmo sem policy de RLS na tabela.
   useEffect(() => {
     let ativo = true;
     const buscar = async () => {
-      const [{ data: arqs }, { data: lts }] = await Promise.all([
+      const [{ data: arqs }, prog] = await Promise.all([
         supabase.from("arquivos").select("*").eq("caso_id", caso.id),
-        (supabase as any).from("lotes_extracao").select("*").eq("caso_id", caso.id).order("ordem"),
+        supabase.functions.invoke("extract-case-data", {
+          body: { caso_id: caso.id, progress: true },
+        }),
       ]);
       if (!ativo) return;
       setArquivos(arqs ?? []);
-      setLotes((lts ?? []) as Lote[]);
+      if (!prog.error) setLotes((prog.data?.lotes ?? []) as Lote[]);
     };
     buscar();
-    const t = setInterval(buscar, 2500);
+    const t = setInterval(buscar, 3000);
     return () => {
       ativo = false;
       clearInterval(t);
@@ -66,16 +73,25 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
   const pct = total ? Math.round((concluidos / total) * 100) : 0;
   const nomeDe = (id: string) => arquivos.find((a) => a.id === id)?.nome ?? "";
 
+  // Detecção de travamento: há lote em aberto mas nada muda de status há 12 min
+  // (worker morto pelo runtime morre SEM gravar erro — sem isso a tela giraria
+  // para sempre). O botão retoma só o que falta.
+  const ultimaAtividade = lotes.reduce(
+    (m, l) => Math.max(m, new Date(l.atualizado_em).getTime() || 0),
+    0,
+  );
+  const emAberto = lotes.some((l) => l.status === "processando" || l.status === "pendente");
+  const travado =
+    !isError && emAberto && ultimaAtividade > 0 && Date.now() - ultimaAtividade > TRAVADO_MS;
+
   const statusLote = (l: Lote) => {
     switch (l.status) {
-      case "concluido": {
-        const n = Array.isArray(l.resultado?.contracheques) ? l.resultado.contracheques.length : 0;
+      case "concluido":
         return (
           <span className="flex items-center gap-1 text-xs font-medium text-status-concluido">
-            <CheckCircle2 className="h-4 w-4" /> {n} contracheque(s)
+            <CheckCircle2 className="h-4 w-4" /> concluído
           </span>
         );
-      }
       case "processando":
         return (
           <span className="flex items-center gap-1 text-xs font-medium text-primary">
@@ -117,7 +133,7 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
             <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-primary" />
             <p className="text-lg font-medium">Analisando documentos com IA…</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {arquivos.length} arquivo(s) em {total || "…"} lote(s) de até 10.
+              {arquivos.length} arquivo(s) em {total || "…"} lote(s) processados em paralelo.
             </p>
 
             <div className="mx-auto mt-5 max-w-sm">
@@ -132,6 +148,22 @@ export function TelaProcessando({ caso }: { caso: CasoData }) {
                 <span className="font-mono">{fmtTempo(segundos)}</span>
               </p>
             </div>
+
+            {travado && (
+              <div className="mx-auto mt-4 max-w-sm rounded-md border border-amber-300 bg-amber-50 p-3 text-left dark:border-amber-700 dark:bg-amber-950/40">
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                  Sem progresso há mais de 12 minutos — o processamento pode ter sido
+                  interrompido pelo servidor.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2" onClick={retry} disabled={retrying}>
+                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  {retrying ? "Retomando…" : "Retomar processamento"}
+                </Button>
+                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  Só os lotes que faltam serão refeitos — o que já concluiu é mantido.
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>
