@@ -14,6 +14,9 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
   const [nome, setNome] = useState(caso.nome_cliente ?? "");
   const [cpf, setCpf] = useState(caso.cpf ?? "");
   const [rg, setRg] = useState(caso.rg ?? "");
+  const [numContrato, setNumContrato] = useState(caso.numero_contrato ?? "");
+  const [email, setEmail] = useState(caso.email_cliente ?? "");
+  const [telefone, setTelefone] = useState(caso.telefone_cliente ?? "");
   const e0 = caso.endereco ?? {};
   const [end, setEnd] = useState({
     logradouro: e0.logradouro ?? "",
@@ -67,16 +70,21 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
     setSaving(true);
     const { error } = await supabase
       .from("casos")
+      // Cast: numero_contrato/email/telefone ainda não estão no types.ts gerado
+      // (regenerar quando o Lovable aplicar a migration).
       .update({
         nome_cliente: nome,
         cpf,
         rg,
+        numero_contrato: numContrato || null,
+        email_cliente: email || null,
+        telefone_cliente: telefone || null,
         endereco: end,
         qualificacao: qual,
         empregadores: empregs.map((em) => ({ razao_social: em.razao_social, cnpj: em.cnpj })),
         contracheques: contras,
         status: "aguardando_pasta",
-      })
+      } as any)
       .eq("id", caso.id);
     setSaving(false);
     if (error) toast.error("Erro ao salvar"); else toast.success("Dados confirmados");
@@ -95,6 +103,9 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
           <div className="space-y-2 md:col-span-2"><Label>Nome completo</Label><Input value={nome} onChange={(e) => setNome(e.target.value)} /></div>
           <div className="space-y-2"><Label>CPF</Label><Input value={cpf} onChange={(e) => setCpf(e.target.value)} /></div>
           <div className="space-y-2"><Label>RG</Label><Input value={rg} onChange={(e) => setRg(e.target.value)} /></div>
+          <div className="space-y-2"><Label>E-mail do cliente</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usado no termo LGPD" /></div>
+          <div className="space-y-2"><Label>Telefone do cliente</Label><Input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(71) 9…" /></div>
+          <div className="space-y-2"><Label>Nº do contrato</Label><Input value={numContrato} onChange={(e) => setNumContrato(e.target.value)} placeholder="sequencial do escritório, ex: 4200" /></div>
         </div>
       </section>
 

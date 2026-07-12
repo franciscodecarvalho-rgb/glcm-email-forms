@@ -127,8 +127,8 @@ function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string,
     VALOR_CAUSA_EXTENSO: valorPorExtenso(valor),
     ANO: String(hoje.getFullYear()),
     ENDERECO_PFN: "[preencher endereço da PFN da comarca]",
-    EMAIL_CLIENTE: "",
-    TELEFONE_CLIENTE: "",
+    EMAIL_CLIENTE: caso.email_cliente ?? "",
+    TELEFONE_CLIENTE: caso.telefone_cliente ?? "",
   };
 }
 

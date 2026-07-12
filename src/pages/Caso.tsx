@@ -29,6 +29,9 @@ export type CasoData = {
   cliente_recorrente_ref: string | null;
   qualificacao: any;
   empregadores: any;
+  numero_contrato?: string | null;
+  email_cliente?: string | null;
+  telefone_cliente?: string | null;
 };
 
 export default function Caso() {
