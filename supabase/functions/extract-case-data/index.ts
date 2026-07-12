@@ -47,7 +47,7 @@ EMPREGADOR(ES): do cabeçalho dos contracheques, capture a razão social e o CNP
 
 CONTRACHEQUES — para CADA contracheque:
 1. TRANSCREVA TODAS as linhas da folha em itens[]: código, descrição, valor e tipo ("provento" ou "desconto") — salário, adicionais, HRA, INSS, IR, empréstimos, planos, TUDO, na ordem em que aparecem. Não pule linha nenhuma.
-2. Capture também: salario_base, total_proventos, total_descontos e liquido (quando visíveis).
+2. Capture também: salario_base, total_proventos, total_descontos, liquido e matricula do funcionário (quando visíveis).
 3. Rubricas HRA (a parte mais importante do cálculo): identifique TODAS as linhas de PROVENTO cuja DESCRIÇÃO indique Hora de Repouso e Alimentação, em qualquer variação ou erro de OCR. NÃO se baseie no código numérico — baseie-se na descrição conter "HRA"/"AHRA". Exemplos que CONTAM: "Adicional HRA", "Adic HRA Eventual", "AHRA", "AHRA/Dobra de Turno", "Dif AHRA Dobra", "Dif Adicional HRA", "HRA", e grafias com ruído ("AdiconalHRA", "Dobra de Tumo", "Adicionál HRA"). EXCLUA da soma: linhas de DESCONTO (ex: "Desc. Adicional HRA") e variantes "Sem IR"/"s/IRRF"/"SEM IRRF" (sem retenção). Some: valor_hra = rubricas "Adicional HRA"; valor_ahra = demais rubricas HRA/AHRA (AHRA, Dobra de Turno, diferenças, HRA avulso).
 4. Use a competência (mês/ano) como label e informe em "arquivo" o nome do arquivo indicado no texto imediatamente antes de cada documento.
 
@@ -103,6 +103,7 @@ const TOOLS = [
               properties: {
                 label: { type: "string", description: "Competência (mês/ano), ex: '07/2024'" },
                 arquivo: { type: "string", description: "Nome do arquivo de origem (texto antes do documento)" },
+                matricula: { type: "string", description: "Matrícula do funcionário no cabeçalho do contracheque" },
                 salario_base: { type: "number" },
                 total_proventos: { type: "number" },
                 total_descontos: { type: "number" },
@@ -437,16 +438,87 @@ async function verificarConclusao(supabase: any, casoId: string) {
   }
 }
 
+// ---------------- validação cruzada (barata, sem IA) ----------------
+// Sinaliza contracheque suspeito para revisão humana em vez de aceitar em
+// silêncio. Não bloqueia: o fluxo já passa pela tela de confirmação.
+
+const fmtBRL = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// "07/2024", "jul/2024", "2024-07" etc. → "07/2024" (ou null se irreconhecível).
+function normalizarCompetencia(label: string): string | null {
+  const s = String(label ?? "");
+  let m = s.match(/\b(0?[1-9]|1[0-2])\s*\/\s*((?:19|20)\d{2})\b/);
+  if (m) return `${m[1].padStart(2, "0")}/${m[2]}`;
+  m = s.match(/\b((?:19|20)\d{2})\s*-\s*(0?[1-9]|1[0-2])\b/);
+  if (m) return `${m[2].padStart(2, "0")}/${m[1]}`;
+  return null;
+}
+
+// Flags de um contracheque: checksum de totais + nome do arquivo (padrão
+// "matricula-AAAAMM-...") vs dados extraídos.
+function validarContracheque(c: any): string[] {
+  const flags: string[] = [];
+  const itens = Array.isArray(c.itens) ? c.itens : [];
+  const ehDesconto = (it: any) => String(it?.tipo ?? "").toLowerCase().startsWith("desc");
+
+  // Checksum: a soma das linhas transcritas deve bater com o total declarado na
+  // própria folha. Divergência = provável linha pulada ou valor errado.
+  const somaProventos = itens.filter((it: any) => !ehDesconto(it)).reduce((s: number, it: any) => s + (Number(it.valor) || 0), 0);
+  const somaDescontos = itens.filter(ehDesconto).reduce((s: number, it: any) => s + (Number(it.valor) || 0), 0);
+  const totProv = numOuNull(c.total_proventos);
+  const totDesc = numOuNull(c.total_descontos);
+  if (itens.length > 0 && totProv != null && Math.abs(somaProventos - totProv) > 0.05) {
+    flags.push(`Soma dos proventos transcritos (${fmtBRL(somaProventos)}) difere do total declarado na folha (${fmtBRL(totProv)})`);
+  }
+  if (itens.length > 0 && totDesc != null && Math.abs(somaDescontos - totDesc) > 0.05) {
+    flags.push(`Soma dos descontos transcritos (${fmtBRL(somaDescontos)}) difere do total declarado na folha (${fmtBRL(totDesc)})`);
+  }
+
+  // Nome do arquivo no padrão "matricula-AAAAMM-...": fonte independente para
+  // conferir competência e matrícula extraídas.
+  const nomeArq = String(c.arquivo ?? "");
+  const mArq = nomeArq.match(/^(\d{4,})-((?:19|20)\d{2})(0[1-9]|1[0-2])\b/);
+  if (mArq) {
+    const compArquivo = `${mArq[3]}/${mArq[2]}`;
+    const compExtraida = normalizarCompetencia(c.label);
+    if (compExtraida && compExtraida !== compArquivo) {
+      flags.push(`Competência extraída (${compExtraida}) difere da do nome do arquivo (${compArquivo})`);
+    }
+    const matExtraida = String(c.matricula ?? "").replace(/\D/g, "");
+    if (matExtraida && matExtraida !== mArq[1]) {
+      flags.push(`Matrícula extraída (${matExtraida}) difere da do nome do arquivo (${mArq[1]})`);
+    }
+  }
+  return flags;
+}
+
 // Tudo concluído: mescla os resultados salvos e finaliza o caso.
 async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
   const dados = mesclarResultados(lotes.map((l: any) => l.resultado).filter(Boolean));
 
-  const contras = (dados.contracheques ?? []).map((c: any, i: number) => ({
-    id: crypto.randomUUID(),
-    label: c.label || `Contracheque ${i + 1}`,
-    valor_hra: Number(c.valor_hra) || 0,
-    valor_ahra: Number(c.valor_ahra) || 0,
-  }));
+  // Competências repetidas no caso (pode ser legítimo: 13º/férias/ajuste do
+  // mesmo mês — por isso é aviso de revisão, não erro).
+  const porCompetencia = new Map<string, number>();
+  for (const c of dados.contracheques ?? []) {
+    const comp = normalizarCompetencia(c.label);
+    if (comp) porCompetencia.set(comp, (porCompetencia.get(comp) ?? 0) + 1);
+  }
+
+  const contras = (dados.contracheques ?? []).map((c: any, i: number) => {
+    const flags = validarContracheque(c);
+    const comp = normalizarCompetencia(c.label);
+    if (comp && (porCompetencia.get(comp) ?? 0) > 1) {
+      flags.push(`Competência ${comp} aparece em mais de um contracheque (confira se é 13º/férias/ajuste)`);
+    }
+    return {
+      id: crypto.randomUUID(),
+      label: c.label || `Contracheque ${i + 1}`,
+      valor_hra: Number(c.valor_hra) || 0,
+      valor_ahra: Number(c.valor_ahra) || 0,
+      ...(flags.length > 0 ? { flags } : {}),
+    };
+  });
 
   // Guarda: muitos arquivos e 0 contracheques = algo errado; não salvar R$ 0.
   const { count: totalArquivos } = await supabase
