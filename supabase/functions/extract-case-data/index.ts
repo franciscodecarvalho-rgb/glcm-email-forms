@@ -1,19 +1,21 @@
 // Extrai dados dos arquivos do caso usando Lovable AI (Gemini com visão).
 //
-// Arquitetura FAN-OUT (v3): tempo total ≈ tempo de UM lote, não a soma.
-// - dispatcher (body {caso_id}): garante o plano de lotes (5 arquivos cada) e
-//   dispara UMA invocação desta própria função por lote pendente. Retorna 202.
+// Arquitetura FAN-OUT com POOL (v4): no máximo MAX_CONCORRENTES lotes ao
+// mesmo tempo — disparar todos de uma vez (v3) derrubava o gateway de IA.
+// - dispatcher (body {caso_id}): garante o plano de lotes (5 arquivos cada),
+//   devolve erro/órfãos para a fila e dispara só os primeiros MAX_CONCORRENTES
+//   workers. Retorna 202.
 // - worker (body {caso_id, lote_id}): processa SÓ o seu lote (1 chamada de IA),
-//   salva o resultado e, se for o último a terminar, finaliza o caso.
+//   salva o resultado, ENCADEIA o próximo lote pendente (claim atômico) e, se a
+//   fila acabou e ele for o último, finaliza o caso.
 // - progress (body {caso_id, progress}): devolve o estado dos lotes para a tela
 //   de progresso via service role (o front não depende de RLS para enxergar).
 //
-// Por que fan-out: a versão anterior processava todos os lotes numa invocação
-// única em background e o Edge Runtime mata o worker por wall-clock (~400s)
-// SEM passar pelo catch — o caso ficava "Em Análise" para sempre, sem erro.
-// Com 1 invocação por lote, cada uma cabe folgada no orçamento e os lotes
-// rodam em paralelo de verdade.
-// - Falha custa 1 lote: "Tentar novamente" reprocessa só pendente/erro/órfão.
+// Por que fan-out: processar todos os lotes numa invocação única em background
+// estoura o wall-clock do Edge Runtime (~400s) SEM passar pelo catch — o caso
+// ficava "Em Análise" para sempre, sem erro. Com 1 invocação por lote, cada uma
+// cabe folgada no orçamento.
+// - Falha custa 1 lote: "Reprocessar pendentes" refaz só pendente/erro/órfão.
 // - Worker morto deixa o lote 'processando' órfão: o retry o reivindica por
 //   idade (atualizado_em > 10 min).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -27,6 +29,12 @@ const corsHeaders = {
 // de o modelo pular linhas nos últimos documentos, e mais paralelismo no fan-out.
 const TAMANHO_LOTE = 5;
 const STALE_MS = 10 * 60 * 1000; // 'processando' sem update há 10 min = worker morto
+
+// Pool: lotes de IA simultâneos. 14 chamadas paralelas (caso de 66 arquivos)
+// derrubavam o gateway; 4 mantém paralelismo com folga de rate limit.
+const MAX_CONCORRENTES = 4;
+const TIMEOUT_IA_MS = 180_000; // fetch da IA sem timeout vira lote órfão silencioso
+const TIMEOUT_DOWNLOAD_MS = 60_000;
 
 // Pro (não Flash): no teste A/B o Flash subcontou rubricas HRA (-22%).
 const MODELO = "google/gemini-2.5-pro";
@@ -271,35 +279,75 @@ async function despachar(supabase: any, casoId: string) {
     return;
   }
 
-  // Claim antes do disparo: evita disparo em dobro num retry simultâneo.
-  await supabase
-    .from("lotes_extracao")
-    .update({ status: "processando", erro: null, atualizado_em: agoraIso() })
-    .in("id", alvos.map((l: any) => l.id));
+  // Devolve erro/órfãos para a fila: quem processa cada lote é decidido pelo
+  // claim atômico (abaixo), imune a retry simultâneo.
+  const naoPendentes = alvos.filter((l: any) => l.status !== "pendente").map((l: any) => l.id);
+  if (naoPendentes.length > 0) {
+    await supabase
+      .from("lotes_extracao")
+      .update({ status: "pendente", erro: null, atualizado_em: agoraIso() })
+      .in("id", naoPendentes);
+  }
 
+  // Pool: dispara só os primeiros MAX_CONCORRENTES workers; cada worker encadeia
+  // o próximo lote pendente ao terminar o seu.
+  let disparados = 0;
+  for (let i = 0; i < MAX_CONCORRENTES; i++) {
+    const lote = await claimProximoLote(supabase, casoId);
+    if (!lote) break;
+    await dispararWorker(supabase, casoId, lote);
+    disparados++;
+  }
+  console.log(
+    `dispatcher: ${disparados} worker(s) iniciais para ${alvos.length} lote(s) a fazer (pool=${MAX_CONCORRENTES})`,
+  );
+}
+
+// Claim atômico do próximo lote pendente (ordem crescente): o eq(status,
+// 'pendente') garante que cada lote sai da fila UMA vez, mesmo em corrida
+// entre workers/dispatcher.
+async function claimProximoLote(supabase: any, casoId: string): Promise<any | null> {
+  const { data: candidatos } = await supabase
+    .from("lotes_extracao")
+    .select("id, ordem")
+    .eq("caso_id", casoId)
+    .eq("status", "pendente")
+    .order("ordem")
+    .limit(MAX_CONCORRENTES);
+  for (const cand of candidatos ?? []) {
+    const { data: claimed } = await supabase
+      .from("lotes_extracao")
+      .update({ status: "processando", erro: null, atualizado_em: agoraIso() })
+      .eq("id", cand.id)
+      .eq("status", "pendente")
+      .select("id, ordem");
+    if ((claimed ?? []).length > 0) return claimed[0];
+  }
+  return null;
+}
+
+// Invoca esta própria função para um lote já claimado. Falha de disparo marca
+// o lote como erro (nunca silencioso) — "Reprocessar pendentes" o recupera.
+async function dispararWorker(supabase: any, casoId: string, lote: any) {
   const base = Deno.env.get("SUPABASE_URL")!;
   const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const disparos = alvos.map((l: any) =>
-    fetch(`${base}/functions/v1/extract-case-data`, {
+  try {
+    const r = await fetch(`${base}/functions/v1/extract-case-data`, {
       method: "POST",
       headers: { Authorization: `Bearer ${srk}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ caso_id: casoId, lote_id: l.id }),
-    })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        await r.text();
-      })
-      .catch(async (e) => {
-        const msg = `disparo falhou: ${e instanceof Error ? e.message : e}`;
-        console.error(`lote ${l.ordem}:`, msg);
-        await supabase
-          .from("lotes_extracao")
-          .update({ status: "erro", erro: msg, atualizado_em: agoraIso() })
-          .eq("id", l.id);
-      }),
-  );
-  await Promise.allSettled(disparos);
-  console.log(`dispatcher: ${alvos.length} lote(s) despachados de ${lotes.length}`);
+      body: JSON.stringify({ caso_id: casoId, lote_id: lote.id }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    await r.text();
+  } catch (e) {
+    const msg = `disparo falhou: ${e instanceof Error ? e.message : e}`;
+    console.error(`lote ${lote.ordem}:`, msg);
+    await supabase
+      .from("lotes_extracao")
+      .update({ status: "erro", erro: msg, atualizado_em: agoraIso() })
+      .eq("id", lote.id);
+  }
 }
 
 // ---------------- worker (1 lote por invocação) ----------------
@@ -317,6 +365,7 @@ async function trabalharLote(supabase: any, casoId: string, loteId: string, LOVA
     .in("id", lote.arquivo_ids);
   if (aErr) throw aErr;
 
+  const t0 = Date.now();
   try {
     const resultado = await processarLote(supabase, arqs ?? [], LOVABLE_API_KEY);
     await supabase
@@ -324,15 +373,20 @@ async function trabalharLote(supabase: any, casoId: string, loteId: string, LOVA
       .update({ status: "concluido", resultado, erro: null, atualizado_em: agoraIso() })
       .eq("id", loteId);
     await supabase.from("arquivos").update({ processado: true }).in("id", lote.arquivo_ids);
+    console.log(`lote ordem=${lote.ordem} concluido duracao_ms=${Date.now() - t0} arquivos=${lote.arquivo_ids.length}`);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error(`lote ${lote.ordem} falhou:`, msg);
+    console.error(`lote ordem=${lote.ordem} falhou duracao_ms=${Date.now() - t0}:`, msg);
     await supabase
       .from("lotes_extracao")
       .update({ status: "erro", erro: msg, atualizado_em: agoraIso() })
       .eq("id", loteId);
   }
 
+  // Encadeia o próximo lote pendente (mantém o pool cheio); depois verifica se
+  // o caso terminou — se ainda há lote em andamento, verificarConclusao só retorna.
+  const proximo = await claimProximoLote(supabase, casoId);
+  if (proximo) await dispararWorker(supabase, casoId, proximo);
   await verificarConclusao(supabase, casoId);
 }
 
@@ -349,10 +403,14 @@ async function verificarConclusao(supabase: any, casoId: string) {
 
   const comErro = lotes.filter((l: any) => l.status !== "concluido");
   if (comErro.length > 0) {
+    const motivo = comErro.find((l: any) => l.erro)?.erro ?? "";
     await supabase
       .from("casos")
       .update({
-        erro_processamento: `${comErro.length} de ${lotes.length} lote(s) falharam. Clique em "Reprocessar pendentes" — o que já deu certo é mantido.`,
+        erro_processamento:
+          `${comErro.length} de ${lotes.length} lote(s) falharam` +
+          (motivo ? ` — ${motivo.slice(0, 220)}` : "") +
+          `. Clique em "Reprocessar pendentes" — o que já deu certo é mantido.`,
       })
       .eq("id", casoId);
     return;
@@ -422,12 +480,21 @@ async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
   console.log(`caso ${casoId} finalizado: ${contras.length} contracheques`);
 }
 
-// Baixa um arquivo do Storage como parte image_url (com 1 retry).
+// Erro sem retry: repetir não muda o resultado (créditos, autenticação).
+function erroFatal(msg: string): Error {
+  const e = new Error(msg) as Error & { semRetry?: boolean };
+  e.semRetry = true;
+  return e;
+}
+
+// Baixa um arquivo do Storage como parte image_url (com 1 retry). O download do
+// SDK não aceita AbortSignal — o race impede o worker de pendurar para sempre.
 async function baixarParte(supabase: any, arq: any): Promise<any | null> {
   for (let t = 0; t < 2; t++) {
-    const { data: blob, error } = await supabase.storage
-      .from("casos-arquivos")
-      .download(arq.storage_path);
+    const { data: blob, error } = await Promise.race([
+      supabase.storage.from("casos-arquivos").download(arq.storage_path),
+      sleep(TIMEOUT_DOWNLOAD_MS).then(() => ({ data: null, error: new Error("timeout no download") })),
+    ]);
     if (!error && blob) {
       const buf = new Uint8Array(await blob.arrayBuffer());
       let b64 = "";
@@ -464,6 +531,7 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
         throw new Error(`só ${baixados}/${lote.length} arquivos do lote baixaram`);
       }
 
+      const t0 = Date.now();
       const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
@@ -476,8 +544,19 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
           tools: TOOLS,
           tool_choice: { type: "function", function: { name: "registrar_dados_caso" } },
         }),
+        signal: AbortSignal.timeout(TIMEOUT_IA_MS),
       });
-      if (aiResp.status === 402) throw new Error("Créditos de IA esgotados. Adicione créditos no workspace.");
+      if (aiResp.status === 402) {
+        throw erroFatal("Créditos de IA esgotados. Adicione créditos no workspace Lovable.");
+      }
+      if (aiResp.status === 401 || aiResp.status === 403) {
+        const txt = await aiResp.text().catch(() => "");
+        throw erroFatal(
+          `Gateway de IA recusou a autenticação (${aiResp.status}). Verifique a LOVABLE_API_KEY nos ` +
+            `Secrets do Supabase — um redeploy das funções pelo Lovable re-provisiona a chave. ` +
+            `Detalhe: ${txt.slice(0, 120)}`,
+        );
+      }
       if (!aiResp.ok) {
         const txt = await aiResp.text().catch(() => "");
         throw new Error(`IA ${aiResp.status}: ${txt.slice(0, 160)}`);
@@ -485,13 +564,16 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
       const aiJson = await aiResp.json();
       const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
       if (!call) throw new Error("IA não retornou tool call");
+      console.log(`ia ok tentativa=${tentativa} duracao_ms=${Date.now() - t0} arquivos=${lote.length}`);
       return JSON.parse(call.function.arguments);
     } catch (e) {
+      if ((e as { semRetry?: boolean })?.semRetry) throw e;
       ultimoErro = e instanceof Error ? e.message : String(e);
-      console.error(`processarLote tentativa ${tentativa}:`, ultimoErro);
-      if (ultimoErro.includes("Créditos")) throw e; // não adianta repetir
-      // 429/503 (rate limit do gateway com o fan-out): espera mais antes de repetir.
-      const espera = /IA (429|503)/.test(ultimoErro) ? 5000 * tentativa : 800 * tentativa;
+      console.error(`processarLote tentativa=${tentativa}:`, ultimoErro);
+      // Rate limit/indisponibilidade do gateway: espera longa com jitter para as
+      // tentativas não colidirem entre workers do pool.
+      const rateLimit = /IA (429|503)/.test(ultimoErro);
+      const espera = (rateLimit ? 15_000 * tentativa : 800 * tentativa) + Math.random() * 1000;
       await sleep(espera);
     }
   }
