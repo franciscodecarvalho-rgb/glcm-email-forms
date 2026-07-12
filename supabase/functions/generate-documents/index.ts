@@ -301,7 +301,7 @@ Deno.serve(async (req) => {
     const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
 
     const faltantes = tipos.filter((t) => !templates.some((tp: any) => tp.tipo === t));
-    const generated: { tipo: string; storage_path: string; nome: string }[] = [];
+    const generated: { tipo: string; storage_path: string; nome: string; avisos?: string[] }[] = [];
 
     for (const tpl of templates) {
       const { data: blob, error: dlErr } = await supabase.storage
@@ -314,12 +314,18 @@ Deno.serve(async (req) => {
       }
       const buf = new Uint8Array(await blob.arrayBuffer());
       const zip = new PizZip(buf);
+      // Tags do template que o sistema não conhece: viram vazio na peça (nunca
+      // "undefined"), mas ficam REGISTRADAS e voltam como aviso — fim do sumiço
+      // silencioso quando o template tem uma variável com nome errado.
+      const tagsDesconhecidas = new Set<string>();
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
         delimiters: { start: "{", end: "}" },
-        // Variável desconhecida vira string vazia — NUNCA "undefined" numa peça.
-        nullGetter: () => "",
+        nullGetter: (part: any) => {
+          if (part?.value) tagsDesconhecidas.add(String(part.value));
+          return "";
+        },
       });
       doc.render(data);
       const out: Uint8Array = doc.getZip().generate({ type: "uint8array" });
@@ -333,7 +339,14 @@ Deno.serve(async (req) => {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         });
       if (upErr) throw upErr;
-      generated.push({ tipo: tpl.tipo, storage_path: path, nome: safeName });
+      generated.push({
+        tipo: tpl.tipo,
+        storage_path: path,
+        nome: safeName,
+        ...(tagsDesconhecidas.size > 0
+          ? { avisos: [...tagsDesconhecidas].sort().map((t) => `{${t}} não existe no sistema — saiu em branco na peça`) }
+          : {}),
+      });
     }
 
     // Planilha de cálculo: .xlsx com fórmulas (sempre, sem template).
