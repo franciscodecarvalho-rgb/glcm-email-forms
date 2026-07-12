@@ -211,6 +211,29 @@ export type Database = {
           },
         ]
       }
+      finalizacoes_extracao: {
+        Row: {
+          caso_id: string
+          criado_em: string
+        }
+        Insert: {
+          caso_id: string
+          criado_em?: string
+        }
+        Update: {
+          caso_id?: string
+          criado_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finalizacoes_extracao_caso_id_fkey"
+            columns: ["caso_id"]
+            isOneToOne: true
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       itens_contracheque: {
         Row: {
           codigo: string | null
