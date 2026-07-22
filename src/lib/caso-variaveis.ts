@@ -21,6 +21,30 @@ export type CasoParaDocumento = {
 /** Local fixo da assinatura das peças (sede do escritório). */
 const LOCAL_ASSINATURA = "Salvador/BA";
 
+// A extração por IA às vezes devolve um marcador de "não encontrei" como texto
+// ("Não consta", "Não informado", "NULL", "N/A", "BR"...). Sem tratamento, esse
+// lixo entrava LITERAL nas peças (ex.: "..., Não consta, Não consta, ..." na
+// qualificação da petição). Tratamos esses valores como ausentes: o campo sai
+// em branco (e a nacionalidade cai no padrão "brasileiro(a)").
+const VALORES_AUSENTES = new Set([
+  "", "-", "--", "---", "n/a", "na", "n/d", "nd", "s/i", "?",
+  "nao consta", "nao informado", "nao informou", "nao identificado",
+  "nao disponivel", "nao localizado", "nao encontrado", "sem informacao",
+  "nao se aplica", "desconhecido", "indefinido", "null", "undefined",
+  "none", "nao", "vazio", "br", "bra", "brasil",
+]);
+
+function semAcento(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/** Normaliza texto livre; devolve "" quando o valor é um marcador de ausência. */
+function limpar(v?: string | null): string {
+  const s = (v ?? "").trim();
+  const chave = semAcento(s.toLowerCase()).replace(/[.\s]+$/g, "").replace(/\s+/g, " ");
+  return VALORES_AUSENTES.has(chave) ? "" : s;
+}
+
 function fmtBRL(n: number): string {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -63,9 +87,9 @@ export function montarVariaveisCaso(
     NOME_CLIENTE: caso.nome_cliente ?? "",
     CPF: caso.cpf ?? "",
     RG: caso.rg ?? "",
-    NACIONALIDADE: q.nacionalidade?.trim() || "brasileiro(a)",
-    ESTADO_CIVIL: q.estado_civil ?? "",
-    PROFISSAO: q.profissao ?? "",
+    NACIONALIDADE: limpar(q.nacionalidade) || "brasileiro(a)",
+    ESTADO_CIVIL: limpar(q.estado_civil),
+    PROFISSAO: limpar(q.profissao),
     ENDERECO_COMPLETO: montarEnderecoCompleto(e),
     CIDADE_UF: cidadeUf, // cidade/UF do cliente (vara e foro da petição)
     CEP: e.cep ?? "",
