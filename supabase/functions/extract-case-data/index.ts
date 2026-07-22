@@ -33,7 +33,9 @@ const MODELO = "google/gemini-2.5-pro";
 
 const SYSTEM_PROMPT = `Você é um assistente jurídico que extrai dados de documentos brasileiros (RG, CNH, CPF, comprovante de residência e contracheques) para uma ação de restituição de IR sobre HRA.
 
-DADOS PESSOAIS (do RG/CNH/CPF e do comprovante): nome completo, CPF, RG e endereço completo. Se constar, capture também nacionalidade, estado civil e profissão (em geral NÃO constam nesses documentos — deixe em branco se não aparecerem).
+DADOS PESSOAIS (do RG/CNH/CPF e do comprovante): nome completo, CPF, RG e endereço completo. Se constar, capture também nacionalidade e estado civil (em geral NÃO constam nesses documentos — deixe em branco se não aparecerem).
+
+PROFISSÃO/OCUPAÇÃO: raramente aparece no RG/CNH. A fonte prática é o CARGO/FUNÇÃO no cabeçalho dos contracheques. Capture-o em qualificacao.profissao, mas SEMPRE por extenso, em português corrente e com capitalização normal (não caixa-alta), EXPANDINDO abreviações e truncamentos do holerite para o termo completo da ocupação. Exemplos: "OPER PROCESSOS PRODU" → "Operador de Processos de Produção"; "AUX ADM" → "Auxiliar Administrativo"; "TEC SEG TRAB" → "Técnico de Segurança do Trabalho"; "MEC MANUT" → "Mecânico de Manutenção". NUNCA devolva um fragmento truncado, uma sigla solta ou o texto cru do holerite. Se o cargo estiver ilegível ou você não tiver confiança na expansão, deixe profissao EM BRANCO (será preenchida manualmente) — em branco é melhor que um valor truncado ou inventado.
 
 EMPREGADOR(ES): do cabeçalho dos contracheques, capture a razão social e o CNPJ de cada empresa empregadora (deduplique).
 
@@ -70,11 +72,15 @@ const TOOLS = [
           },
           qualificacao: {
             type: "object",
-            description: "Qualificação do cliente, se constar (geralmente ausente nos documentos).",
+            description: "Qualificação do cliente. Nacionalidade e estado civil raramente constam (deixe em branco). Profissão vem do cargo/função do contracheque.",
             properties: {
               nacionalidade: { type: "string" },
               estado_civil: { type: "string" },
-              profissao: { type: "string" },
+              profissao: {
+                type: "string",
+                description:
+                  "Profissão/ocupação por extenso, expandindo abreviações do cargo do contracheque (ex.: 'OPER PROCESSOS PRODU' → 'Operador de Processos de Produção'). Nunca um fragmento truncado ou o texto cru do holerite; em branco se ilegível.",
+              },
             },
           },
           empregadores: {
