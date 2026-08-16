@@ -123,6 +123,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Consultar `contracheques` e `itens_contracheque` e exibir os valores persistidos, sem criar linhas manuais nessa seção.
 **Evitar:** Usar o JSON legado de `casos.contracheques` como evidência de que a extração foi gravada no banco.
 
+### 2026-08 — Separação entre extração completa e correção manual
+
+**Regra confirmada:** A página editável de confirmação só deve aparecer quando nome, CPF, RG ou rubricas de contracheque esperados não tiverem sido persistidos.
+**Origem:** Solicitação de Nodley durante a validação da tela de confirmação.
+**Aplicação:** Quando a identificação e ao menos uma rubrica estiverem gravadas, mostrar uma página somente leitura com os dados extraídos dos PDFs; caso contrário, abrir a correção manual.
+**Evitar:** Apresentar campos vazios para edição como se a extração tivesse sido concluída com sucesso.
+
 ```markdown
 ### AAAA-MM — Título
 

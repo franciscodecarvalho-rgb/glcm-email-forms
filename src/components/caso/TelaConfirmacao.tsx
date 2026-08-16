@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ContrachequesExtraidos } from "@/components/caso/ContrachequesExtraidos";
 import { toast } from "sonner";
 
 type Contra = { id: string; label: string; valor_hra: number; valor_ahra: number };
@@ -50,7 +50,6 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
   );
   const [saving, setSaving] = useState(false);
   const contrachequesExtraidos = caso.contracheques_extraidos ?? [];
-  const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
   const addEmp = () => setEmpregs((p) => [...p, { id: crypto.randomUUID(), razao_social: "", cnpj: "" }]);
   const updEmp = (id: string, patch: Partial<Empreg>) =>
@@ -134,53 +133,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
 
       <section className="space-y-4 rounded-lg border bg-card p-6">
         <h2 className="font-semibold">Contracheques extraídos</h2>
-        {contrachequesExtraidos.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nenhum contracheque foi inserido no banco.</p>
-        )}
-        <div className="space-y-4">
-          {contrachequesExtraidos.map((contracheque, index) => (
-            <div key={contracheque.id} className="overflow-hidden rounded border">
-              <div className="space-y-1 bg-muted/30 p-3 text-sm">
-                <p className="font-medium">
-                  {contracheque.arquivo_origem || `Contracheque ${index + 1}`}
-                  {contracheque.competencia ? ` — ${contracheque.competencia}` : ""}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Proventos: {moeda.format(Number(contracheque.total_proventos) || 0)} · Descontos: {moeda.format(Number(contracheque.total_descontos) || 0)} · Líquido: {moeda.format(Number(contracheque.liquido) || 0)}
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Código</TableHead>
-                      <TableHead>Descrição</TableHead>
-                      <TableHead>Referência</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Família HRA</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(contracheque.itens_contracheque ?? []).map((item) => (
-                      <TableRow key={item.id ?? `${contracheque.id}-${item.codigo}-${item.descricao}`}>
-                        <TableCell>{item.codigo || "—"}</TableCell>
-                        <TableCell>{item.descricao || "—"}</TableCell>
-                        <TableCell>{item.referencia ?? "—"}</TableCell>
-                        <TableCell>{item.tipo || "—"}</TableCell>
-                        <TableCell>{item.familia_hra || "—"}</TableCell>
-                        <TableCell className="text-right">{moeda.format(Number(item.valor) || 0)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              {(contracheque.itens_contracheque ?? []).length === 0 && (
-                <p className="p-3 text-sm text-muted-foreground">Nenhuma rubrica foi inserida para este contracheque.</p>
-              )}
-            </div>
-          ))}
-        </div>
+        <ContrachequesExtraidos contracheques={contrachequesExtraidos} />
       </section>
 
       <div className="flex justify-between">

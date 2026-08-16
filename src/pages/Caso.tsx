@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { TelaConfirmacao } from "@/components/caso/TelaConfirmacao";
+import { TelaDadosExtraidos } from "@/components/caso/TelaDadosExtraidos";
 import { TelaCalculos } from "@/components/caso/TelaCalculos";
 import { TelaDownload } from "@/components/caso/TelaDownload";
 import { TelaProcessando } from "@/components/caso/TelaProcessando";
@@ -16,6 +17,7 @@ import {
   montarContrachequesRelacionais,
   type ContrachequeRelacional,
 } from "@/lib/contracheques-relacionais";
+import { dadosEsperadosForamExtraidos } from "@/lib/dados-extraidos";
 
 export type CasoData = {
   id: string;
@@ -118,6 +120,7 @@ export default function Caso() {
     toast.success("Caso cancelado");
     nav("/");
   };
+  const extracaoCompleta = dadosEsperadosForamExtraidos(caso);
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -144,7 +147,11 @@ export default function Caso() {
 
 
         {(caso.status === "novo" || caso.status === "em_analise") && <TelaProcessando caso={caso} />}
-        {caso.status === "aguardando_confirmacao" && <TelaConfirmacao caso={caso} onCancel={cancelar} />}
+        {caso.status === "aguardando_confirmacao" && (
+          extracaoCompleta
+            ? <TelaDadosExtraidos caso={caso} onCancel={cancelar} />
+            : <TelaConfirmacao caso={caso} onCancel={cancelar} />
+        )}
         {caso.status === "aguardando_pasta" && <TelaCalculos caso={caso} onCancel={cancelar} />}
         {caso.status === "concluido" && <TelaDownload caso={caso} />}
         {caso.status === "cancelado" && (
