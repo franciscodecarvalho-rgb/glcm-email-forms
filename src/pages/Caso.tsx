@@ -11,7 +11,11 @@ import { TelaDownload } from "@/components/caso/TelaDownload";
 import { TelaProcessando } from "@/components/caso/TelaProcessando";
 import { BlocoDuplicata } from "@/components/caso/BlocoDuplicata";
 import { toast } from "sonner";
-import { contrachequesRelacionaisParaRevisao } from "@/lib/contracheques-relacionais";
+import {
+  contrachequesRelacionaisParaRevisao,
+  montarContrachequesRelacionais,
+  type ContrachequeRelacional,
+} from "@/lib/contracheques-relacionais";
 
 export type CasoData = {
   id: string;
@@ -21,6 +25,7 @@ export type CasoData = {
   rg: string | null;
   endereco: any;
   contracheques: any;
+  contracheques_extraidos: ContrachequeRelacional[];
   numero_pasta: string | null;
   documentos_gerados: any;
   erro_processamento: string | null;
@@ -49,18 +54,34 @@ export default function Caso() {
       nav(`/casos/${(data as any).mesclado_em}`);
       return;
     }
-    const { data: contrachequesRelacionados, error: contrachequesError } = await supabase
+    const { data: contrachequesPersistidos, error: contrachequesError } = await supabase
       .from("contracheques")
-      .select("id, competencia, arquivo_origem, itens_contracheque(valor, familia_hra)")
+      .select("id, competencia, total_proventos, total_descontos, liquido, arquivo_origem, modelo_origem")
       .eq("caso_id", id)
       .order("competencia", { ascending: true });
     if (contrachequesError) {
       toast.error("Não foi possível carregar os contracheques extraídos");
     }
+    const idsContracheques = (contrachequesPersistidos ?? []).map((contracheque) => contracheque.id);
+    const { data: itensPersistidos, error: itensError } = idsContracheques.length
+      ? await supabase
+          .from("itens_contracheque")
+          .select("id, contracheque_id, codigo, descricao, referencia, valor, tipo, familia_hra")
+          .in("contracheque_id", idsContracheques)
+          .order("descricao", { ascending: true })
+      : { data: [], error: null };
+    if (itensError) {
+      toast.error("Não foi possível carregar as rubricas extraídas");
+    }
+    const contrachequesRelacionados = montarContrachequesRelacionais(
+      contrachequesPersistidos,
+      itensPersistidos,
+    );
     const contrachequesEstruturados = contrachequesRelacionaisParaRevisao(contrachequesRelacionados);
     setCaso({
       ...(data as CasoData),
       contracheques: contrachequesEstruturados.length ? contrachequesEstruturados : data.contracheques,
+      contracheques_extraidos: contrachequesRelacionados,
     });
     // Busca casos que foram mesclados aqui
     const { data: ms } = await supabase

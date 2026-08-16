@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { contrachequesRelacionaisParaRevisao } from "./contracheques-relacionais";
+import {
+  contrachequesRelacionaisParaRevisao,
+  montarContrachequesRelacionais,
+} from "./contracheques-relacionais";
+
+describe("montarContrachequesRelacionais", () => {
+  it("associa a cada contracheque somente as rubricas persistidas com sua chave", () => {
+    expect(montarContrachequesRelacionais(
+      [{ id: "contra-1" }, { id: "contra-2" }],
+      [
+        { id: "item-2", contracheque_id: "contra-2", descricao: "IRRF", valor: 20 },
+        { id: "item-1", contracheque_id: "contra-1", descricao: "Salário", valor: 100 },
+      ],
+    )).toEqual([
+      {
+        id: "contra-1",
+        itens_contracheque: [{ id: "item-1", contracheque_id: "contra-1", descricao: "Salário", valor: 100 }],
+      },
+      {
+        id: "contra-2",
+        itens_contracheque: [{ id: "item-2", contracheque_id: "contra-2", descricao: "IRRF", valor: 20 }],
+      },
+    ]);
+  });
+});
 
 describe("contrachequesRelacionaisParaRevisao", () => {
   it("converte rubricas HRA e AHRA das tabelas relacionais para a tela de revisão", () => {

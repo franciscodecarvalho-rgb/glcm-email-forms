@@ -1,12 +1,22 @@
 export type ItemContrachequeRelacional = {
+  id?: string;
+  contracheque_id?: string;
+  codigo?: string | null;
+  descricao?: string | null;
+  referencia?: number | null;
   valor?: number | null;
+  tipo?: string | null;
   familia_hra?: string | null;
 };
 
 export type ContrachequeRelacional = {
   id: string;
   competencia?: string | null;
+  total_proventos?: number | null;
+  total_descontos?: number | null;
+  liquido?: number | null;
   arquivo_origem?: string | null;
+  modelo_origem?: string | null;
   itens_contracheque?: ItemContrachequeRelacional[] | null;
 };
 
@@ -16,6 +26,18 @@ export type ContrachequeRevisao = {
   valor_hra: number;
   valor_ahra: number;
 };
+
+export function montarContrachequesRelacionais(
+  contracheques: ContrachequeRelacional[] | null | undefined,
+  itens: ItemContrachequeRelacional[] | null | undefined,
+): ContrachequeRelacional[] {
+  return (contracheques ?? []).map((contracheque) => ({
+    ...contracheque,
+    itens_contracheque: (itens ?? []).filter(
+      (item) => item.contracheque_id === contracheque.id,
+    ),
+  }));
+}
 
 export function contrachequesRelacionaisParaRevisao(
   contracheques: ContrachequeRelacional[] | null | undefined,

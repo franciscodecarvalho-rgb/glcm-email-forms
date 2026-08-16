@@ -116,6 +116,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Usar texto e coordenadas do PDF, validar CPF e persistir os dados consolidados no caso; documentos sem camada de texto ou não reconhecidos seguem para revisão manual.
 **Evitar:** Inventar campos ausentes, bloquear indefinidamente o caso ou enviar esses documentos para análise generativa no fluxo manual.
 
+### 2026-08 — Revisão dos contracheques persistidos
+
+**Regra confirmada:** A confirmação do caso deve mostrar somente os contracheques e rubricas efetivamente extraídos dos PDFs e inseridos nas tabelas relacionais.
+**Origem:** Solicitação de Nodley durante a validação dos contracheques.
+**Aplicação:** Consultar `contracheques` e `itens_contracheque` e exibir os valores persistidos, sem criar linhas manuais nessa seção.
+**Evitar:** Usar o JSON legado de `casos.contracheques` como evidência de que a extração foi gravada no banco.
+
 ```markdown
 ### AAAA-MM — Título
 
