@@ -36,10 +36,19 @@ export const STATUS_ORDER: CasoStatus[] = [
 // Tipos com template .docx (upload na página Templates). A planilha de
 // cálculo NÃO entra aqui: é gerada como .xlsx com fórmulas, sem template.
 export const TEMPLATE_TIPOS = [
-  { id: "peticao", label: "Petição Inicial" },
-  { id: "contrato", label: "Contrato" },
-  { id: "procuracao_glcm", label: "Procuração — GLCM" },
-  { id: "procuracao_polkowski", label: "Procuração — Polkowski" },
+  { id: "peticao_ir_sobre_hra", label: "Petição — IR sobre HRA (Tema 306)" },
+  { id: "peticao_contribuicao_extraordinaria", label: "Petição — Contribuição Extraordinária" },
+  { id: "peticao_horas_extras", label: "Petição — Horas Extras" },
+  { id: "peticao_supressao_folgas", label: "Petição — Supressão de Folgas" },
+  { id: "peticao_tema_324", label: "Petição — Tema 324" },
+  { id: "contrato_tributario", label: "Contrato — Tributário (modelo HRA)" },
+  { id: "contrato_trabalhista", label: "Contrato — Trabalhista (modelo Reflexo de Hora Extra)" },
+  { id: "procuracao_tributaria_glcm", label: "Procuração Tributária — GLCM" },
+  { id: "procuracao_tributaria_polkowski", label: "Procuração Tributária — Polkowski" },
+  { id: "procuracao_trabalhista_glcm", label: "Procuração Trabalhista — GLCM" },
+  { id: "procuracao_trabalhista_polkowski", label: "Procuração Trabalhista — Polkowski" },
+  { id: "declaracao_pobreza", label: "Declaração de Pobreza" },
+  // Estes três identificadores já estão validados em produção. Não alterar.
   { id: "termo_lgpd_glcm", label: "Termo LGPD — GLCM" },
   { id: "termo_lgpd_polkowski", label: "Termo LGPD — Polkowski" },
   { id: "termo_renuncia", label: "Termo de Renúncia" },
@@ -50,5 +59,10 @@ export type TemplateTipo = (typeof TEMPLATE_TIPOS)[number]["id"];
 /** Rótulos das peças geradas (templates + planilha gerada). */
 export const PECA_LABELS: Record<string, string> = {
   ...Object.fromEntries(TEMPLATE_TIPOS.map((t) => [t.id, t.label])),
+  peticao: "Petição Inicial",
+  contrato: "Contrato",
+  procuracao_glcm: "Procuração — GLCM",
+  procuracao_polkowski: "Procuração — Polkowski",
+  declaracao_pobreza: "Declaração de Pobreza",
   planilha: "Planilha de Cálculo (Excel)",
 };

@@ -16,10 +16,66 @@ const corsHeaders = {
 
 const ALIQUOTA = 0.275;
 
-// Peças com template .docx; a planilha é gerada à parte (xlsx, sem template).
-const PECAS_BASE = ["peticao", "contrato", "termo_renuncia"];
-const PECAS_GLCM = ["procuracao_glcm", "termo_lgpd_glcm"];
-const PECAS_POLKOWSKI = ["procuracao_polkowski", "termo_lgpd_polkowski"];
+type NaturezaAcao = "tributaria" | "trabalhista";
+type ConfiguracaoAcao = { natureza: NaturezaAcao; peticao: string; contrato: string };
+type PecaSelecionada = { templateTipo: string; tipoSaida: string };
+
+// Espelho de src/lib/modelos-documentos.ts. Mantido inline porque esta Edge
+// Function é publicada como arquivo único no ambiente atual.
+const DOCUMENTOS_POR_TIPO_ACAO: Record<string, ConfiguracaoAcao> = {
+  ir_sobre_hra: {
+    natureza: "tributaria",
+    peticao: "peticao_ir_sobre_hra",
+    contrato: "contrato_tributario",
+  },
+  contribuicao_extraordinaria: {
+    natureza: "tributaria",
+    peticao: "peticao_contribuicao_extraordinaria",
+    contrato: "contrato_tributario",
+  },
+  tema_324: {
+    natureza: "tributaria",
+    peticao: "peticao_tema_324",
+    contrato: "contrato_tributario",
+  },
+  horas_extras: {
+    natureza: "trabalhista",
+    peticao: "peticao_horas_extras",
+    contrato: "contrato_trabalhista",
+  },
+  supressao_folgas: {
+    natureza: "trabalhista",
+    peticao: "peticao_supressao_folgas",
+    contrato: "contrato_trabalhista",
+  },
+};
+
+function selecionarPecas(tipoAcao: string, escritorios: string[]): PecaSelecionada[] {
+  const configuracao = DOCUMENTOS_POR_TIPO_ACAO[tipoAcao];
+  if (!configuracao) throw new Error(`Tipo de ação sem modelos configurados: ${tipoAcao || "não informado"}`);
+
+  const pecas: PecaSelecionada[] = [
+    { templateTipo: configuracao.peticao, tipoSaida: "peticao" },
+    { templateTipo: configuracao.contrato, tipoSaida: "contrato" },
+    { templateTipo: "declaracao_pobreza", tipoSaida: "declaracao_pobreza" },
+    // Termo de renúncia existente e já validado: identificador preservado.
+    { templateTipo: "termo_renuncia", tipoSaida: "termo_renuncia" },
+  ];
+
+  if (escritorios.length === 0 || escritorios.includes("glcm")) {
+    pecas.push(
+      { templateTipo: `procuracao_${configuracao.natureza}_glcm`, tipoSaida: "procuracao_glcm" },
+      { templateTipo: "termo_lgpd_glcm", tipoSaida: "termo_lgpd_glcm" },
+    );
+  }
+  if (escritorios.length === 0 || escritorios.includes("polkowski")) {
+    pecas.push(
+      { templateTipo: `procuracao_${configuracao.natureza}_polkowski`, tipoSaida: "procuracao_polkowski" },
+      { templateTipo: "termo_lgpd_polkowski", tipoSaida: "termo_lgpd_polkowski" },
+    );
+  }
+  return pecas;
+}
 
 // ---------------- valor por extenso (espelho de src/lib/valor-extenso.ts) ----------------
 const UNIDADES = ["zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
@@ -268,9 +324,8 @@ Deno.serve(async (req) => {
     if (cErr || !caso) throw new Error("Caso não encontrado");
 
     const escritorios: string[] = Array.isArray(caso.escritorios) ? caso.escritorios : [];
-    const tipos = [...PECAS_BASE];
-    if (escritorios.length === 0 || escritorios.includes("glcm")) tipos.push(...PECAS_GLCM);
-    if (escritorios.length === 0 || escritorios.includes("polkowski")) tipos.push(...PECAS_POLKOWSKI);
+    const pecas = selecionarPecas(caso.tipo_acao, escritorios);
+    const tipos = pecas.map((peca) => peca.templateTipo);
 
     const { data: templates, error: tErr } = await supabase
       .from("templates")
@@ -301,16 +356,20 @@ Deno.serve(async (req) => {
     const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
 
     const faltantes = tipos.filter((t) => !templates.some((tp: any) => tp.tipo === t));
+    if (faltantes.length > 0) {
+      throw new Error(`Templates obrigatórios ausentes: ${faltantes.join(", ")}`);
+    }
     const generated: { tipo: string; storage_path: string; nome: string }[] = [];
 
     for (const tpl of templates) {
+      const peca = pecas.find((item) => item.templateTipo === tpl.tipo);
+      if (!peca) continue;
       const { data: blob, error: dlErr } = await supabase.storage
         .from("templates")
         .download(tpl.storage_path);
       if (dlErr || !blob) {
         console.error("Falha ao baixar template", tpl.tipo, dlErr);
-        faltantes.push(tpl.tipo);
-        continue;
+        throw new Error(`Falha ao baixar o template obrigatório: ${tpl.tipo}`);
       }
       const buf = new Uint8Array(await blob.arrayBuffer());
       const zip = new PizZip(buf);
@@ -324,7 +383,7 @@ Deno.serve(async (req) => {
       doc.render(data);
       const out: Uint8Array = doc.getZip().generate({ type: "uint8array" });
 
-      const safeName = `${tpl.tipo}-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.docx`;
+      const safeName = `${peca.tipoSaida}-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.docx`;
       const path = `${caso.id}/${safeName}`;
       const { error: upErr } = await supabase.storage
         .from("casos-documentos")
@@ -333,7 +392,7 @@ Deno.serve(async (req) => {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         });
       if (upErr) throw upErr;
-      generated.push({ tipo: tpl.tipo, storage_path: path, nome: safeName });
+      generated.push({ tipo: peca.tipoSaida, storage_path: path, nome: safeName });
     }
 
     // Planilha de cálculo: .xlsx com fórmulas (sempre, sem template).

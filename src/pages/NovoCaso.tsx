@@ -16,6 +16,7 @@ const TIPOS_ACAO = [
   { id: "horas_extras", label: "Horas Extras" },
   { id: "supressao_folgas", label: "Supressão de Folgas" },
   { id: "contribuicao_extraordinaria", label: "Contribuição extraordinária" },
+  { id: "tema_324", label: "Tema 324" },
 ];
 const ESCRITORIOS_OPCOES = [
   { id: "glcm", label: "GLCM" },

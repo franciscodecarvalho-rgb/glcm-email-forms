@@ -151,6 +151,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Preencher `{NUMERO_CONTRATO}` com `casos.numero_pasta` ao gerar o contrato.
 **Evitar:** Criar ou depender de um campo separado `numero_contrato` para essa finalidade.
 
+### 2026-08 — Natureza e modelos dos documentos
+
+**Regra confirmada:** IR sobre HRA, Contribuição Extraordinária e Tema 324 são ações tributárias; Horas Extras e Supressão de Folgas são trabalhistas.
+**Origem:** Definição de Nodley para a geração dos documentos por tipo de ação.
+**Aplicação:** Selecionar a petição específica da ação; usar o contrato HRA nas ações tributárias, o contrato Reflexo de Hora Extra nas trabalhistas e escolher a procuração pela natureza e pelo escritório.
+**Evitar:** Alterar os Termos existentes ou selecionar contrato e procuração sem considerar a natureza da ação.
+
 ```markdown
 ### AAAA-MM — Título
 
