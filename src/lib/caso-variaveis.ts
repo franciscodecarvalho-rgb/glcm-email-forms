@@ -72,7 +72,7 @@ export function montarVariaveisCaso(
     LOCAL_ASSINATURA, // local fixo da assinatura (sede do escritório)
     DATA: fmtData(hoje),
     NUMERO_PASTA: caso.numero_pasta ?? "",
-    NUMERO_CONTRATO: caso.numero_contrato ?? "",
+    NUMERO_CONTRATO: caso.numero_pasta ?? "",
     HONORARIOS_PCT: caso.honorarios_pct != null ? String(caso.honorarios_pct) : "",
     HONORARIOS_EXTENSO: caso.honorarios_pct != null ? extensoInteiro(Math.round(Number(caso.honorarios_pct))) : "",
     VALOR_CAUSA: fmtBRL(valor),

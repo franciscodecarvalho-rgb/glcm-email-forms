@@ -49,6 +49,7 @@ describe("montarVariaveisCaso", () => {
     expect(v.PROFISSAO).toBe("industriário");
     expect(v.CIDADE_UF).toBe("Rio de Janeiro/RJ");
     expect(v.DATA).toBe("18/04/2026");
+    expect(v.NUMERO_CONTRATO).toBe("2026/0123");
     expect(v.HONORARIOS_PCT).toBe("20");
     expect(v.VALOR_CAUSA_EXTENSO).toBe(
       "trinta e seis mil, seiscentos e cinquenta reais e oitenta e um centavos",

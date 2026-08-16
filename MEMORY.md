@@ -144,6 +144,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Enviar à IA somente arquivos classificados como informações pessoais e persistir apenas os campos desse domínio.
 **Evitar:** Reprocessar contracheques pela IA ou depender de OCR local para documentos pessoais.
 
+### 2026-08 — Número do contrato
+
+**Regra confirmada:** O número exibido no contrato é o número da pasta do processo.
+**Origem:** Definição de Nodley para a etapa de geração de documentos.
+**Aplicação:** Preencher `{NUMERO_CONTRATO}` com `casos.numero_pasta` ao gerar o contrato.
+**Evitar:** Criar ou depender de um campo separado `numero_contrato` para essa finalidade.
+
 ```markdown
 ### AAAA-MM — Título
 
