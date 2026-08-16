@@ -81,7 +81,7 @@ export default function Caso() {
     );
     const contrachequesEstruturados = contrachequesRelacionaisParaRevisao(contrachequesRelacionados);
     setCaso({
-      ...(data as CasoData),
+      ...(data as unknown as CasoData),
       contracheques: contrachequesEstruturados.length ? contrachequesEstruturados : data.contracheques,
       contracheques_extraidos: contrachequesRelacionados,
     });
