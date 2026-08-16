@@ -16,7 +16,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
   const [pasta, setPasta] = useState(caso.numero_pasta ?? "");
   const [generating, setGenerating] = useState(false);
 
-  const contras = (caso.contracheques as any[]) ?? [];
+  const contras = useMemo(() => (caso.contracheques as any[]) ?? [], [caso.contracheques]);
   const totHra = useMemo(() => contras.reduce((a, c) => a + Number(c.valor_hra || 0), 0), [contras]);
   const totAhra = useMemo(() => contras.reduce((a, c) => a + Number(c.valor_ahra || 0), 0), [contras]);
   const totGeral = totHra + totAhra;

@@ -220,7 +220,8 @@ async function despachar(supabase: any, casoId: string) {
   const { data: arquivos, error: aErr } = await supabase
     .from("arquivos")
     .select("id")
-    .eq("caso_id", casoId);
+    .eq("caso_id", casoId)
+    .or("tipo.is.null,tipo.neq.contracheque");
   if (aErr) throw aErr;
   if (!arquivos || arquivos.length === 0) throw new Error("Nenhum arquivo no caso");
 
@@ -383,27 +384,39 @@ async function verificarConclusao(supabase: any, casoId: string) {
 async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
   const dados = mesclarResultados(lotes.map((l: any) => l.resultado).filter(Boolean));
 
-  const contras = (dados.contracheques ?? []).map((c: any, i: number) => ({
-    id: crypto.randomUUID(),
-    label: c.label || `Contracheque ${i + 1}`,
-    valor_hra: Number(c.valor_hra) || 0,
-    valor_ahra: Number(c.valor_ahra) || 0,
-  }));
+  const { data: estruturados, error: estruturadosError } = await supabase
+    .from("contracheques")
+    .select("id, competencia, itens_contracheque(descricao, valor, tipo, familia_hra)")
+    .eq("caso_id", casoId)
+    .order("competencia");
+  if (estruturadosError) throw estruturadosError;
+
+  const contras = (estruturados ?? []).map((c: any, i: number) => {
+    const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
+    const proventosHra = itens.filter((item: any) => item.tipo === "provento" && item.familia_hra);
+    return {
+      id: c.id,
+      label: c.competencia || `Contracheque ${i + 1}`,
+      valor_hra: proventosHra
+        .filter((item: any) => !String(item.familia_hra).includes("ahra"))
+        .reduce((s: number, item: any) => s + Number(item.valor || 0), 0),
+      valor_ahra: proventosHra
+        .filter((item: any) => String(item.familia_hra).includes("ahra"))
+        .reduce((s: number, item: any) => s + Number(item.valor || 0), 0),
+    };
+  });
 
   // Guarda: muitos arquivos e 0 contracheques = algo errado; não salvar R$ 0.
-  const { count: totalArquivos } = await supabase
+  const { count: totalContracheques } = await supabase
     .from("arquivos")
     .select("id", { count: "exact", head: true })
-    .eq("caso_id", casoId);
-  if ((totalArquivos ?? 0) >= 5 && contras.length === 0) {
+    .eq("caso_id", casoId)
+    .eq("tipo", "contracheque");
+  if ((totalContracheques ?? 0) > 0 && contras.length === 0) {
     throw new Error(
-      `Extração retornou 0 contracheques para ${totalArquivos} arquivos — provável falha. Clique em "Tentar novamente".`,
+      `${totalContracheques} arquivo(s) de contracheque não produziram dados estruturados. Revise se os PDFs possuem texto selecionável.`,
     );
   }
-
-  // Persistência granular: TODA rubrica de TODO contracheque nas tabelas
-  // contracheques/itens_contracheque (decisão: o banco guarda tudo estruturado).
-  await persistirGranular(supabase, casoId, dados.contracheques ?? []);
 
   await supabase
     .from("casos")
