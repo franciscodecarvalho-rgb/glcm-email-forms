@@ -15,7 +15,7 @@ type ResultadoTeste = {
   error?: string;
 };
 
-const rotulo = (chave: string) => chave.replaceAll("_", " ");
+const rotulo = (chave: string) => chave.replace(/_/g, " ");
 const valor = (conteudo: unknown) => Array.isArray(conteudo) ? conteudo.join("; ") : String(conteudo ?? "—");
 
 export default function TesteExtracaoPdfs() {
