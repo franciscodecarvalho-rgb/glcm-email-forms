@@ -52,7 +52,7 @@ export default function Templates() {
       <main className="container max-w-3xl py-8">
         <h1 className="text-2xl font-bold">Templates de Documentos</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Suba os 4 modelos <code className="rounded bg-muted px-1">.docx</code> com placeholders no formato <code className="rounded bg-muted px-1">{`{NOME_CLIENTE}`}</code>, <code className="rounded bg-muted px-1">{`{CPF}`}</code>, <code className="rounded bg-muted px-1">{`{TOTAL_HRA}`}</code>, etc.
+          Envie cada modelo <code className="rounded bg-muted px-1">.docx</code> no tipo correspondente, com placeholders no formato <code className="rounded bg-muted px-1">{`{NOME_CLIENTE}`}</code>, <code className="rounded bg-muted px-1">{`{CPF}`}</code>, <code className="rounded bg-muted px-1">{`{NUMERO_CONTRATO}`}</code>, etc.
         </p>
 
         <div className="space-y-3">
