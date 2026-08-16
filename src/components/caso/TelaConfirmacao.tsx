@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, Check, X } from "lucide-react";
+import { AlertTriangle, Plus, Trash2, Check, X } from "lucide-react";
 import type { CasoData } from "@/pages/Caso";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
-type Contra = { id: string; label: string; valor_hra: number; valor_ahra: number };
+// flags: avisos de validação cruzada gerados na extração (checksum da folha,
+// nome do arquivo, competência repetida) — pedem revisão humana, não bloqueiam.
+type Contra = { id: string; label: string; valor_hra: number; valor_ahra: number; flags?: string[] };
 type Empreg = { id: string; razao_social: string; cnpj: string };
 
 export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: () => void }) {
@@ -29,6 +31,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         label: c.label ?? `Contracheque ${i + 1}`,
         valor_hra: Number(c.valor_hra) || 0,
         valor_ahra: Number(c.valor_ahra) || 0,
+        ...(Array.isArray(c.flags) && c.flags.length > 0 ? { flags: c.flags } : {}),
       }))
     : [];
   const [contras, setContras] = useState<Contra[]>(init);
@@ -139,17 +142,37 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
 
       <section className="space-y-4 rounded-lg border bg-card p-6">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Contracheques (HRA / AHRA)</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="font-semibold">Contracheques (HRA / AHRA)</h2>
+            {contras.some((c) => c.flags?.length) && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                <AlertTriangle className="h-3 w-3" />
+                {contras.filter((c) => c.flags?.length).length} a revisar
+              </span>
+            )}
+          </div>
           <Button variant="outline" size="sm" onClick={add}><Plus className="mr-2 h-4 w-4" />Adicionar</Button>
         </div>
         {contras.length === 0 && <p className="text-sm text-muted-foreground">Nenhum contracheque extraído. Adicione manualmente.</p>}
         <div className="space-y-3">
           {contras.map((c) => (
-            <div key={c.id} className="grid grid-cols-1 gap-3 rounded border bg-muted/30 p-3 md:grid-cols-12">
-              <div className="space-y-1 md:col-span-5"><Label className="text-xs">Identificação</Label><Input value={c.label} onChange={(e) => upd(c.id, { label: e.target.value })} /></div>
-              <div className="space-y-1 md:col-span-3"><Label className="text-xs">Valor HRA</Label><Input type="number" step="0.01" value={c.valor_hra} onChange={(e) => upd(c.id, { valor_hra: Number(e.target.value) })} /></div>
-              <div className="space-y-1 md:col-span-3"><Label className="text-xs">Valor AHRA</Label><Input type="number" step="0.01" value={c.valor_ahra} onChange={(e) => upd(c.id, { valor_ahra: Number(e.target.value) })} /></div>
-              <div className="flex items-end md:col-span-1"><Button variant="ghost" size="icon" onClick={() => remove(c.id)}><Trash2 className="h-4 w-4" /></Button></div>
+            <div key={c.id} className={`rounded border p-3 ${c.flags?.length ? "border-amber-400 bg-amber-50/60" : "bg-muted/30"}`}>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                <div className="space-y-1 md:col-span-5"><Label className="text-xs">Identificação</Label><Input value={c.label} onChange={(e) => upd(c.id, { label: e.target.value })} /></div>
+                <div className="space-y-1 md:col-span-3"><Label className="text-xs">Valor HRA</Label><Input type="number" step="0.01" value={c.valor_hra} onChange={(e) => upd(c.id, { valor_hra: Number(e.target.value) })} /></div>
+                <div className="space-y-1 md:col-span-3"><Label className="text-xs">Valor AHRA</Label><Input type="number" step="0.01" value={c.valor_ahra} onChange={(e) => upd(c.id, { valor_ahra: Number(e.target.value) })} /></div>
+                <div className="flex items-end md:col-span-1"><Button variant="ghost" size="icon" onClick={() => remove(c.id)}><Trash2 className="h-4 w-4" /></Button></div>
+              </div>
+              {c.flags && c.flags.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {c.flags.map((f, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </div>
