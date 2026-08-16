@@ -70,7 +70,6 @@ export type Database = {
           escritorios: Json
           honorarios_pct: number | null
           id: string
-          limite_viabilidade: number
           mesclado_at: string | null
           mesclado_em: string | null
           message_id: string | null
@@ -100,7 +99,6 @@ export type Database = {
           escritorios?: Json
           honorarios_pct?: number | null
           id?: string
-          limite_viabilidade?: number
           mesclado_at?: string | null
           mesclado_em?: string | null
           message_id?: string | null
@@ -130,7 +128,6 @@ export type Database = {
           escritorios?: Json
           honorarios_pct?: number | null
           id?: string
-          limite_viabilidade?: number
           mesclado_at?: string | null
           mesclado_em?: string | null
           message_id?: string | null
@@ -178,7 +175,6 @@ export type Database = {
           created_at: string
           id: string
           liquido: number | null
-          modelo_origem: string | null
           salario_base: number | null
           total_descontos: number | null
           total_proventos: number | null
@@ -190,7 +186,6 @@ export type Database = {
           created_at?: string
           id?: string
           liquido?: number | null
-          modelo_origem?: string | null
           salario_base?: number | null
           total_descontos?: number | null
           total_proventos?: number | null
@@ -202,7 +197,6 @@ export type Database = {
           created_at?: string
           id?: string
           liquido?: number | null
-          modelo_origem?: string | null
           salario_base?: number | null
           total_descontos?: number | null
           total_proventos?: number | null
@@ -248,7 +242,6 @@ export type Database = {
           descricao: string | null
           familia_hra: string | null
           id: string
-          referencia: number | null
           tipo: string | null
           valor: number | null
         }
@@ -259,7 +252,6 @@ export type Database = {
           descricao?: string | null
           familia_hra?: string | null
           id?: string
-          referencia?: number | null
           tipo?: string | null
           valor?: number | null
         }
@@ -270,7 +262,6 @@ export type Database = {
           descricao?: string | null
           familia_hra?: string | null
           id?: string
-          referencia?: number | null
           tipo?: string | null
           valor?: number | null
         }
