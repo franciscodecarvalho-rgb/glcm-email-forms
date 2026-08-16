@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { extractTextItems, getDocumentProxy } from "npm:unpdf@1.4.0";
+import { getDocumentProxy } from "npm:unpdf@1.4.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,6 +15,26 @@ const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-?(?:R\$)?\s*\d+,\d{2}$
 const MESES: Record<string, string> = { janeiro:"01",fevereiro:"02",marco:"03",abril:"04",maio:"05",junho:"06",julho:"07",agosto:"08",setembro:"09",outubro:"10",novembro:"11",dezembro:"12",jan:"01",fev:"02",mar:"03",abr:"04",mai:"05",jun:"06",jul:"07",ago:"08",set:"09",out:"10",nov:"11",dez:"12" };
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 const moeda = (s: string) => Number(s.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+
+async function extrairItensPorPagina(pdf: Awaited<ReturnType<typeof getDocumentProxy>>) {
+  const paginas: TextItem[][] = [];
+  for (let numero = 1; numero <= pdf.numPages; numero++) {
+    const pagina = await pdf.getPage(numero);
+    const conteudo = await pagina.getTextContent();
+    paginas.push(conteudo.items.flatMap((item) => {
+      if (!("str" in item) || !("transform" in item)) return [];
+      return [{
+        str: item.str,
+        x: item.transform[4],
+        y: item.transform[5],
+        width: item.width,
+        height: item.height,
+      }];
+    }));
+    pagina.cleanup();
+  }
+  return paginas;
+}
 
 function expandir(itens: TextItem[]) {
   return itens.flatMap((item) => {
@@ -144,8 +164,8 @@ Deno.serve(async(req)=>{
       if(arq.mime_type!=="application/pdf"){revisao.push({arquivo:arq.nome,motivo:"formato_nao_pdf"});continue;}
       const {data:blob,error:de}=await supabase.storage.from("casos-arquivos").download(arq.storage_path);if(de||!blob)throw de??new Error(`Falha ao baixar ${arq.nome}`);
       const pdf=await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()),{maxImageSize:16_777_216});if(pdf.numPages>100){revisao.push({arquivo:arq.nome,motivo:"limite_de_paginas"});continue;}
-      const {items}=await extractTextItems(pdf);
-      // extractTextItems não expõe a largura; usa o maior limite horizontal observado.
+      const items=await extrairItensPorPagina(pdf);
+      // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
       const paginas=items.map((pagina)=>parsePagina(pagina as TextItem[],Math.max(...pagina.map((x)=>x.x+x.width),595)));
       const contras=consolidar(paginas);
       if(!contras.length){revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});continue;}
