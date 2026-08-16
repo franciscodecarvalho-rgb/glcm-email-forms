@@ -179,5 +179,11 @@ Deno.serve(async(req)=>{
       }
     }
     return json({ok:true,contracheques:extraidos.length,revisao});
-  }catch(e){return json({error:e instanceof Error?e.message:"Erro ao processar contracheques"},500);}
+  }catch(e){
+    const detalhe=e instanceof Error
+      ? {name:e.name,message:e.message,stack:e.stack}
+      : {message:String(e)};
+    console.error("process-contracheques-pdf error",detalhe);
+    return json({error:e instanceof Error?e.message:"Erro ao processar contracheques"},500);
+  }
 });
