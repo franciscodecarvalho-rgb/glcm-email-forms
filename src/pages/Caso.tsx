@@ -11,6 +11,7 @@ import { TelaDownload } from "@/components/caso/TelaDownload";
 import { TelaProcessando } from "@/components/caso/TelaProcessando";
 import { BlocoDuplicata } from "@/components/caso/BlocoDuplicata";
 import { toast } from "sonner";
+import { contrachequesRelacionaisParaRevisao } from "@/lib/contracheques-relacionais";
 
 export type CasoData = {
   id: string;
@@ -48,7 +49,19 @@ export default function Caso() {
       nav(`/casos/${(data as any).mesclado_em}`);
       return;
     }
-    setCaso(data as CasoData);
+    const { data: contrachequesRelacionados, error: contrachequesError } = await supabase
+      .from("contracheques")
+      .select("id, competencia, arquivo_origem, itens_contracheque(valor, familia_hra)")
+      .eq("caso_id", id)
+      .order("competencia", { ascending: true });
+    if (contrachequesError) {
+      toast.error("Não foi possível carregar os contracheques extraídos");
+    }
+    const contrachequesEstruturados = contrachequesRelacionaisParaRevisao(contrachequesRelacionados);
+    setCaso({
+      ...(data as CasoData),
+      contracheques: contrachequesEstruturados.length ? contrachequesEstruturados : data.contracheques,
+    });
     // Busca casos que foram mesclados aqui
     const { data: ms } = await supabase
       .from("casos").select("id, mesclado_at").eq("mesclado_em", id);
