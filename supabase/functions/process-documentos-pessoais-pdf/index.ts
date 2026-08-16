@@ -13,10 +13,10 @@ type DadosDocumento = Record<string, Campo> & { tipo_documento: TipoDocumento };
 type Linha = { text: string; x0: number; y0: number; x1: number; y1: number; page: number };
 
 const LABELS = [
-  "nome", "cpf", "registro geral", "rg", "cin", "doc. identidade", "documento de identidade",
+  "nome", "nome completo", "nome e sobrenome", "cpf", "registro geral", "rg", "cin", "doc. identidade", "documento de identidade",
   "orgao emissor", "data de nascimento", "nascimento", "filiacao", "naturalidade", "nacionalidade",
   "data de emissao", "emissao", "validade", "categoria", "cat. hab.", "numero registro", "n registro",
-  "primeira habilitacao", "1 habilitacao", "local", "observacoes", "permissao",
+  "primeira habilitacao", "1 habilitacao", "local", "observacoes", "permissao", "renach",
 ];
 
 const normalize = (value: string) => value
@@ -49,7 +49,7 @@ function validarCpf(value: string | null): string | null {
 function classificar(texto: string): TipoDocumento | null {
   const n = normalizedLower(texto);
   const digital = /qr[ -]?code|documento digital|versao digital|validar.*qr|assinatura digital/.test(n);
-  if (/carteira nacional de habilitacao|permissao para dirigir|cat\.? hab|n[ºo°]? registro/.test(n)) {
+  if (/carteira nacional de habilitacao|carteira digital de transito|documento de habilitacao|permissao para dirigir|cat\.? hab|n[ºo°]? registro|\brenach\b/.test(n)) {
     return digital ? "cnh_digital" : "cnh_fisica";
   }
   if (/carteira de identidade nacional|documento nacional de identidade|\bcin\b/.test(n)) {
@@ -104,7 +104,7 @@ function extrair(linhas: Linha[], tipo: TipoDocumento): DadosDocumento {
   const filiacao = valorRotulo(linhas, ["FILIAÇÃO", "FILIACAO"]);
   const dados: DadosDocumento = {
     tipo_documento: tipo,
-    nome: valorRotulo(linhas, ["NOME", "NOME COMPLETO"]),
+    nome: valorRotulo(linhas, ["NOME", "NOME COMPLETO", "NOME E SOBRENOME"]),
     cpf: validarCpf(cpfEncontrado ?? valorRotulo(linhas, ["CPF"])),
     rg: rg ? rg.replace(/^RG\s*[:-]?\s*/i, "").trim() : null,
     cin: cin ? cin.replace(/^CIN\s*[:-]?\s*/i, "").trim() : null,
@@ -118,7 +118,7 @@ function extrair(linhas: Linha[], tipo: TipoDocumento): DadosDocumento {
     validade: dataValida(valorRotulo(linhas, ["VALIDADE", "VÁLIDA ATÉ", "VALIDA ATE"])),
   };
   if (tipo.startsWith("cnh_")) {
-    dados.cnh = valorRotulo(linhas, ["Nº REGISTRO", "N REGISTRO", "REGISTRO", "CNH"]);
+    dados.cnh = valorRotulo(linhas, ["Nº REGISTRO", "N REGISTRO", "REGISTRO", "CNH", "RENACH"]);
     dados.categoria = valorRotulo(linhas, ["CAT. HAB.", "CATEGORIA", "CAT HAB"]);
     dados.primeira_habilitacao = dataValida(valorRotulo(linhas, ["1ª HABILITAÇÃO", "1 HABILITACAO", "PRIMEIRA HABILITAÇÃO"]));
     dados.permissao = valorRotulo(linhas, ["PERMISSÃO", "PERMISSAO"]);
@@ -157,6 +157,50 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
     if (authError || !user) return json({ error: "Não autenticado" }, 401);
 
+    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const arquivo = form.get("arquivo");
+      if (!(arquivo instanceof File)) return json({ error: "arquivo PDF obrigatório" }, 400);
+      if (arquivo.type !== "application/pdf") return json({ error: "O arquivo deve ser PDF" }, 400);
+      if (arquivo.size > 10 * 1024 * 1024) return json({ error: "O PDF excede o limite de 10 MB" }, 400);
+
+      const linhas = await lerPdf(new Uint8Array(await arquivo.arrayBuffer()));
+      if (!linhas.length) {
+        return json({
+          ok: false,
+          diagnostico: { arquivo: arquivo.name, linhas_texto: 0, motivo: "pdf_sem_camada_de_texto" },
+          dados: null,
+          campos_ausentes: ["nome", "cpf", "rg"],
+        });
+      }
+      const tipo = classificar(linhas.map((linha) => linha.text).join("\n"));
+      if (!tipo) {
+        return json({
+          ok: false,
+          diagnostico: { arquivo: arquivo.name, linhas_texto: linhas.length, motivo: "tipo_nao_identificado" },
+          dados: null,
+          campos_ausentes: ["nome", "cpf", "rg"],
+        });
+      }
+      const dados = extrair(linhas, tipo);
+      const camposAusentes = [
+        !dados.nome && "nome",
+        !dados.cpf && "cpf",
+        !(dados.rg || dados.cin || dados.cnh) && "rg",
+      ].filter(Boolean);
+      return json({
+        ok: camposAusentes.length === 0,
+        diagnostico: {
+          arquivo: arquivo.name,
+          linhas_texto: linhas.length,
+          tipo_documento: tipo,
+          motivo: camposAusentes.length ? "campos_obrigatorios_ausentes" : null,
+        },
+        dados,
+        campos_ausentes: camposAusentes,
+      });
+    }
+
     const { caso_id } = await req.json();
     if (!caso_id) return json({ error: "caso_id obrigatório" }, 400);
     const { data: caso, error: casoError } = await supabase.from("casos")
@@ -188,7 +232,12 @@ Deno.serve(async (req) => {
           revisao.push({ arquivo: arquivo.nome, motivo: "tipo_nao_identificado" });
           continue;
         }
-        documentos.push({ arquivo: arquivo.nome, dados: extrair(linhas, tipo) });
+        const dados = extrair(linhas, tipo);
+        const faltantes = [!dados.nome && "nome", !dados.cpf && "cpf", !(dados.rg || dados.cin || dados.cnh) && "rg"].filter(Boolean);
+        documentos.push({ arquivo: arquivo.nome, dados });
+        if (faltantes.length) {
+          revisao.push({ arquivo: arquivo.nome, motivo: `campos_ausentes:${faltantes.join(",")}` });
+        }
       } catch (error) {
         revisao.push({ arquivo: arquivo.nome, motivo: error instanceof Error ? error.message : "falha_na_extracao" });
       }
@@ -205,7 +254,7 @@ Deno.serve(async (req) => {
     const primeiro = documentos[0].dados;
     const cpf = documentos.map((d) => d.dados.cpf).find(Boolean) as string | undefined;
     const nome = documentos.map((d) => d.dados.nome).find(Boolean) as string | undefined;
-    const identidade = documentos.map((d) => d.dados.rg ?? d.dados.cin).find(Boolean) as string | undefined;
+    const identidade = documentos.map((d) => d.dados.rg ?? d.dados.cin ?? d.dados.cnh).find(Boolean) as string | undefined;
     const qualificacaoAtual = caso.qualificacao && typeof caso.qualificacao === "object" ? caso.qualificacao : {};
     const qualificacao = {
       ...qualificacaoAtual,

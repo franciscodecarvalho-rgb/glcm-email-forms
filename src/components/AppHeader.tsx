@@ -1,4 +1,4 @@
-import { Scale, LogOut, FileText, LayoutDashboard, Users } from "lucide-react";
+import { Scale, LogOut, FileText, LayoutDashboard, Users, FileSearch } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -23,6 +23,9 @@ export function AppHeader() {
           </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link to="/templates"><FileText className="mr-2 h-4 w-4" />Templates</Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/teste-extracao-pdfs"><FileSearch className="mr-2 h-4 w-4" />Teste de extração</Link>
           </Button>
           {isAdmin && (
             <Button variant="ghost" size="sm" asChild>

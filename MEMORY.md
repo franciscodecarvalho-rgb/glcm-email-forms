@@ -130,6 +130,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Quando a identificação e ao menos uma rubrica estiverem gravadas, mostrar uma página somente leitura com os dados extraídos dos PDFs; caso contrário, abrir a correção manual.
 **Evitar:** Apresentar campos vazios para edição como se a extração tivesse sido concluída com sucesso.
 
+### 2026-08 — Ambiente de teste da extração pessoal
+
+**Regra confirmada:** A extração de CNH, RG e CIN deve poder ser validada isoladamente, sem criar caso ou persistir o PDF.
+**Origem:** Solicitação de Nodley para finalizar a feature de dados pessoais.
+**Aplicação:** O teste envia um PDF autenticado à função em modo diagnóstico, processa em memória e retorna modelo, campos extraídos, ausências e motivo de revisão.
+**Evitar:** Criar registros ou conservar documentos usados apenas para diagnóstico do extrator.
+
 ```markdown
 ### AAAA-MM — Título
 
