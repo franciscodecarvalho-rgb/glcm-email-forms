@@ -38,14 +38,18 @@ export default function NovoCaso() {
     setEscritorios((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]));
 
   const submit = async () => {
+    if (contracheques.length === 0) {
+      toast.error("Anexe ao menos um contracheque");
+      return;
+    }
+    if (comprovantesPessoais.length === 0) {
+      toast.error("Anexe ao menos um documento pessoal");
+      return;
+    }
     const arquivos = [
       ...contracheques.map((file) => ({ file, tipo: "contracheque" })),
       ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
     ];
-    if (arquivos.length === 0) {
-      toast.error("Anexe ao menos um arquivo");
-      return;
-    }
     const limite = Number(limiteViabilidade);
     if (!Number.isFinite(limite) || limite < 0) {
       toast.error("Informe um limite de viabilidade válido");
@@ -179,7 +183,7 @@ export default function NovoCaso() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Contracheques</Label>
+              <Label>Contracheques *</Label>
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/50 p-8 text-center hover:bg-muted">
                 <Upload className="h-6 w-6 text-muted-foreground" />
                 <span className="text-sm font-medium">Selecionar contracheques</span>
@@ -205,7 +209,7 @@ export default function NovoCaso() {
             </div>
 
             <div className="space-y-2">
-              <Label>Comprovantes de informações pessoais</Label>
+              <Label>Comprovantes de informações pessoais *</Label>
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/50 p-8 text-center hover:bg-muted">
                 <Upload className="h-6 w-6 text-muted-foreground" />
                 <span className="text-sm font-medium">Selecionar comprovantes</span>

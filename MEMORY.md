@@ -76,10 +76,10 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 
 ### 2026-08 — Categorias de upload na criação do caso
 
-**Regra confirmada:** O formulário de criação separa o envio de Contracheques e Comprovantes de informações pessoais.
+**Regra confirmada:** O formulário de criação separa o envio de Contracheques e Comprovantes de informações pessoais, exigindo pelo menos um arquivo em cada grupo.
 **Origem:** Definição de Nodley para o cadastro de casos.
 **Aplicação:** Gravar em `arquivos.tipo` os identificadores `contracheque` e `informacoes_pessoais`, respectivamente.
-**Evitar:** Misturar visualmente as duas categorias ou presumir que ambas são obrigatórias sem definição específica.
+**Evitar:** Misturar visualmente as duas categorias ou permitir a criação manual sem um dos dois grupos.
 
 ### 2026-08 — Extração determinística de contracheques PDF
 
