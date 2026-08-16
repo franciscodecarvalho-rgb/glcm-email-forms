@@ -109,6 +109,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Manter o mapeamento de `str`, `transform`, `width` e `height` antes de executar os parsers posicionais.
 **Evitar:** Reintroduzir importações inexistentes do `unpdf` ou trocar a leitura por texto linear, que perde as colunas do contracheque.
 
+### 2026-08 — Extração determinística de documentos pessoais
+
+**Regra confirmada:** CNH, RG e CIN em PDF devem ser classificados e extraídos deterministicamente, sem IA generativa.
+**Origem:** Solicitação de Nodley para implementar a feature de extração dos comprovantes de informações pessoais.
+**Aplicação:** Usar texto e coordenadas do PDF, validar CPF e persistir os dados consolidados no caso; documentos sem camada de texto ou não reconhecidos seguem para revisão manual.
+**Evitar:** Inventar campos ausentes, bloquear indefinidamente o caso ou enviar esses documentos para análise generativa no fluxo manual.
+
 ```markdown
 ### AAAA-MM — Título
 

@@ -86,7 +86,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Confirmação dos Dados</h1>
-        <p className="text-sm text-muted-foreground">Revise os dados extraídos pela IA e ajuste o que for necessário.</p>
+        <p className="text-sm text-muted-foreground">Revise os dados extraídos dos documentos e ajuste o que for necessário.</p>
       </div>
 
       <section className="space-y-4 rounded-lg border bg-card p-6">

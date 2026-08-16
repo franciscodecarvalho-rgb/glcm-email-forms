@@ -46,6 +46,10 @@ export default function NovoCaso() {
       toast.error("Anexe ao menos um documento pessoal");
       return;
     }
+    if (comprovantesPessoais.some((file) => file.type !== "application/pdf")) {
+      toast.error("Os documentos pessoais devem estar no formato PDF");
+      return;
+    }
     const arquivos = [
       ...contracheques.map((file) => ({ file, tipo: "contracheque" })),
       ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
@@ -99,22 +103,15 @@ export default function NovoCaso() {
         }
       }
 
-      // Pré-extração: detecta duplicatas/recorrentes antes de extrair tudo
-      const { data: pre } = await supabase.functions.invoke("pre-extract-cpf", {
+      const { data: pessoais, error: pessoaisError } = await supabase.functions.invoke("process-documentos-pessoais-pdf", {
         body: { caso_id: caso.id },
       });
-
-      if (pre?.acao === "mesclado_auto" && pre?.ref_id) {
-        toast.success("Caso mesclado automaticamente com cliente existente");
-        nav(`/casos/${pre.ref_id}`);
-        return;
+      if (pessoaisError) throw pessoaisError;
+      if (pessoais?.revisao?.length) {
+        toast.warning(`${pessoais.revisao.length} documento(s) pessoal(is) precisam de revisão manual`);
       }
 
-      // Disparar extração completa
-      await supabase.from("casos").update({ status: "em_analise" }).eq("id", caso.id);
-      supabase.functions.invoke("extract-case-data", { body: { caso_id: caso.id } }).catch(() => {});
-
-      toast.success("Caso criado, processando…");
+      toast.success("Caso criado e documentos processados");
       nav(`/casos/${caso.id}`);
     } catch (e: any) {
       toast.error(e.message ?? "Falha ao criar caso");
@@ -129,7 +126,7 @@ export default function NovoCaso() {
       <main className="container max-w-2xl py-8">
         <Button variant="ghost" size="sm" onClick={() => nav(-1)}><ArrowLeft className="mr-2 h-4 w-4" />Voltar</Button>
         <h1 className="mt-4 text-2xl font-bold">Novo Caso</h1>
-        <p className="mb-6 text-sm text-muted-foreground">Anexe os documentos do cliente. A IA fará a extração automática.</p>
+        <p className="mb-6 text-sm text-muted-foreground">Anexe os documentos do cliente para extração automática.</p>
 
         <div className="space-y-6 rounded-lg border bg-card p-6">
           <div className="space-y-2">
@@ -213,11 +210,11 @@ export default function NovoCaso() {
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/50 p-8 text-center hover:bg-muted">
                 <Upload className="h-6 w-6 text-muted-foreground" />
                 <span className="text-sm font-medium">Selecionar comprovantes</span>
-                <span className="text-xs text-muted-foreground">RG, CPF, residência — PDF, JPG, PNG</span>
+                <span className="text-xs text-muted-foreground">CNH, RG ou CIN — PDF</span>
                 <input
                   type="file"
                   multiple
-                  accept="image/*,application/pdf"
+                  accept="application/pdf"
                   className="hidden"
                   onChange={(e) => setComprovantesPessoais(Array.from(e.target.files ?? []))}
                 />

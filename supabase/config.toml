@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.process-contracheques-pdf]
 verify_jwt = false
+
+[functions.process-documentos-pessoais-pdf]
+verify_jwt = false
