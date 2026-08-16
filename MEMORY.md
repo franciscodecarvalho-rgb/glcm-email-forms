@@ -102,6 +102,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Consolidar as páginas do Elekeiroz pela competência; processar somente a metade esquerda do Termo Bahia; no Unigel, alternar a natureza das rubricas pelos totais de vencimentos, descontos e início do bloco informativo.
 **Evitar:** Inventar códigos para o Elekeiroz, duplicar o Termo Bahia ou incluir custos informativos da Unigel nos totais financeiros.
 
+### 2026-08 — Leitura posicional dos PDFs na Edge Function
+
+**Regra confirmada:** A função `process-contracheques-pdf` obtém texto e coordenadas por página com `PDFPageProxy.getTextContent()`; `unpdf@1.4.0` não exporta `extractTextItems`.
+**Origem:** Correção do `BootFailure` observado no primeiro teste remoto com múltiplos contracheques.
+**Aplicação:** Manter o mapeamento de `str`, `transform`, `width` e `height` antes de executar os parsers posicionais.
+**Evitar:** Reintroduzir importações inexistentes do `unpdf` ou trocar a leitura por texto linear, que perde as colunas do contracheque.
+
 ```markdown
 ### AAAA-MM — Título
 
