@@ -137,6 +137,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** O teste envia um PDF autenticado à função em modo diagnóstico, processa em memória e retorna modelo, campos extraídos, ausências e motivo de revisão.
 **Evitar:** Criar registros ou conservar documentos usados apenas para diagnóstico do extrator.
 
+### 2026-08 — Extração pessoal isolada por IA
+
+**Regra confirmada:** Documentos pessoais voltam a ser extraídos pela IA já integrada ao Lovable; contracheques permanecem na rotina determinística.
+**Origem:** OCR local não reconheceu adequadamente CNH e identidade em PDF durante a validação.
+**Aplicação:** Enviar à IA somente arquivos classificados como informações pessoais e persistir apenas os campos desse domínio.
+**Evitar:** Reprocessar contracheques pela IA ou depender de OCR local para documentos pessoais.
+
 ```markdown
 ### AAAA-MM — Título
 
