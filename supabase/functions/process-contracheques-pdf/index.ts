@@ -155,8 +155,8 @@ Deno.serve(async(req)=>{
   try{
     const auth=req.headers.get("Authorization");if(!auth)return json({error:"Não autenticado"},401);
     const supabase=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const {data:claims,error:authError}=await supabase.auth.getClaims(auth.replace(/^Bearer\s+/i,""));
-    if(authError||!claims?.claims?.sub)return json({error:"Não autenticado"},401);
+    const {data:{user},error:authError}=await supabase.auth.getUser(auth.replace(/^Bearer\s+/i,""));
+    if(authError||!user)return json({error:"Não autenticado"},401);
     const {caso_id}=await req.json();if(!caso_id)return json({error:"caso_id obrigatório"},400);
     const {data:arquivos,error}=await supabase.from("arquivos").select("nome,storage_path,mime_type").eq("caso_id",caso_id).eq("tipo","contracheque");if(error)throw error;
     const extraidos:Array<Contra&{arquivo_origem:string}>=[],revisao=[];
