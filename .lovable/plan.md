@@ -1,43 +1,57 @@
-# Diagnóstico: `Failed to send a request to the Edge Function`
+# Diagnóstico: `process-contracheques-pdf` retornando 500
 
-## Evidência dos logs (somente leitura)
+## Evidências coletadas (somente leitura)
 
-**`process-contracheques-pdf`** — único registro recente:
-
-- Horário: `2026-08-16T14:24:44Z` (UTC)
-- Nível: `ERROR` / tipo de evento: `BootFailure`
-- Mensagem técnica:
-  `worker boot error: Uncaught SyntaxError: The requested module 'npm:unpdf@1.4.0' does not provide an export named 'extractTextItems' at .../process-contracheques-pdf/index.ts:2:10`
-- Sem timeout, sem `WORKER_RESOURCE_LIMIT`, sem `IDLE_TIMEOUT`. Falha ocorre **antes** de qualquer execução: o worker não sobe.
-
-**`pre-extract-cpf`** — `No logs found`. Nenhuma invocação registrada no período.
-
-Nenhum dado pessoal, nome de arquivo ou chave aparece nos logs consultados.
-
-## Qual função falhou
-
-`process-contracheques-pdf`. Como o boot falha, a plataforma nunca devolve uma resposta HTTP da função (não há 4xx/5xx da aplicação); o cliente `supabase.functions.invoke` traduz isso exatamente como `Failed to send a request to the Edge Function`. A ausência de comprovante/documento pessoal não é a causa — o erro é independente do conteúdo enviado.
-
-## Causa raiz confirmada
-
-`supabase/functions/process-contracheques-pdf/index.ts` linha 2 importa `extractTextItems` de `npm:unpdf@1.4.0`. Consulta ao pacote publicado (`unpdf@1.4.0`, `dist/index.d.mts`) mostra que os exports são `extractText`, `getDocumentProxy`, `extractImages`, `extractLinks`, `getMeta`, `renderPageAsImage`, `configureUnPDF`, `definePDFJSModule`, `getResolvedPDFJS`, `resolvePDFJSImport`. **`extractTextItems` não existe nessa versão.**
-
-`extractText` retorna strings por página, não itens com coordenadas `x/y/width/height` — e todo o parser (`linhas`, `parsePagina`) depende dessas coordenadas.
-
-## Limitação declarada
-
-Não há logs de `pre-extract-cpf` para correlacionar; não é possível afirmar pelos logs se ela foi acionada nesse teste. Também não há logs de invocação bem-sucedida de `process-contracheques-pdf` — só o boot error.
-
-## Correção proposta (não executada)
-
-Alterar somente `supabase/functions/process-contracheques-pdf/index.ts`: obter os itens de texto com coordenadas via pdf.js diretamente, que já vem com o `unpdf`, mantendo `getDocumentProxy` e todo o parser intacto.
+Invocações registradas logo após 2026-08-16 14:40 UTC:
 
 ```text
-para cada página do PDFDocumentProxy:
-  page.getTextContent() -> items
-  mapear cada item para { str, x: transform[4], y: transform[5], width, height }
+14:40:03.418Z  OPTIONS | 200
+14:40:04.627Z  POST    | 500
+14:40:37.556Z  OPTIONS | 200
+14:40:37.730Z  POST    | 500
 ```
 
-Isso remove o import inexistente e preserva o formato `TextItem` já esperado por `parsePagina`. Depois: redeploy da função e novo teste com os mesmos PDFs.
+Logs de execução da função no mesmo intervalo contêm apenas linhas de ciclo de vida
+(`booted (time: 33ms)`, `booted (time: 35ms)`, `shutdown`). **Não há BootFailure** e
+não há mais qualquer referência ao import `extractTextItems` — a correção do commit
+anterior segue válida.
 
-Nenhum arquivo foi editado, nenhum deploy foi feito e nada no banco foi alterado neste diagnóstico.
+Contagens do caso manual mais recente (sem exposição de identificadores):
+
+| Métrica | Valor |
+| --- | --- |
+| PDFs `tipo = contracheque` | 1 |
+| Linhas em `contracheques` | 0 |
+| Linhas em `itens_contracheque` | 0 |
+
+## Mensagem técnica exata: indisponível
+
+A função encerra em `catch` devolvendo `{ error: <mensagem> }` com status 500, mas
+**não escreve a mensagem em log** antes de responder. Como o corpo da resposta não é
+capturado pela plataforma, os logs registram apenas `POST | 500`. Portanto a mensagem
+técnica exata e a instrução/coluna que falhou **não podem ser afirmadas com os dados
+disponíveis** — declarar uma causa agora seria especulação.
+
+O que as contagens permitem afirmar com segurança: como `contracheques` está em 0 e o
+bloco de escrita só é alcançado quando há extração bem-sucedida, a falha ocorreu em
+algum ponto entre o download do PDF e a gravação — sem distinguir qual, pois um erro
+de download, de parsing ou de `insert` produz exatamente o mesmo 500 silencioso.
+
+## Passo proposto para obter a evidência
+
+Alteração mínima e única no bloco `catch` da Edge Function
+`process-contracheques-pdf`: registrar em `console.error` o nome do erro, a mensagem e
+o stack antes de responder 500 — sem qualquer dado de cliente, arquivo ou chave. Em
+seguida, republicar apenas essa função (mantendo `verify_jwt = false`), pedir um único
+reprocessamento pelo app autenticado e ler o log resultante para identificar a
+instrução/coluna real.
+
+Nada de schema, migrations, RLS, dados ou outras funções é tocado.
+
+## Detalhes técnicos
+
+- Arquivo: `supabase/functions/process-contracheques-pdf/index.ts`, linha final do
+  `Deno.serve` (bloco `catch`).
+- Ponto atual: `catch(e){ return json({error: ...}, 500) }` — sem logging.
+- Para erros do PostgREST, logar também `code`, `details` e `hint`, que nomeiam
+  diretamente a coluna/constraint em falha.
