@@ -70,6 +70,7 @@ export type Database = {
           escritorios: Json
           honorarios_pct: number | null
           id: string
+          limite_viabilidade: number
           mesclado_at: string | null
           mesclado_em: string | null
           message_id: string | null
@@ -99,6 +100,7 @@ export type Database = {
           escritorios?: Json
           honorarios_pct?: number | null
           id?: string
+          limite_viabilidade?: number
           mesclado_at?: string | null
           mesclado_em?: string | null
           message_id?: string | null
@@ -128,6 +130,7 @@ export type Database = {
           escritorios?: Json
           honorarios_pct?: number | null
           id?: string
+          limite_viabilidade?: number
           mesclado_at?: string | null
           mesclado_em?: string | null
           message_id?: string | null
