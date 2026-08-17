@@ -186,6 +186,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Selecionar `contrato_contribuicao_extraordinaria` e `contrato_supressao_folgas` para esses tipos de ação, preservando integralmente a formatação dos modelos e substituindo somente variáveis externas.
 **Evitar:** Reutilizar os contratos tributário HRA ou trabalhista de Horas Extras nesses dois tipos de ação, ou reformatar o conteúdo jurídico fixo durante a geração.
 
+### 2026-08 — Dados variáveis nos contratos
+
+**Regra confirmada:** Todos os contratos devem preencher com os dados do caso a qualificação do cliente, o endereço, o número da pasta no campo `CONTRATO:` e o nome do contratante na assinatura.
+**Origem:** Correção solicitada por Nodley após validação dos documentos gerados.
+**Aplicação:** Manter nos quatro modelos de contrato os marcadores de nome, nacionalidade, estado civil, profissão, CPF, endereço, número do contrato, local, data e nome na assinatura.
+**Evitar:** Publicar modelos com dados de clientes de exemplo fixados no preâmbulo ou na assinatura.
+
 ### 2026-08 — PDFs criptografados na unificação de contracheques
 
 **Regra confirmada:** A unificação dos contracheques deve aceitar PDFs marcados como criptografados quando a biblioteca conseguir processá-los sem senha.
