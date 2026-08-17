@@ -186,6 +186,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Selecionar `contrato_contribuicao_extraordinaria` e `contrato_supressao_folgas` para esses tipos de ação, preservando integralmente a formatação dos modelos e substituindo somente variáveis externas.
 **Evitar:** Reutilizar os contratos tributário HRA ou trabalhista de Horas Extras nesses dois tipos de ação, ou reformatar o conteúdo jurídico fixo durante a geração.
 
+### 2026-08 — PDFs criptografados na unificação de contracheques
+
+**Regra confirmada:** A unificação dos contracheques deve aceitar PDFs marcados como criptografados quando a biblioteca conseguir processá-los sem senha.
+**Origem:** Erro de carregamento observado no upload de PDF criptografado.
+**Aplicação:** Carregar cada PDF de origem com `ignoreEncryption: true` antes de copiar suas páginas para o arquivo unificado.
+**Evitar:** Rejeitar antecipadamente o arquivo apenas pela marcação de criptografia ou alterar o processamento dos documentos pessoais.
+
 ```markdown
 ### AAAA-MM — Título
 

@@ -14,7 +14,7 @@ export async function unificarPdfs(arquivos: File[]): Promise<File> {
   const { PDFDocument } = await import("pdf-lib");
   const destino = await PDFDocument.create();
   for (const arquivo of arquivos) {
-    const origem = await PDFDocument.load(await lerArquivo(arquivo));
+    const origem = await PDFDocument.load(await lerArquivo(arquivo), { ignoreEncryption: true });
     const paginas = await destino.copyPages(origem, origem.getPageIndices());
     paginas.forEach((pagina) => destino.addPage(pagina));
   }

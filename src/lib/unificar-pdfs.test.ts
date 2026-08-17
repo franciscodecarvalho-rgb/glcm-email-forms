@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { unificarPdfs } from "./unificar-pdfs";
 
@@ -31,5 +31,17 @@ describe("unificarPdfs", () => {
 
   it("recusa uma seleção vazia", async () => {
     await expect(unificarPdfs([])).rejects.toThrow("Nenhum contracheque");
+  });
+
+  it("carrega PDFs de origem ignorando a marcação de criptografia", async () => {
+    const carregarPdf = PDFDocument.load.bind(PDFDocument);
+    const loadSpy = vi
+      .spyOn(PDFDocument, "load")
+      .mockImplementation((pdf, opcoes) => carregarPdf(pdf, opcoes));
+
+    await unificarPdfs([await criarPdf(1, "criptografado.pdf")]);
+
+    expect(loadSpy).toHaveBeenCalledWith(expect.any(ArrayBuffer), { ignoreEncryption: true });
+    loadSpy.mockRestore();
   });
 });
