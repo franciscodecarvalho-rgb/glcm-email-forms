@@ -38,9 +38,24 @@ export default function NovoCaso() {
   const toggleEscritorio = (id: string) =>
     setEscritorios((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]));
 
+  const adicionarContracheques = (novos: File[]) => {
+    setContracheques((atuais) => {
+      const arquivos = [...atuais, ...novos];
+      return arquivos.filter((arquivo, indice) =>
+        arquivos.findIndex((item) =>
+          item.name === arquivo.name && item.size === arquivo.size && item.lastModified === arquivo.lastModified
+        ) === indice
+      );
+    });
+  };
+
   const submit = async () => {
     if (contracheques.length === 0) {
       toast.error("Anexe ao menos um contracheque");
+      return;
+    }
+    if (contracheques.some((file) => file.type !== "application/pdf")) {
+      toast.error("Os contracheques devem estar no formato PDF");
       return;
     }
     if (comprovantesPessoais.length === 0) {
@@ -191,7 +206,10 @@ export default function NovoCaso() {
                   multiple
                   accept="application/pdf"
                   className="hidden"
-                  onChange={(e) => setContracheques(Array.from(e.target.files ?? []))}
+                  onChange={(e) => {
+                    adicionarContracheques(Array.from(e.target.files ?? []));
+                    e.currentTarget.value = "";
+                  }}
                 />
               </label>
               {contracheques.length > 0 && (
