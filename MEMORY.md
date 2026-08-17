@@ -172,6 +172,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Manter a extração determinística como primeira opção e chamar a IA individualmente apenas para os arquivos que falharem, validando a resposta antes de persistir.
 **Evitar:** Enviar à IA contracheques que já foram extraídos ou aceitar rubricas vazias e valores inválidos.
 
+### 2026-08 — Unificação dos contracheques no upload
+
+**Regra confirmada:** Os PDFs de contracheques selecionados em um caso devem ser unidos, na ordem escolhida, em um único PDF antes do upload.
+**Origem:** Solicitação de Nodley durante o teste do processamento com múltiplos arquivos.
+**Aplicação:** Armazenar e processar um arquivo `contracheques-unificados.pdf`, exibindo o progresso das etapas ao usuário.
+**Evitar:** Unificar os documentos pessoais com os contracheques ou perder páginas durante a junção.
+
 ```markdown
 ### AAAA-MM — Título
 
