@@ -1,10 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, FolderOpen, X, Filter } from "lucide-react";
+import { Plus, FolderOpen, X, Filter, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CasoStatus, STATUS_LABEL, STATUS_ORDER } from "@/lib/status";
@@ -29,6 +42,9 @@ type Caso = {
 export default function Dashboard() {
   const [casos, setCasos] = useState<Caso[]>([]);
   const [filter, setFilter] = useState<"all" | CasoStatus>("all");
+  const [excluirAberto, setExcluirAberto] = useState(false);
+  const [casoId, setCasoId] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
   const nav = useNavigate();
 
   useEffect(() => {
@@ -71,6 +87,29 @@ export default function Dashboard() {
     if (error) toast.error("Falha ao cancelar"); else toast.success("Caso cancelado");
   };
 
+  const excluirCaso = async () => {
+    const id = casoId.trim();
+    if (!id) return;
+
+    setExcluindo(true);
+    const { data, error } = await supabase.from("casos").delete().eq("id", id).select("id").maybeSingle();
+    setExcluindo(false);
+
+    if (error) {
+      toast.error("Falha ao excluir caso");
+      return;
+    }
+    if (!data) {
+      toast.error("Caso não encontrado");
+      return;
+    }
+
+    setCasos((prev) => prev.filter((caso) => caso.id !== id));
+    setCasoId("");
+    setExcluirAberto(false);
+    toast.success("Caso excluído");
+  };
+
   // Oculta casos que foram mesclados em outros (continuam acessíveis pelo redirect)
   const visiveis = casos.filter((c) => !c.mesclado_em);
   const filtered = filter === "all" ? visiveis : visiveis.filter((c) => c.status === filter);
@@ -84,9 +123,47 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold tracking-tight">Casos</h1>
             <p className="text-sm text-muted-foreground">Gerencie todos os processos abertos no escritório.</p>
           </div>
-          <Button asChild>
-            <Link to="/casos/novo"><Plus className="mr-2 h-4 w-4" />Novo Caso</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <AlertDialog open={excluirAberto} onOpenChange={setExcluirAberto}>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive"><Trash2 className="mr-2 h-4 w-4" />Excluir caso</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Excluir caso</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Informe o ID completo do caso que deseja excluir.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-2">
+                  <Label htmlFor="caso-id">ID do caso</Label>
+                  <Input
+                    id="caso-id"
+                    value={casoId}
+                    onChange={(event) => setCasoId(event.target.value)}
+                    placeholder="ID do caso"
+                    autoComplete="off"
+                  />
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={excluindo}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={!casoId.trim() || excluindo}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void excluirCaso();
+                    }}
+                  >
+                    {excluindo ? "Excluindo..." : "Confirmar"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button asChild>
+              <Link to="/casos/novo"><Plus className="mr-2 h-4 w-4" />Novo Caso</Link>
+            </Button>
+          </div>
         </div>
 
         <div className="mb-4 flex items-center gap-2">
