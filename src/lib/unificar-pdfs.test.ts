@@ -15,7 +15,7 @@ vi.mock("qpdf-run", () => ({
 async function criarPdf(paginas: number, nome: string) {
   const pdf = await PDFDocument.create();
   for (let i = 0; i < paginas; i++) pdf.addPage();
-  return new File([await pdf.save()], nome, { type: "application/pdf" });
+  return new File([(await pdf.save()) as BlobPart], nome, { type: "application/pdf" });
 }
 
 function lerArquivo(arquivo: File): Promise<ArrayBuffer> {

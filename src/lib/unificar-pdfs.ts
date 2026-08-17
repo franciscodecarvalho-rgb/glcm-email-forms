@@ -61,5 +61,5 @@ export async function unificarPdfs(arquivos: File[]): Promise<File> {
   }
 
   const bytes = await destino.save();
-  return new File([bytes], "contracheques-unificados.pdf", { type: "application/pdf" });
+  return new File([bytes as BlobPart], "contracheques-unificados.pdf", { type: "application/pdf" });
 }
