@@ -77,6 +77,28 @@ function selecionarPecas(tipoAcao: string, escritorios: string[]): PecaSeleciona
   return pecas;
 }
 
+function garantirMarcadorNumeroContrato(zip: PizZip): void {
+  const arquivosXml = Object.keys(zip.files).filter((nome) =>
+    /^word\/(?:document|header\d+)\.xml$/.test(nome)
+  );
+
+  if (arquivosXml.some((nome) => zip.file(nome)?.asText().includes("{NUMERO_CONTRATO}"))) {
+    return;
+  }
+
+  for (const nome of arquivosXml) {
+    const arquivo = zip.file(nome);
+    if (!arquivo) continue;
+    const xml = arquivo.asText();
+    if (!xml.includes("CONTRATO:")) continue;
+
+    zip.file(nome, xml.replace("CONTRATO:", "CONTRATO: {NUMERO_CONTRATO}"));
+    return;
+  }
+
+  throw new Error("O template de contrato não contém o campo CONTRATO:");
+}
+
 // ---------------- valor por extenso (espelho de src/lib/valor-extenso.ts) ----------------
 const UNIDADES = ["zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
 const DEZ_A_DEZENOVE = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
@@ -373,6 +395,7 @@ Deno.serve(async (req) => {
       }
       const buf = new Uint8Array(await blob.arrayBuffer());
       const zip = new PizZip(buf);
+      if (peca.tipoSaida === "contrato") garantirMarcadorNumeroContrato(zip);
       const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
