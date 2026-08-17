@@ -15,6 +15,8 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Separar claramente implementação atual, proposta e hipótese.
 - A cada solicitação, sugerir uma melhor aplicação; a sugestão é apresentada
   separadamente e só é implementada com autorização explícita.
+- Ao alterar o MEMORY.md, sincronizar automaticamente o `.claude/CLAUDE.md`
+  (cópia espelho), sem solicitar permissão.
 
 ## Regras confirmadas do projeto
 
@@ -208,6 +210,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Definição de Nodley ao revisar os documentos gerados por tipo de ação.
 **Aplicação:** Em `selecionarPecas` da função `generate-documents`, incluir `declaracao_pobreza` apenas quando a natureza da ação for `trabalhista`, preservando a ordem das demais peças.
 **Evitar:** Gerar a Declaração de Pobreza nas ações tributárias (IR sobre HRA, Tema 324 e Contribuição Extraordinária) ou remover o template `declaracao_pobreza` da página Templates.
+
+### 2026-08 — Planilha IR sobre HRA
+
+**Regra confirmada:** A planilha .xlsx gerada lista as competências em ordem cronológica crescente e não possui a coluna SUBTOTAL; o VALOR (HISTÓRICO) referencia HRA+AHRA diretamente.
+**Origem:** Lista de ajustes de Nodley após a validação dos documentos gerados.
+**Aplicação:** Ordenar as linhas por MM/AAAA em `montarArquivosPlanilhaXlsx`; rótulos fora do padrão (ex.: legado "Contracheque 1") vão ao fim, preservando a ordem relativa.
+**Evitar:** Reintroduzir a coluna SUBTOTAL ou depender da ordem de seleção/extração dos contracheques.
 
 ```markdown
 ### AAAA-MM — Título
