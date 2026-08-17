@@ -190,8 +190,8 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 
 **Regra confirmada:** A unificação dos contracheques deve aceitar PDFs marcados como criptografados quando a biblioteca conseguir processá-los sem senha.
 **Origem:** Erro de carregamento observado no upload de PDF criptografado.
-**Aplicação:** Carregar cada PDF de origem com `ignoreEncryption: true` antes de copiar suas páginas para o arquivo unificado.
-**Evitar:** Rejeitar antecipadamente o arquivo apenas pela marcação de criptografia ou alterar o processamento dos documentos pessoais.
+**Aplicação:** Detectar a criptografia com `ignoreEncryption: true`, descriptografar localmente com QPDF/WASM e somente então copiar as páginas para o arquivo unificado.
+**Evitar:** Tratar `ignoreEncryption: true` como descriptografia, rejeitar antecipadamente o arquivo apenas pela marcação de criptografia ou alterar o processamento dos documentos pessoais.
 
 ```markdown
 ### AAAA-MM — Título

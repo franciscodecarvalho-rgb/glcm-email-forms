@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { unificarPdfs } from "./unificar-pdfs";
 
+const qpdfMocks = vi.hoisted(() => ({
+  createQpdfRunner: vi.fn(),
+  destroy: vi.fn(),
+  runOne: vi.fn(),
+}));
+
+vi.mock("qpdf-run", () => ({
+  createQpdfRunner: qpdfMocks.createQpdfRunner,
+}));
+
 async function criarPdf(paginas: number, nome: string) {
   const pdf = await PDFDocument.create();
   for (let i = 0; i < paginas; i++) pdf.addPage();
@@ -33,15 +43,34 @@ describe("unificarPdfs", () => {
     await expect(unificarPdfs([])).rejects.toThrow("Nenhum contracheque");
   });
 
-  it("carrega PDFs de origem ignorando a marcação de criptografia", async () => {
+  it("descriptografa a origem antes de copiar suas páginas", async () => {
+    const arquivo = await criarPdf(1, "criptografado.pdf");
     const carregarPdf = PDFDocument.load.bind(PDFDocument);
+    let primeiraLeitura = true;
     const loadSpy = vi
       .spyOn(PDFDocument, "load")
-      .mockImplementation((pdf, opcoes) => carregarPdf(pdf, opcoes));
+      .mockImplementation(async (pdf, opcoes) => {
+        const documento = await carregarPdf(pdf, opcoes);
+        if (primeiraLeitura && opcoes?.ignoreEncryption) {
+          primeiraLeitura = false;
+          documento.isEncrypted = true;
+        }
+        return documento;
+      });
+    qpdfMocks.runOne.mockImplementation(async ({ input }) => new Uint8Array(input as ArrayBuffer));
+    qpdfMocks.createQpdfRunner.mockResolvedValue({
+      run: vi.fn(),
+      runOne: qpdfMocks.runOne,
+      destroy: qpdfMocks.destroy,
+    });
 
-    await unificarPdfs([await criarPdf(1, "criptografado.pdf")]);
+    await unificarPdfs([arquivo]);
 
     expect(loadSpy).toHaveBeenCalledWith(expect.any(ArrayBuffer), { ignoreEncryption: true });
+    expect(qpdfMocks.runOne).toHaveBeenCalledWith(
+      expect.objectContaining({ args: ["--password=", "--decrypt", "--", "entrada-0.pdf", "saida-0.pdf"] }),
+    );
+    expect(qpdfMocks.destroy).toHaveBeenCalledOnce();
     loadSpy.mockRestore();
   });
 });
