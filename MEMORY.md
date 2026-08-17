@@ -200,6 +200,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Detectar a criptografia com `ignoreEncryption: true`, descriptografar localmente com QPDF/WASM e somente então copiar as páginas para o arquivo unificado.
 **Evitar:** Tratar `ignoreEncryption: true` como descriptografia, rejeitar antecipadamente o arquivo apenas pela marcação de criptografia ou alterar o processamento dos documentos pessoais.
 
+### 2026-08 — Declaração de Pobreza por tipo de ação
+
+**Regra confirmada:** A Declaração de Pobreza é gerada somente nas ações trabalhistas (Horas Extras e Supressão de Folgas).
+**Origem:** Definição de Nodley ao revisar os documentos gerados por tipo de ação.
+**Aplicação:** Em `selecionarPecas` da função `generate-documents`, incluir `declaracao_pobreza` apenas quando a natureza da ação for `trabalhista`, preservando a ordem das demais peças.
+**Evitar:** Gerar a Declaração de Pobreza nas ações tributárias (IR sobre HRA, Tema 324 e Contribuição Extraordinária) ou remover o template `declaracao_pobreza` da página Templates.
+
 ```markdown
 ### AAAA-MM — Título
 

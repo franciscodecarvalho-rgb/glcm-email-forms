@@ -57,7 +57,11 @@ function selecionarPecas(tipoAcao: string, escritorios: string[]): PecaSeleciona
   const pecas: PecaSelecionada[] = [
     { templateTipo: configuracao.peticao, tipoSaida: "peticao" },
     { templateTipo: configuracao.contrato, tipoSaida: "contrato" },
-    { templateTipo: "declaracao_pobreza", tipoSaida: "declaracao_pobreza" },
+    // Declaração de Pobreza somente nas ações trabalhistas
+    // (horas_extras e supressao_folgas); não entra nas tributárias.
+    ...(configuracao.natureza === "trabalhista"
+      ? [{ templateTipo: "declaracao_pobreza", tipoSaida: "declaracao_pobreza" }]
+      : []),
     // Termo de renúncia existente e já validado: identificador preservado.
     { templateTipo: "termo_renuncia", tipoSaida: "termo_renuncia" },
   ];
