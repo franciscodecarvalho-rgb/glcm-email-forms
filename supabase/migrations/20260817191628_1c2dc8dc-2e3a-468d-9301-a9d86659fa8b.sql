@@ -1,0 +1,1 @@
+UPDATE public.templates SET nome = tipo || '.docx', updated_at = now() WHERE tipo IN ('contrato_tributario','contrato_trabalhista','contrato_contribuicao_extraordinaria','contrato_supressao_folgas');
