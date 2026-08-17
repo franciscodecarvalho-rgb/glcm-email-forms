@@ -179,6 +179,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Armazenar e processar um arquivo `contracheques-unificados.pdf`, exibindo o progresso das etapas ao usuário.
 **Evitar:** Unificar os documentos pessoais com os contracheques ou perder páginas durante a junção.
 
+### 2026-08 — Contratos específicos por tipo de ação
+
+**Regra confirmada:** Contribuição Extraordinária e Supressão de Folgas possuem modelos próprios de contrato.
+**Origem:** Definição de Nodley ao adicionar os dois novos modelos contratuais.
+**Aplicação:** Selecionar `contrato_contribuicao_extraordinaria` e `contrato_supressao_folgas` para esses tipos de ação, preservando integralmente a formatação dos modelos e substituindo somente variáveis externas.
+**Evitar:** Reutilizar os contratos tributário HRA ou trabalhista de Horas Extras nesses dois tipos de ação, ou reformatar o conteúdo jurídico fixo durante a geração.
+
 ```markdown
 ### AAAA-MM — Título
 

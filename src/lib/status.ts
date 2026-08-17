@@ -43,6 +43,8 @@ export const TEMPLATE_TIPOS = [
   { id: "peticao_tema_324", label: "Petição — Tema 324" },
   { id: "contrato_tributario", label: "Contrato — Tributário (modelo HRA)" },
   { id: "contrato_trabalhista", label: "Contrato — Trabalhista (modelo Reflexo de Hora Extra)" },
+  { id: "contrato_contribuicao_extraordinaria", label: "Contrato — Contribuição Extraordinária" },
+  { id: "contrato_supressao_folgas", label: "Contrato — Supressão de Folgas" },
   { id: "procuracao_tributaria_glcm", label: "Procuração Tributária — GLCM" },
   { id: "procuracao_tributaria_polkowski", label: "Procuração Tributária — Polkowski" },
   { id: "procuracao_trabalhista_glcm", label: "Procuração Trabalhista — GLCM" },

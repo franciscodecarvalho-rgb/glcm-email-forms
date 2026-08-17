@@ -22,7 +22,7 @@ export const DOCUMENTOS_POR_TIPO_ACAO: Record<TipoAcao, ConfiguracaoDocumentos> 
   contribuicao_extraordinaria: {
     natureza: "tributaria",
     peticao: "peticao_contribuicao_extraordinaria",
-    contrato: "contrato_tributario",
+    contrato: "contrato_contribuicao_extraordinaria",
   },
   tema_324: {
     natureza: "tributaria",
@@ -37,7 +37,7 @@ export const DOCUMENTOS_POR_TIPO_ACAO: Record<TipoAcao, ConfiguracaoDocumentos> 
   supressao_folgas: {
     natureza: "trabalhista",
     peticao: "peticao_supressao_folgas",
-    contrato: "contrato_trabalhista",
+    contrato: "contrato_supressao_folgas",
   },
 };
 
