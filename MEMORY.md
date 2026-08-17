@@ -13,6 +13,8 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Entregar arquivos completos e funcionais quando solicitado.
 - Validar antes de afirmar que algo foi concluído.
 - Separar claramente implementação atual, proposta e hipótese.
+- A cada solicitação, sugerir uma melhor aplicação; a sugestão é apresentada
+  separadamente e só é implementada com autorização explícita.
 
 ## Regras confirmadas do projeto
 
