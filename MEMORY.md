@@ -158,6 +158,20 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Selecionar a petição específica da ação; usar o contrato HRA nas ações tributárias, o contrato Reflexo de Hora Extra nas trabalhistas e escolher a procuração pela natureza e pelo escritório.
 **Evitar:** Alterar os Termos existentes ou selecionar contrato e procuração sem considerar a natureza da ação.
 
+### 2026-08 — Quantidade de PDFs e páginas de contracheques
+
+**Regra confirmada:** Um caso pode receber vários arquivos PDF de contracheques, e cada PDF pode conter vários contracheques distribuídos em qualquer quantidade de páginas.
+**Origem:** Solicitação de Nodley durante a validação do upload de contracheques.
+**Aplicação:** Acumular arquivos escolhidos em seleções sucessivas e consolidar páginas por competência e modelo, eliminando rubricas repetidas.
+**Evitar:** Substituir a seleção anterior por um novo arquivo ou impor um limite fixo de páginas no extrator.
+
+### 2026-08 — IA como último recurso nos contracheques
+
+**Regra confirmada:** A IA pode processar um contracheque somente quando a extração automática/OCR não produzir dados estruturados.
+**Origem:** Autorização de Nodley após definir o fluxo para PDFs sem camada de texto.
+**Aplicação:** Manter a extração determinística como primeira opção e chamar a IA individualmente apenas para os arquivos que falharem, validando a resposta antes de persistir.
+**Evitar:** Enviar à IA contracheques que já foram extraídos ou aceitar rubricas vazias e valores inválidos.
+
 ```markdown
 ### AAAA-MM — Título
 
