@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeStorageName } from "@/lib/storage";
+import { unificarPdfs } from "@/lib/unificar-pdfs";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 
 const TIPOS_ACAO = [
@@ -34,6 +36,8 @@ export default function NovoCaso() {
   const [limiteViabilidade, setLimiteViabilidade] = useState("15000");
   const [numeroPasta, setNumeroPasta] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progresso, setProgresso] = useState(0);
+  const [etapa, setEtapa] = useState("");
 
   const toggleEscritorio = (id: string) =>
     setEscritorios((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]));
@@ -66,17 +70,22 @@ export default function NovoCaso() {
       toast.error("Os documentos pessoais devem estar no formato PDF");
       return;
     }
-    const arquivos = [
-      ...contracheques.map((file) => ({ file, tipo: "contracheque" })),
-      ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
-    ];
     const limite = Number(limiteViabilidade);
     if (!Number.isFinite(limite) || limite < 0) {
       toast.error("Informe um limite de viabilidade válido");
       return;
     }
     setLoading(true);
+    setProgresso(5);
+    setEtapa("Unificando contracheques");
     try {
+      const contrachequeUnificado = await unificarPdfs(contracheques);
+      const arquivos = [
+        { file: contrachequeUnificado, tipo: "contracheque" },
+        ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
+      ];
+      setProgresso(15);
+      setEtapa("Criando caso");
       const { data: caso, error } = await supabase
         .from("casos")
         .insert({
@@ -93,7 +102,9 @@ export default function NovoCaso() {
         .single();
       if (error) throw error;
 
-      for (const { file: f, tipo } of arquivos) {
+      for (let indice = 0; indice < arquivos.length; indice++) {
+        const { file: f, tipo } = arquivos[indice];
+        setEtapa(`Enviando arquivos (${indice + 1}/${arquivos.length})`);
         const path = `${caso.id}/${crypto.randomUUID()}-${safeStorageName(f.name)}`;
         const { error: upErr } = await supabase.storage.from("casos-arquivos").upload(path, f, {
           contentType: f.type || "application/octet-stream",
@@ -106,9 +117,12 @@ export default function NovoCaso() {
           storage_path: path,
           mime_type: f.type,
         });
+        setProgresso(20 + Math.round(((indice + 1) / arquivos.length) * 35));
       }
 
       if (contracheques.length > 0) {
+        setEtapa("Extraindo contracheques");
+        setProgresso(65);
         const { data: processamento, error: processamentoError } = await supabase.functions.invoke(
           "process-contracheques-pdf",
           { body: { caso_id: caso.id } },
@@ -119,6 +133,8 @@ export default function NovoCaso() {
         }
       }
 
+      setEtapa("Extraindo dados pessoais");
+      setProgresso(85);
       const { data: pessoais, error: pessoaisError } = await supabase.functions.invoke("process-documentos-pessoais-pdf", {
         body: { caso_id: caso.id },
       });
@@ -127,6 +143,8 @@ export default function NovoCaso() {
         toast.warning(`${pessoais.revisao.length} documento(s) pessoal(is) precisam de revisão manual`);
       }
 
+      setEtapa("Processamento concluído");
+      setProgresso(100);
       toast.success("Caso criado e documentos processados");
       nav(`/casos/${caso.id}`);
     } catch (e: any) {
@@ -251,8 +269,18 @@ export default function NovoCaso() {
             </div>
           </div>
 
+          {loading && (
+            <div className="space-y-2" aria-live="polite">
+              <div className="flex justify-between text-sm">
+                <span>{etapa}</span>
+                <span>{progresso}%</span>
+              </div>
+              <Progress value={progresso} aria-label={`${etapa}: ${progresso}%`} />
+            </div>
+          )}
+
           <Button className="w-full" onClick={submit} disabled={loading}>
-            {loading ? "Enviando…" : "Criar caso e processar"}
+            {loading ? "Processando…" : "Criar caso e processar"}
           </Button>
         </div>
       </main>
