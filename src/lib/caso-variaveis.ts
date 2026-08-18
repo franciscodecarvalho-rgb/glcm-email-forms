@@ -16,6 +16,11 @@ export type CasoParaDocumento = {
   honorarios_pct?: number | null;
   valor_causa?: number | null;
   escritorios?: EscritorioId[] | null;
+  captador?: string | null;
+  oab?: string | null;
+  email_cliente?: string | null;
+  telefone_cliente?: string | null;
+  uf_comarca?: string | null;
 };
 
 /** Local fixo da assinatura das peças (sede do escritório). */
@@ -80,7 +85,10 @@ export function montarVariaveisCaso(
     ANO: String(hoje.getFullYear()),
     // Endereço da PFN varia por comarca — fica para revisão manual na peça.
     ENDERECO_PFN: "[preencher endereço da PFN da comarca]",
-    EMAIL_CLIENTE: "",
-    TELEFONE_CLIENTE: "",
+    EMAIL_CLIENTE: caso.email_cliente ?? "",
+    TELEFONE_CLIENTE: caso.telefone_cliente ?? "",
+    CAPTADOR: caso.captador ?? "",
+    OAB_CASO: caso.oab ?? "",
+    UF_COMARCA: caso.uf_comarca ?? "",
   };
 }

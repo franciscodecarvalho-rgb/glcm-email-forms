@@ -5,14 +5,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
+import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+const UFS = [
+  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+  "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+];
+
 export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () => void }) {
+  const { state, errors, setField } = useRevisaoCalculos();
   const [pasta, setPasta] = useState(caso.numero_pasta ?? "");
   const [generating, setGenerating] = useState(false);
 
@@ -28,19 +36,34 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
   );
   const valorCausa = calculo.totalHistorico;
 
+  const formValido = useMemo(() => {
+    if (!pasta.trim()) return false;
+    return Object.keys(errors).length === 0;
+  }, [pasta, errors]);
+
   const voltar = async () => {
     await supabase.from("casos").update({ status: "aguardando_confirmacao" }).eq("id", caso.id);
   };
 
   const gerar = async () => {
     if (!pasta.trim()) { toast.error("Informe o número da pasta"); return; }
+    if (!formValido) { toast.error("Preencha todos os campos obrigatórios"); return; }
     setGenerating(true);
     const { error: updErr } = await supabase
       .from("casos")
       .update({ numero_pasta: pasta, valor_causa: valorCausa })
       .eq("id", caso.id);
     if (updErr) { setGenerating(false); toast.error("Erro ao salvar"); return; }
-    const { error } = await supabase.functions.invoke("generate-documents", { body: { caso_id: caso.id } });
+    const { error } = await supabase.functions.invoke("generate-documents", {
+      body: {
+        caso_id: caso.id,
+        captador: state.captador.trim(),
+        oab: state.oab.trim(),
+        email_cliente: state.email.trim(),
+        telefone_cliente: state.telefone.trim(),
+        uf_comarca: state.ufComarca.trim(),
+      },
+    });
     setGenerating(false);
     if (error) toast.error("Erro ao gerar documentos"); else toast.success("Documentos gerados");
   };
@@ -51,7 +74,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Revisão dos Cálculos</h1>
-        <p className="text-sm text-muted-foreground">Confira os totais e informe o número da pasta para gerar os documentos.</p>
+        <p className="text-sm text-muted-foreground">Confira os totais e informe os dados abaixo para gerar os documentos.</p>
       </div>
 
       <section className="rounded-lg border bg-card p-6">
@@ -111,16 +134,81 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
         </div>
       </section>
 
-      <section className="rounded-lg border bg-card p-6">
-        <Label htmlFor="pasta" className="text-sm font-semibold">Número da Pasta *</Label>
-        <Input id="pasta" className="mt-2 max-w-sm" value={pasta} onChange={(e) => setPasta(e.target.value)} placeholder="ex: 2026/0123" />
+      <section className="rounded-lg border bg-card p-6 space-y-4">
+        <h2 className="font-semibold">Dados para geração dos documentos</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <Label htmlFor="pasta" className="text-sm font-semibold">Número da Pasta *</Label>
+            <Input id="pasta" className="mt-2" value={pasta} onChange={(e) => setPasta(e.target.value)} placeholder="ex: 2026/0123" />
+          </div>
+          <div>
+            <Label htmlFor="captador" className="text-sm font-semibold">Captador *</Label>
+            <Input
+              id="captador"
+              className="mt-2"
+              value={state.captador}
+              onChange={(e) => setField("captador", e.target.value)}
+              placeholder="ex: JSC"
+            />
+            {errors.captador && <p className="text-xs text-destructive mt-1">{errors.captador}</p>}
+          </div>
+          <div>
+            <Label htmlFor="oab" className="text-sm font-semibold">OAB do Advogado *</Label>
+            <Input
+              id="oab"
+              className="mt-2"
+              value={state.oab}
+              onChange={(e) => setField("oab", e.target.value)}
+              placeholder="ex: BA123456"
+            />
+            {errors.oab && <p className="text-xs text-destructive mt-1">{errors.oab}</p>}
+          </div>
+          <div>
+            <Label htmlFor="email" className="text-sm font-semibold">E-mail do Cliente *</Label>
+            <Input
+              id="email"
+              type="email"
+              className="mt-2"
+              value={state.email}
+              onChange={(e) => setField("email", e.target.value)}
+              placeholder="cliente@email.com"
+            />
+            {errors.email && <p className="text-xs text-destructive mt-1">{errors.email}</p>}
+          </div>
+          <div>
+            <Label htmlFor="telefone" className="text-sm font-semibold">Telefone do Cliente *</Label>
+            <Input
+              id="telefone"
+              type="tel"
+              className="mt-2"
+              value={state.telefone}
+              onChange={(e) => setField("telefone", e.target.value)}
+              placeholder="(71) 99999-9999"
+            />
+            {errors.telefone && <p className="text-xs text-destructive mt-1">{errors.telefone}</p>}
+          </div>
+          <div>
+            <Label htmlFor="uf-comarca" className="text-sm font-semibold">UF da Comarca *</Label>
+            <Select value={state.ufComarca} onValueChange={(value) => setField("ufComarca", value)}>
+              <SelectTrigger id="uf-comarca" className="mt-2">
+                <SelectValue placeholder="Selecione a UF" />
+              </SelectTrigger>
+              <SelectContent>
+                {UFS.map((uf) => (
+                  <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.ufComarca && <p className="text-xs text-destructive mt-1">{errors.ufComarca}</p>}
+          </div>
+        </div>
       </section>
 
       <div className="flex justify-between gap-2">
         <Button variant="ghost" onClick={voltar}><ArrowLeft className="mr-2 h-4 w-4" />Voltar</Button>
         <div className="flex gap-2">
           <Button variant="outline" onClick={onCancel}><X className="mr-2 h-4 w-4" />Cancelar Caso</Button>
-          <Button onClick={gerar} disabled={generating}><FileCheck className="mr-2 h-4 w-4" />{generating ? "Gerando…" : "Gerar Documentos"}</Button>
+          <Button onClick={gerar} disabled={generating || !formValido}><FileCheck className="mr-2 h-4 w-4" />{generating ? "Gerando…" : "Gerar Documentos"}</Button>
         </div>
       </div>
     </div>
