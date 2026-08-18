@@ -225,6 +225,27 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Alterar primeiro `src/lib/modelos-documentos.ts` (`selecionarPecas`) ou `src/lib/planilha-xlsx.ts` e sincronizar a cópia na função; a paridade é garantida automaticamente pelo teste de guarda `src/lib/espelho-edge-function.test.ts` (falha quando as versões divergem).
 **Evitar:** Editar somente a cópia inline da função ou deixar as duas versões divergirem.
 
+### 2026-08 — Publicação de Edge Functions
+
+**Regra confirmada:** O deploy efetivo acontece por push na `main` do GitHub + **Publish no Lovable** (botão ou prompt no chat); a validação usa geração de documentos em caso novo, pois casos `concluido` nunca regeram.
+**Origem:** Deploy do PR #36 (18/08/2026) e validação de Nodley na plataforma.
+**Aplicação:** Após merge, orientar o Publish no Lovable e a validação em caso novo. A CLI do Supabase está instalada, mas o token de Nodley só acessa o projeto `pcquefluiltrvwjpndvw`; a produção (`kaopnizsbkzxqdzmocwa`) exige convite à org ou token da conta dona.
+**Evitar:** Assumir que merge no GitHub publica a função automaticamente ou validar em caso já concluído.
+
+### 2026-08 — Modelos de contrato do escritório
+
+**Regra confirmada:** Os `.docx` originais usam MERGEFIELDs (`<#[id]-Campo>`, resultado em cache ex.: Vitor Pereira), o bloco de aviso fica no cabeçalho com `⚠️` e as listas usam marcadores nativos do Word.
+**Origem:** Inspeção dos modelos durante o diagnóstico dos contratos gerados.
+**Aplicação:** Ao converter/gerar templates, preservar triângulos ⚠, listas nativas e endereço sem duplicidade; dados de exemplo visíveis no Word são cache de merge, não texto fixo.
+**Evitar:** Substituir listas nativas por `•` literal em fonte Symbol (vira □ fora do Word) ou mover o aviso do cabeçalho para o corpo.
+
+### 2026-08 — Alerta de rubricas monitoradas
+
+**Regra confirmada:** A página do caso sinaliza quando os contracheques contêm rubricas com os códigos 1059, 1513 ou 6050, agrupando as competências por código.
+**Origem:** Redefinição de Nodley sobre as solicitações de Ana: o relatório de totais 1513/6050 (item 1.1) e a sugestão de viabilidade pela média (item 1.2) foram removidos do escopo, restando somente o alerta unificado.
+**Aplicação:** `encontrarRubricasAlerta` em `src/lib/alertas-rubricas.ts` filtra `itens_contracheque` pelos códigos; o componente `AlertaRubricas` exibe o aviso na página do caso em todos os status.
+**Evitar:** Recriar o relatório de totais 1513/6050 ou a sugestão de viabilidade sem nova solicitação explícita.
+
 ```markdown
 ### AAAA-MM — Título
 
