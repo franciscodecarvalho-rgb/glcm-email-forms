@@ -202,7 +202,7 @@ Deno.serve(async(req)=>{
     const {data:{user},error:authError}=await supabase.auth.getUser(auth.replace(/^Bearer\s+/i,""));
     if(authError||!user)return json({error:"Não autenticado"},401);
     const {caso_id}=await req.json();if(!caso_id)return json({error:"caso_id obrigatório"},400);
-    const {data:arquivos,error}=await supabase.from("arquivos").select("nome,storage_path,mime_type").eq("caso_id",caso_id).eq("tipo","contracheque");if(error)throw error;
+    const {data:arquivos,error}=await supabase.from("arquivos").select("nome,storage_path,mime_type").eq("caso_id",caso_id).eq("tipo","contracheque").neq("nome","contracheques-unificados.pdf");if(error)throw error;
     const extraidos:Array<Contra&{arquivo_origem:string}>=[],revisao=[];let arquivosComIa=0;
     for(const arq of arquivos??[]){
       if(arq.mime_type!=="application/pdf"){revisao.push({arquivo:arq.nome,motivo:"formato_nao_pdf"});continue;}

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeStorageName } from "@/lib/storage";
-import { unificarPdfs } from "@/lib/unificar-pdfs";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,15 +76,8 @@ export default function NovoCaso() {
     }
     setLoading(true);
     setProgresso(5);
-    setEtapa("Unificando contracheques");
+    setEtapa("Criando caso");
     try {
-      const contrachequeUnificado = await unificarPdfs(contracheques);
-      const arquivos = [
-        { file: contrachequeUnificado, tipo: "contracheque" },
-        ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
-      ];
-      setProgresso(15);
-      setEtapa("Criando caso");
       const { data: caso, error } = await supabase
         .from("casos")
         .insert({
@@ -102,9 +94,14 @@ export default function NovoCaso() {
         .single();
       if (error) throw error;
 
-      for (let indice = 0; indice < arquivos.length; indice++) {
-        const { file: f, tipo } = arquivos[indice];
-        setEtapa(`Enviando arquivos (${indice + 1}/${arquivos.length})`);
+      const todosArquivos = [
+        ...contracheques.map((file) => ({ file, tipo: "contracheque" as const })),
+        ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" as const })),
+      ];
+
+      for (let indice = 0; indice < todosArquivos.length; indice++) {
+        const { file: f, tipo } = todosArquivos[indice];
+        setEtapa(`Enviando arquivos (${indice + 1}/${todosArquivos.length})`);
         const path = `${caso.id}/${crypto.randomUUID()}-${safeStorageName(f.name)}`;
         const { error: upErr } = await supabase.storage.from("casos-arquivos").upload(path, f, {
           contentType: f.type || "application/octet-stream",
@@ -117,7 +114,18 @@ export default function NovoCaso() {
           storage_path: path,
           mime_type: f.type,
         });
-        setProgresso(20 + Math.round(((indice + 1) / arquivos.length) * 35));
+        setProgresso(10 + Math.round(((indice + 1) / todosArquivos.length) * 25));
+      }
+
+      setEtapa("Unificando contracheques ordenados");
+      setProgresso(40);
+      const { data: unificado, error: uniErr } = await supabase.functions.invoke(
+        "unificar-contracheques-ordenados",
+        { body: { caso_id: caso.id } },
+      );
+      if (uniErr) throw uniErr;
+      if (!unificado?.ok || !unificado?.storage_path) {
+        throw new Error(unificado?.error || "Falha ao unificar contracheques");
       }
 
       if (contracheques.length > 0) {
