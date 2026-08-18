@@ -210,8 +210,11 @@ function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string,
     VALOR_CAUSA_EXTENSO: valorPorExtenso(valor),
     ANO: String(hoje.getFullYear()),
     ENDERECO_PFN: "[preencher endereço da PFN da comarca]",
-    EMAIL_CLIENTE: "",
-    TELEFONE_CLIENTE: "",
+    EMAIL_CLIENTE: caso.email_cliente ?? "",
+    TELEFONE_CLIENTE: caso.telefone_cliente ?? "",
+    CAPTADOR: caso.captador ?? "",
+    OAB_CASO: caso.oab ?? "",
+    UF_COMARCA: caso.uf_comarca ?? "",
   };
 }
 
@@ -497,8 +500,22 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const { caso_id } = await req.json();
+    const {
+      caso_id,
+      captador,
+      oab,
+      email_cliente,
+      telefone_cliente,
+      uf_comarca,
+    } = await req.json();
     if (!caso_id) throw new Error("caso_id obrigatório");
+    if (!captador?.trim()) throw new Error("captador obrigatório");
+    if (!oab?.trim()) throw new Error("oab obrigatório");
+    if (!email_cliente?.trim()) throw new Error("email_cliente obrigatório");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email_cliente.trim())) throw new Error("email_cliente inválido");
+    if (!telefone_cliente?.trim()) throw new Error("telefone_cliente obrigatório");
+    if (!/^\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/.test(telefone_cliente.trim())) throw new Error("telefone_cliente inválido");
+    if (!uf_comarca?.trim()) throw new Error("uf_comarca obrigatório");
 
     const { data: caso, error: cErr } = await supabase
       .from("casos")
@@ -536,7 +553,15 @@ Deno.serve(async (req) => {
       (s, c) => s + ((Number(c.valor_hra) || 0) + (Number(c.valor_ahra) || 0)) * ALIQUOTA,
       0,
     );
-    const casoComValor = { ...caso, valor_causa: caso.valor_causa ?? totalCalculado };
+    const casoComValor = {
+      ...caso,
+      valor_causa: caso.valor_causa ?? totalCalculado,
+      captador: captador.trim(),
+      oab: oab.trim(),
+      email_cliente: email_cliente.trim(),
+      telefone_cliente: telefone_cliente.trim(),
+      uf_comarca: uf_comarca.trim(),
+    };
     const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
 
     const faltantes = tipos.filter((t) => !templates.some((tp: any) => tp.tipo === t));

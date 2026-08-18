@@ -12,6 +12,7 @@ import { TelaDownload } from "@/components/caso/TelaDownload";
 import { TelaProcessando } from "@/components/caso/TelaProcessando";
 import { BlocoDuplicata } from "@/components/caso/BlocoDuplicata";
 import { AlertaRubricas } from "@/components/caso/AlertaRubricas";
+import { RevisaoCalculosProvider } from "@/contexts/RevisaoCalculosContext";
 import { toast } from "sonner";
 import {
   contrachequesRelacionaisParaRevisao,
@@ -157,7 +158,11 @@ export default function Caso() {
             ? <TelaDadosExtraidos caso={caso} onCancel={cancelar} />
             : <TelaConfirmacao caso={caso} onCancel={cancelar} />
         )}
-        {caso.status === "aguardando_pasta" && <TelaCalculos caso={caso} onCancel={cancelar} />}
+        {caso.status === "aguardando_pasta" && (
+          <RevisaoCalculosProvider>
+            <TelaCalculos caso={caso} onCancel={cancelar} />
+          </RevisaoCalculosProvider>
+        )}
         {caso.status === "concluido" && <TelaDownload caso={caso} />}
         {caso.status === "cancelado" && (
           <div className="rounded-lg border bg-card p-8 text-center">
