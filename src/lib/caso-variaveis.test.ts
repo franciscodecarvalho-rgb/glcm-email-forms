@@ -61,4 +61,33 @@ describe("montarVariaveisCaso", () => {
     expect(v.NACIONALIDADE).toBe("brasileiro(a)");
     expect(v.LOCAL_ASSINATURA).toBe("Salvador/BA");
   });
+
+  it("trata marcadores de ausência da IA como campo em branco", () => {
+    const v = montarVariaveisCaso(
+      {
+        ...casoRuan,
+        qualificacao: { nacionalidade: "Não informado", estado_civil: "Não consta", profissao: "NULL" },
+      },
+      new Date(2026, 0, 1),
+    );
+    expect(v.ESTADO_CIVIL).toBe("");
+    expect(v.PROFISSAO).toBe("");
+    expect(v.NACIONALIDADE).toBe("brasileiro(a)"); // cai no padrão
+  });
+
+  it("normaliza nacionalidade abreviada/país para o padrão, mas preserva gênero real", () => {
+    const br = montarVariaveisCaso(
+      { ...casoRuan, qualificacao: { nacionalidade: "BR" } },
+      new Date(2026, 0, 1),
+    );
+    expect(br.NACIONALIDADE).toBe("brasileiro(a)");
+
+    const feminino = montarVariaveisCaso(
+      { ...casoRuan, qualificacao: { nacionalidade: "brasileira", estado_civil: "casada", profissao: "médica" } },
+      new Date(2026, 0, 1),
+    );
+    expect(feminino.NACIONALIDADE).toBe("brasileira");
+    expect(feminino.ESTADO_CIVIL).toBe("casada");
+    expect(feminino.PROFISSAO).toBe("médica");
+  });
 });

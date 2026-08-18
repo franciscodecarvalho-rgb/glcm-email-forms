@@ -184,6 +184,29 @@ function montarEnderecoCompleto(e: any): string {
     .join(", ");
 }
 
+// A extração por IA às vezes devolve um marcador de "não encontrei" como texto
+// ("Não consta", "NULL", "N/A", "BR"...). Sem isso, esse lixo entrava LITERAL na
+// qualificação das peças. Tratamos como ausente (campo em branco / padrão).
+// Espelho de src/lib/caso-variaveis.ts — mudar aqui ⇒ replicar lá.
+const VALORES_AUSENTES = new Set([
+  "", "-", "--", "---", "n/a", "na", "n/d", "nd", "s/i", "?",
+  "nao consta", "nao informado", "nao informou", "nao identificado",
+  "nao disponivel", "nao localizado", "nao encontrado", "sem informacao",
+  "nao se aplica", "desconhecido", "indefinido", "null", "undefined",
+  "none", "nao", "vazio", "br", "bra", "brasil",
+]);
+
+function limpar(v: unknown): string {
+  const s = (v ?? "").toString().trim();
+  const chave = s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[.\s]+$/g, "")
+    .replace(/\s+/g, " ");
+  return VALORES_AUSENTES.has(chave) ? "" : s;
+}
+
 function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string, string> {
   const e = caso.endereco ?? {};
   const q = caso.qualificacao ?? {};
@@ -194,9 +217,9 @@ function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string,
     NOME_CLIENTE: caso.nome_cliente ?? "",
     CPF: caso.cpf ?? "",
     RG: caso.rg ?? "",
-    NACIONALIDADE: (q.nacionalidade ?? "").trim() || "brasileiro(a)",
-    ESTADO_CIVIL: q.estado_civil ?? "",
-    PROFISSAO: q.profissao ?? "",
+    NACIONALIDADE: limpar(q.nacionalidade) || "brasileiro(a)",
+    ESTADO_CIVIL: limpar(q.estado_civil),
+    PROFISSAO: limpar(q.profissao),
     ENDERECO_COMPLETO: montarEnderecoCompleto(e),
     CIDADE_UF: cidadeUf,
     CEP: e.cep ?? "",
