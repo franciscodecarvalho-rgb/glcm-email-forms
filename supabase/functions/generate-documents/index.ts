@@ -20,8 +20,9 @@ type NaturezaAcao = "tributaria" | "trabalhista";
 type ConfiguracaoAcao = { natureza: NaturezaAcao; peticao: string; contrato: string };
 type PecaSelecionada = { templateTipo: string; tipoSaida: string };
 
-// Espelho de src/lib/modelos-documentos.ts. Mantido inline porque esta Edge
-// Function é publicada como arquivo único no ambiente atual.
+// Espelho de src/lib/modelos-documentos.ts (mapa e selecionarPecas). Mantido
+// inline porque esta Edge Function é publicada como arquivo único no ambiente
+// atual; ao alterar, sincronizar a fonte canônica.
 const DOCUMENTOS_POR_TIPO_ACAO: Record<string, ConfiguracaoAcao> = {
   ir_sobre_hra: {
     natureza: "tributaria",
@@ -214,7 +215,7 @@ function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string,
   };
 }
 
-// ---------------- planilha xlsx (espelho de _shared/planilha-xlsx.ts) ----------------
+// ---------------- planilha xlsx (espelho de src/lib/planilha-xlsx.ts) ----------------
 type LinhaPlanilha = { competencia: string; hra: number; ahra: number };
 
 // Competência normalizada como MM/AAAA; rótulos fora desse padrão (ex.: legado

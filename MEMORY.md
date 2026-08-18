@@ -218,6 +218,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Ordenar as linhas por MM/AAAA em `montarArquivosPlanilhaXlsx`; rótulos fora do padrão (ex.: legado "Contracheque 1") vão ao fim, preservando a ordem relativa.
 **Evitar:** Reintroduzir a coluna SUBTOTAL ou depender da ordem de seleção/extração dos contracheques.
 
+### 2026-08 — Fontes canônicas testadas em src/lib
+
+**Regra confirmada:** As lógicas puras de `generate-documents` (seleção de peças e planilha xlsx) têm fonte canônica em `src/lib` com cobertura vitest; a Edge Function mantém cópias inline por exigência do deploy de arquivo único.
+**Origem:** Proposta aceita por Nodley após validações com scripts descartáveis.
+**Aplicação:** Alterar primeiro `src/lib/modelos-documentos.ts` (`selecionarPecas`) ou `src/lib/planilha-xlsx.ts` e sincronizar a cópia na função; paridade verificada por comparação byte a byte entre as versões.
+**Evitar:** Editar somente a cópia inline da função ou deixar as duas versões divergirem.
+
 ```markdown
 ### AAAA-MM — Título
 
