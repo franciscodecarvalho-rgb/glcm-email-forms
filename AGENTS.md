@@ -30,7 +30,7 @@ implemente sem autorização.
 No início de cada tarefa, leia somente o necessário nesta ordem:
 
 1. `AGENTS.md`;
-2. `MEMORY.md`;
+2. `context/REGRAS.md` (cartão de regras vigentes; histórico em `context/MEMORY-ARCHIVE.md` somente quando a origem de uma regra for necessária);
 3. `context/SCOPE.md`;
 4. `context/PROJECT.md`;
 5. documento específico aplicável em `context/`;
@@ -110,7 +110,8 @@ A tarefa só termina quando:
 4. o diff contém somente mudanças necessárias;
 5. os testes relevantes passaram ou as limitações foram declaradas;
 6. riscos e pendências reais foram informados;
-7. aprendizado permanente confirmado foi registrado em `MEMORY.md`.
+7. aprendizado permanente confirmado foi registrado em `context/MEMORY-ARCHIVE.md`
+   e refletido em uma linha no cartão `context/REGRAS.md`.
 
 ## Entrega
 

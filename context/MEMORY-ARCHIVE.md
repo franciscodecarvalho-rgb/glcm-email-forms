@@ -1,9 +1,11 @@
-# MEMORY.md — Memória do GLCM
+# MEMORY-ARCHIVE.md — Histórico de regras do GLCM
 
 ## Uso
 
-Memória persistente de regras confirmadas do projeto. Não registrar tarefas temporárias,
-hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
+Arquivo histórico (arquivo morto) das regras confirmadas do projeto, com origem
+e justificativa. NÃO é lido no início das tarefas — a memória operacional é
+`context/REGRAS.md`. Não registrar tarefas temporárias, hipóteses, credenciais,
+dados de clientes ou propostas ainda não aprovadas.
 
 ## Preferências de Nodley
 
@@ -15,8 +17,8 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Separar claramente implementação atual, proposta e hipótese.
 - A cada solicitação, sugerir uma melhor aplicação; a sugestão é apresentada
   separadamente e só é implementada com autorização explícita.
-- Ao alterar o MEMORY.md, sincronizar automaticamente o `.claude/CLAUDE.md`
-  (cópia espelho), sem solicitar permissão.
+- Aprendizado novo confirmado: registrar neste arquivo histórico e refletir em
+  uma linha no cartão `context/REGRAS.md`.
 
 ## Regras confirmadas do projeto
 
