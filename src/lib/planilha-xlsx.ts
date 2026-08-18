@@ -11,7 +11,7 @@ function chaveCompetencia(competencia: string): [number, number] | null {
   return m ? [Number(m[2]), Number(m[1])] : null;
 }
 
-export function ordenarPorCompetencia(linhas: LinhaPlanilha[]): LinhaPlanilha[] {
+export function ordenarPorCompetencia<T extends { competencia: string }>(linhas: T[]): T[] {
   return linhas
     .map((linha, indice) => ({ linha, indice, chave: chaveCompetencia(linha.competencia) }))
     .sort((a, b) => {
@@ -104,6 +104,143 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <sheets><sheet name="IR sobre HRA" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+
+  const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  return {
+    "[Content_Types].xml": contentTypes,
+    "_rels/.rels": rels,
+    "xl/workbook.xml": workbook,
+    "xl/_rels/workbook.xml.rels": workbookRels,
+    "xl/styles.xml": styles,
+    "xl/worksheets/sheet1.xml": sheet,
+  };
+}
+
+// ---------------- planilha de códigos monitorados (1513/6050) ----------------
+// Mesma estrutura da planilha IR/HRA; gerada somente quando há ocorrências
+// desses códigos nas rubricas relacionais do caso.
+export const CODIGOS_PLANILHA = ["1513", "6050"] as const;
+
+export type LinhaPlanilhaCodigos = { competencia: string; total1513: number; total6050: number };
+export type ContrachequeParaCodigos = { id: string; competencia?: string | null };
+export type ItemParaCodigos = {
+  contracheque_id?: string | null;
+  codigo?: string | null;
+  valor?: number | null;
+};
+
+export function agregarCodigosPorCompetencia(
+  contracheques: ContrachequeParaCodigos[] | null | undefined,
+  itens: ItemParaCodigos[] | null | undefined,
+): LinhaPlanilhaCodigos[] {
+  const competenciaPorId = new Map(
+    (contracheques ?? []).map((c) => [c.id, c.competencia ?? ""]),
+  );
+  const porCompetencia = new Map<string, LinhaPlanilhaCodigos>();
+
+  for (const item of itens ?? []) {
+    const codigo = (item.codigo ?? "").trim();
+    if (codigo !== CODIGOS_PLANILHA[0] && codigo !== CODIGOS_PLANILHA[1]) continue;
+    const competencia = competenciaPorId.get(item.contracheque_id ?? "") ?? "";
+    const linha = porCompetencia.get(competencia) ?? { competencia, total1513: 0, total6050: 0 };
+    if (codigo === CODIGOS_PLANILHA[0]) linha.total1513 += Number(item.valor) || 0;
+    else linha.total6050 += Number(item.valor) || 0;
+    porCompetencia.set(competencia, linha);
+  }
+
+  return ordenarPorCompetencia([...porCompetencia.values()]);
+}
+
+export function montarArquivosPlanilhaCodigosXlsx(
+  nomeCliente: string,
+  linhas: LinhaPlanilhaCodigos[],
+): Record<string, string> {
+  const ordenadas = ordenarPorCompetencia(linhas);
+  const rows: string[] = [];
+  rows.push(
+    `<row r="1"><c r="A1" t="inlineStr" s="1"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — CÓDIGOS 1513/6050`)}</t></is></c></row>`,
+  );
+  rows.push(
+    `<row r="2">${["P. A.", "1513", "6050", "TOTAL"]
+      .map((t, i) => tx(`${"ABCD"[i]}2`, t, 1))
+      .join("")}</row>`,
+  );
+
+  let r = 3;
+  for (const l of ordenadas) {
+    rows.push(
+      `<row r="${r}">` +
+        tx(`A${r}`, l.competencia) +
+        nm(`B${r}`, l.total1513, 2) +
+        nm(`C${r}`, l.total6050, 2) +
+        fx(`D${r}`, `B${r}+C${r}`, l.total1513 + l.total6050, 2) +
+        `</row>`,
+    );
+    r++;
+  }
+
+  const primeira = 3;
+  const ultima = r - 1;
+  if (ordenadas.length > 0) {
+    rows.push(
+      `<row r="${r}">` +
+        tx(`A${r}`, "TOTAL", 1) +
+        fx(`B${r}`, `SUM(B${primeira}:B${ultima})`, ordenadas.reduce((s, l) => s + l.total1513, 0), 3) +
+        fx(`C${r}`, `SUM(C${primeira}:C${ultima})`, ordenadas.reduce((s, l) => s + l.total6050, 0), 3) +
+        fx(
+          `D${r}`,
+          `SUM(D${primeira}:D${ultima})`,
+          ordenadas.reduce((s, l) => s + l.total1513 + l.total6050, 0),
+          3,
+        ) +
+        `</row>`,
+    );
+  }
+
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<cols><col min="1" max="1" width="22" customWidth="1"/><col min="2" max="4" width="16" customWidth="1"/></cols>
+<sheetData>${rows.join("")}</sheetData>
+</worksheet>`;
+
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot;\\ #,##0.00"/></numFmts>
+<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="4">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+</cellXfs>
+</styleSheet>`;
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Códigos 1513-6050" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`;
 
   const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

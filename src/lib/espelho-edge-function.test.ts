@@ -6,7 +6,12 @@ import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { selecionarPecas } from "./modelos-documentos";
-import { montarArquivosPlanilhaXlsx, ordenarPorCompetencia } from "./planilha-xlsx";
+import {
+  agregarCodigosPorCompetencia,
+  montarArquivosPlanilhaCodigosXlsx,
+  montarArquivosPlanilhaXlsx,
+  ordenarPorCompetencia,
+} from "./planilha-xlsx";
 
 function carregarTrechoDaFuncao<T extends Record<string, unknown>>(
   inicioMarcador: string,
@@ -37,9 +42,13 @@ const edgePecas = carregarTrechoDaFuncao<{ selecionarPecas: typeof selecionarPec
 const edgePlanilha = carregarTrechoDaFuncao<{
   ordenarPorCompetencia: typeof ordenarPorCompetencia;
   montarArquivosPlanilhaXlsx: typeof montarArquivosPlanilhaXlsx;
+  agregarCodigosPorCompetencia: typeof agregarCodigosPorCompetencia;
+  montarArquivosPlanilhaCodigosXlsx: typeof montarArquivosPlanilhaCodigosXlsx;
 }>("type LinhaPlanilha", "// ---------------- função principal", [
   "ordenarPorCompetencia",
   "montarArquivosPlanilhaXlsx",
+  "agregarCodigosPorCompetencia",
+  "montarArquivosPlanilhaCodigosXlsx",
 ]);
 
 describe("guarda do espelho src/lib ↔ generate-documents", () => {
@@ -91,5 +100,25 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
       );
     }
     expect(ordenarPorCompetencia(casos[2])).toEqual(edgePlanilha.ordenarPorCompetencia(casos[2]));
+  });
+
+  it("planilha de códigos: agregação e saída idênticas", () => {
+    const contracheques = [
+      { id: "a", competencia: "03/2024" },
+      { id: "b", competencia: "01/2024" },
+    ];
+    const itens = [
+      { contracheque_id: "a", codigo: "1513", valor: 100.55 },
+      { contracheque_id: "a", codigo: "6050", valor: 25.5 },
+      { contracheque_id: "b", codigo: "1513", valor: 200 },
+      { contracheque_id: "a", codigo: "1059", valor: 999 },
+      { contracheque_id: "a", codigo: "1513", valor: 50 },
+    ];
+    const agregadoSrc = agregarCodigosPorCompetencia(contracheques, itens);
+    const agregadoEdge = edgePlanilha.agregarCodigosPorCompetencia(contracheques, itens);
+    expect(agregadoSrc).toEqual(agregadoEdge);
+    expect(montarArquivosPlanilhaCodigosXlsx("FULANO <&>", agregadoSrc)).toEqual(
+      edgePlanilha.montarArquivosPlanilhaCodigosXlsx("FULANO <&>", agregadoEdge),
+    );
   });
 });

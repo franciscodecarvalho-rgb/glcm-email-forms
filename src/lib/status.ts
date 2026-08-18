@@ -67,4 +67,5 @@ export const PECA_LABELS: Record<string, string> = {
   procuracao_polkowski: "Procuração — Polkowski",
   declaracao_pobreza: "Declaração de Pobreza",
   planilha: "Planilha de Cálculo (Excel)",
+  planilha_codigos: "Planilha — Códigos 1513/6050 (Excel)",
 };
