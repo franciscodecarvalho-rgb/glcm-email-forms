@@ -2,6 +2,9 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { RubricaAlertada } from "@/lib/alertas-rubricas";
 
+const fmt = (n: number) =>
+  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 /** Sinaliza rubricas monitoradas (1059, 1513, 6050) encontradas nos contracheques. */
 export function AlertaRubricas({ alertas }: { alertas: RubricaAlertada[] }) {
   if (alertas.length === 0) return null;
@@ -16,9 +19,10 @@ export function AlertaRubricas({ alertas }: { alertas: RubricaAlertada[] }) {
             <li key={alerta.codigo}>
               <span className="font-medium">{alerta.codigo}</span>
               {alerta.descricao ? ` — ${alerta.descricao}` : ""}
-              {alerta.competencias.length > 0 && (
-                <span className="text-sm"> (competências: {alerta.competencias.join(", ")})</span>
-              )}
+              <div className="ml-4 text-sm">
+                <div>Quantidade Total: {alerta.quantidadeTotal}</div>
+                <div>Valor Total R$: {fmt(alerta.valorTotal)}</div>
+              </div>
             </li>
           ))}
         </ul>

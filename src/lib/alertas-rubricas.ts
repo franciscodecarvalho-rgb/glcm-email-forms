@@ -9,7 +9,8 @@ export const CODIGOS_ALERTA = ["1059", "1513", "6050"] as const;
 export type RubricaAlertada = {
   codigo: string;
   descricao: string | null;
-  competencias: string[];
+  quantidadeTotal: number;
+  valorTotal: number;
 };
 
 export function encontrarRubricasAlerta(
@@ -23,12 +24,15 @@ export function encontrarRubricasAlerta(
     for (const item of contracheque.itens_contracheque ?? []) {
       const codigo = (item.codigo ?? "").trim();
       if (!alvo.has(codigo)) continue;
-      const entrada = porCodigo.get(codigo) ?? { codigo, descricao: null, competencias: [] };
+      const entrada = porCodigo.get(codigo) ?? {
+        codigo,
+        descricao: null,
+        quantidadeTotal: 0,
+        valorTotal: 0,
+      };
       if (!entrada.descricao && item.descricao) entrada.descricao = item.descricao;
-      const competencia = contracheque.competencia;
-      if (competencia && !entrada.competencias.includes(competencia)) {
-        entrada.competencias.push(competencia);
-      }
+      entrada.quantidadeTotal += Number(item.referencia) || 0;
+      entrada.valorTotal += Math.abs(Number(item.valor) || 0);
       porCodigo.set(codigo, entrada);
     }
   }
