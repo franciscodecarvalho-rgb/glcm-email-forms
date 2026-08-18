@@ -640,6 +640,36 @@ Deno.serve(async (req) => {
       }
     }
 
+    // PDF unificado de contracheques: anexa ao pacote o arquivo já unificado
+    // na criação do caso (bucket casos-arquivos), copiando para casos-documentos.
+    {
+      const { data: arquivosUnificados, error: arqErr } = await supabase
+        .from("arquivos")
+        .select("storage_path")
+        .eq("caso_id", caso_id)
+        .eq("tipo", "contracheque")
+        .eq("nome", "contracheques-unificados.pdf")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (arqErr) throw arqErr;
+
+      const arquivoUnificado = arquivosUnificados?.[0];
+      if (arquivoUnificado) {
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from("casos-arquivos")
+          .download(arquivoUnificado.storage_path);
+        if (dlErr || !blob) throw new Error("Falha ao baixar o PDF unificado de contracheques");
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const nomeUni = `contracheques-unificados-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`;
+        const pathUni = `${caso.id}/${nomeUni}`;
+        const { error: upUniErr } = await supabase.storage
+          .from("casos-documentos")
+          .upload(pathUni, bytes, { upsert: true, contentType: "application/pdf" });
+        if (upUniErr) throw upUniErr;
+        generated.push({ tipo: "contracheques_unificados", storage_path: pathUni, nome: nomeUni });
+      }
+    }
+
     if (generated.length === 0) throw new Error("Nenhum documento foi gerado.");
 
     await supabase

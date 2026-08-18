@@ -253,6 +253,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `agregarCodigosPorCompetencia` consolida `itens_contracheque` por competência; `montarArquivosPlanilhaCodigosXlsx` gera o arquivo; nada é gerado quando não há ocorrências.
 **Evitar:** Gerar a planilha vazia, usar o JSON legado de `casos.contracheques` como fonte ou criar estrutura diferente da planilha IR/HRA validada.
 
+### 2026-08 — PDF unificado de contracheques no pacote final
+
+**Regra confirmada:** A geração de documentos anexa o `contracheques-unificados.pdf` (criado no upload) como peça `contracheques_unificados` do pacote, copiando de `casos-arquivos` para `casos-documentos`.
+**Origem:** Definição de Nodley para a etapa de documentos gerados, simplificando a ideia anterior de reordenação cronológica.
+**Aplicação:** Localizar o arquivo em `arquivos` (tipo `contracheque`, nome `contracheques-unificados.pdf`) e anexar; casos antigos sem o arquivo unificado não recebem a peça.
+**Evitar:** Reunificar os PDFs na geração ou reordenar páginas — o arquivo já vem pronto do upload.
+
 ```markdown
 ### AAAA-MM — Título
 
