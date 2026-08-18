@@ -13,6 +13,36 @@ export type RevisaoCalculosErrors = Partial<Record<keyof RevisaoCalculosState, s
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/;
 
+export const UF_MAP: Record<string, string> = {
+  AC: "ACRE",
+  AL: "ALAGOAS",
+  AP: "AMAPÁ",
+  AM: "AMAZONAS",
+  BA: "BAHIA",
+  CE: "CEARÁ",
+  DF: "DISTRITO FEDERAL",
+  ES: "ESPÍRITO SANTO",
+  GO: "GOIÁS",
+  MA: "MARANHÃO",
+  MT: "MATO GROSSO",
+  MS: "MATO GROSSO DO SUL",
+  MG: "MINAS GERAIS",
+  PA: "PARÁ",
+  PB: "PARAÍBA",
+  PR: "PARANÁ",
+  PE: "PERNAMBUCO",
+  PI: "PIAUÍ",
+  RJ: "RIO DE JANEIRO",
+  RN: "RIO GRANDE DO NORTE",
+  RS: "RIO GRANDE DO SUL",
+  RO: "RONDÔNIA",
+  RR: "RORAIMA",
+  SC: "SANTA CATARINA",
+  SP: "SÃO PAULO",
+  SE: "SERGIPE",
+  TO: "TOCANTINS",
+};
+
 export function validarRevisaoCalculos(state: RevisaoCalculosState): RevisaoCalculosErrors {
   const erros: RevisaoCalculosErrors = {};
   if (!state.captador.trim()) erros.captador = "Informe o captador.";
@@ -22,6 +52,7 @@ export function validarRevisaoCalculos(state: RevisaoCalculosState): RevisaoCalc
   if (!state.telefone.trim()) erros.telefone = "Informe o telefone do cliente.";
   else if (!PHONE_REGEX.test(state.telefone.trim())) erros.telefone = "Telefone inválido.";
   if (!state.ufComarca.trim()) erros.ufComarca = "Informe a UF da comarca.";
+  else if (!UF_MAP[state.ufComarca.trim()]) erros.ufComarca = "UF inválida.";
   return erros;
 }
 

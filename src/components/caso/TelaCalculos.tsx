@@ -10,14 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
-import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
+import { useRevisaoCalculos, UF_MAP } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-const UFS = [
-  "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
-  "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
-];
 
 export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () => void }) {
   const { state, errors, setField } = useRevisaoCalculos();
@@ -61,7 +56,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
         oab: state.oab.trim(),
         email_cliente: state.email.trim(),
         telefone_cliente: state.telefone.trim(),
-        uf_comarca: state.ufComarca.trim(),
+        uf_comarca: UF_MAP[state.ufComarca.trim()],
       },
     });
     setGenerating(false);
@@ -194,7 +189,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
                 <SelectValue placeholder="Selecione a UF" />
               </SelectTrigger>
               <SelectContent>
-                {UFS.map((uf) => (
+                {Object.keys(UF_MAP).map((uf) => (
                   <SelectItem key={uf} value={uf}>{uf}</SelectItem>
                 ))}
               </SelectContent>
