@@ -61,4 +61,17 @@ describe("montarVariaveisCaso", () => {
     expect(v.NACIONALIDADE).toBe("brasileiro(a)");
     expect(v.LOCAL_ASSINATURA).toBe("Salvador/BA");
   });
+
+  it("preenche contrato e contato do cliente quando informados (vazio se não)", () => {
+    const v = montarVariaveisCaso(
+      { ...casoRuan, numero_contrato: "4200", email_cliente: "ruan@x.com", telefone_cliente: "(71) 99999-0000" },
+      new Date(2026, 0, 1),
+    );
+    expect(v.NUMERO_CONTRATO).toBe("4200");
+    expect(v.EMAIL_CLIENTE).toBe("ruan@x.com");
+    expect(v.TELEFONE_CLIENTE).toBe("(71) 99999-0000");
+    const vazio = montarVariaveisCaso({}, new Date(2026, 0, 1));
+    expect(vazio.NUMERO_CONTRATO).toBe("");
+    expect(vazio.EMAIL_CLIENTE).toBe("");
+  });
 });
