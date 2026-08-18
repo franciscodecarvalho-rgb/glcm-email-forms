@@ -68,4 +68,5 @@ export const PECA_LABELS: Record<string, string> = {
   declaracao_pobreza: "Declaração de Pobreza",
   planilha: "Planilha de Cálculo (Excel)",
   planilha_codigos: "Planilha — Códigos 1513/6050 (Excel)",
+  contracheques_unificados: "Contracheques Unificados (PDF)",
 };
