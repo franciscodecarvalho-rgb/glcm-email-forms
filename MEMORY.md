@@ -246,6 +246,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `encontrarRubricasAlerta` em `src/lib/alertas-rubricas.ts` filtra `itens_contracheque` pelos códigos; o componente `AlertaRubricas` exibe o aviso na página do caso em todos os status.
 **Evitar:** Recriar o relatório de totais 1513/6050 ou a sugestão de viabilidade sem nova solicitação explícita.
 
+### 2026-08 — Planilha de códigos 1513/6050
+
+**Regra confirmada:** Quando as rubricas relacionais do caso contêm os códigos 1513 ou 6050, a geração inclui uma segunda planilha .xlsx (`planilha_codigos`) com o total por código e competência, na mesma estrutura da planilha IR/HRA.
+**Origem:** Solicitação de Nodley reaproveitando o item 1.1 de Ana com a estrutura da planilha já validada.
+**Aplicação:** `agregarCodigosPorCompetencia` consolida `itens_contracheque` por competência; `montarArquivosPlanilhaCodigosXlsx` gera o arquivo; nada é gerado quando não há ocorrências.
+**Evitar:** Gerar a planilha vazia, usar o JSON legado de `casos.contracheques` como fonte ou criar estrutura diferente da planilha IR/HRA validada.
+
 ```markdown
 ### AAAA-MM — Título
 

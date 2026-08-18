@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { montarArquivosPlanilhaXlsx, ordenarPorCompetencia } from "./planilha-xlsx";
+import {
+  agregarCodigosPorCompetencia,
+  montarArquivosPlanilhaCodigosXlsx,
+  montarArquivosPlanilhaXlsx,
+  ordenarPorCompetencia,
+} from "./planilha-xlsx";
 
 const entrada = [
   { competencia: "03/2024", hra: 100, ahra: 50 },
@@ -88,5 +93,70 @@ describe("planilha xlsx", () => {
         "xl/workbook.xml",
       ].sort(),
     );
+  });
+});
+
+describe("agregação dos códigos 1513/6050", () => {
+  const contracheques = [
+    { id: "a", competencia: "03/2024" },
+    { id: "b", competencia: "01/2024" },
+  ];
+
+  it("soma os valores por código e competência, em ordem cronológica", () => {
+    const linhas = agregarCodigosPorCompetencia(contracheques, [
+      { contracheque_id: "a", codigo: "1513", valor: 100 },
+      { contracheque_id: "a", codigo: "6050", valor: 25.5 },
+      { contracheque_id: "b", codigo: "1513", valor: 200 },
+      { contracheque_id: "a", codigo: "1513", valor: 50 },
+    ]);
+    expect(linhas).toEqual([
+      { competencia: "01/2024", total1513: 200, total6050: 0 },
+      { competencia: "03/2024", total1513: 150, total6050: 25.5 },
+    ]);
+  });
+
+  it("ignora outros códigos e itens sem contracheque conhecido", () => {
+    const linhas = agregarCodigosPorCompetencia(contracheques, [
+      { contracheque_id: "a", codigo: "1059", valor: 999 },
+      { contracheque_id: "inexistente", codigo: "1513", valor: 10 },
+      { contracheque_id: "b", codigo: null, valor: 5 },
+    ]);
+    expect(linhas).toEqual([{ competencia: "", total1513: 10, total6050: 0 }]);
+  });
+
+  it("retorna vazio quando não há ocorrências", () => {
+    expect(agregarCodigosPorCompetencia(contracheques, [])).toEqual([]);
+    expect(agregarCodigosPorCompetencia(null, null)).toEqual([]);
+  });
+});
+
+describe("planilha de códigos 1513/6050", () => {
+  const sheet = montarArquivosPlanilhaCodigosXlsx("FULANO", [
+    { competencia: "03/2024", total1513: 150, total6050: 25.5 },
+    { competencia: "01/2024", total1513: 200, total6050: 0 },
+  ])["xl/worksheets/sheet1.xml"];
+
+  it("tem o cabeçalho P.A., 1513, 6050, TOTAL", () => {
+    const cabecalho = [
+      ...sheet.matchAll(/<c r="([A-D])2" t="inlineStr" s="1"><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
+    ].map((m) => `${m[1]}=${m[2]}`);
+    expect(cabecalho).toEqual(["A=P. A.", "B=1513", "C=6050", "D=TOTAL"]);
+  });
+
+  it("lista competências em ordem cronológica com total por linha", () => {
+    expect(sheet.indexOf("01/2024")).toBeLessThan(sheet.indexOf("03/2024"));
+    expect(sheet).toContain('<c r="D4" s="2"><f>B4+C4</f><v>175.50</v></c>');
+  });
+
+  it("totaliza as três colunas na linha TOTAL", () => {
+    expect(sheet).toMatch(/SUM\(B3:B4\)/);
+    expect(sheet).toMatch(/SUM\(C3:C4\)/);
+    expect(sheet).toMatch(/SUM\(D3:D4\)/);
+  });
+
+  it("nomeia a aba e o título para os códigos", () => {
+    const arquivos = montarArquivosPlanilhaCodigosXlsx("FULANO", []);
+    expect(arquivos["xl/workbook.xml"]).toContain('name="Códigos 1513-6050"');
+    expect(arquivos["xl/worksheets/sheet1.xml"]).toContain("PLANILHA — FULANO — CÓDIGOS 1513/6050");
   });
 });
