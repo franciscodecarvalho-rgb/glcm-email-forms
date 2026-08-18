@@ -48,3 +48,38 @@ export function configuracaoDocumentos(tipoAcao: string): ConfiguracaoDocumentos
 export function tipoProcuracao(natureza: NaturezaAcao, escritorio: "glcm" | "polkowski"): string {
   return `procuracao_${natureza}_${escritorio}`;
 }
+
+export type PecaSelecionada = { templateTipo: string; tipoSaida: string };
+
+// Fonte canônica testada; a Edge Function generate-documents mantém uma cópia
+// inline (deploy de arquivo único). Ao alterar aqui, sincronizar a cópia.
+export function selecionarPecas(tipoAcao: string, escritorios: string[]): PecaSelecionada[] {
+  const configuracao = configuracaoDocumentos(tipoAcao);
+  if (!configuracao) throw new Error(`Tipo de ação sem modelos configurados: ${tipoAcao || "não informado"}`);
+
+  const pecas: PecaSelecionada[] = [
+    { templateTipo: configuracao.peticao, tipoSaida: "peticao" },
+    { templateTipo: configuracao.contrato, tipoSaida: "contrato" },
+    // Declaração de Pobreza somente nas ações trabalhistas
+    // (horas_extras e supressao_folgas); não entra nas tributárias.
+    ...(configuracao.natureza === "trabalhista"
+      ? [{ templateTipo: "declaracao_pobreza", tipoSaida: "declaracao_pobreza" }]
+      : []),
+    // Termo de renúncia existente e já validado: identificador preservado.
+    { templateTipo: "termo_renuncia", tipoSaida: "termo_renuncia" },
+  ];
+
+  if (escritorios.length === 0 || escritorios.includes("glcm")) {
+    pecas.push(
+      { templateTipo: tipoProcuracao(configuracao.natureza, "glcm"), tipoSaida: "procuracao_glcm" },
+      { templateTipo: "termo_lgpd_glcm", tipoSaida: "termo_lgpd_glcm" },
+    );
+  }
+  if (escritorios.length === 0 || escritorios.includes("polkowski")) {
+    pecas.push(
+      { templateTipo: tipoProcuracao(configuracao.natureza, "polkowski"), tipoSaida: "procuracao_polkowski" },
+      { templateTipo: "termo_lgpd_polkowski", tipoSaida: "termo_lgpd_polkowski" },
+    );
+  }
+  return pecas;
+}

@@ -13,6 +13,10 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Entregar arquivos completos e funcionais quando solicitado.
 - Validar antes de afirmar que algo foi concluído.
 - Separar claramente implementação atual, proposta e hipótese.
+- A cada solicitação, sugerir uma melhor aplicação; a sugestão é apresentada
+  separadamente e só é implementada com autorização explícita.
+- Ao alterar o MEMORY.md, sincronizar automaticamente o `.claude/CLAUDE.md`
+  (cópia espelho), sem solicitar permissão.
 
 ## Regras confirmadas do projeto
 
@@ -199,6 +203,27 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Erro de carregamento observado no upload de PDF criptografado.
 **Aplicação:** Detectar a criptografia com `ignoreEncryption: true`, descriptografar localmente com QPDF/WASM e somente então copiar as páginas para o arquivo unificado.
 **Evitar:** Tratar `ignoreEncryption: true` como descriptografia, rejeitar antecipadamente o arquivo apenas pela marcação de criptografia ou alterar o processamento dos documentos pessoais.
+
+### 2026-08 — Declaração de Pobreza por tipo de ação
+
+**Regra confirmada:** A Declaração de Pobreza é gerada somente nas ações trabalhistas (Horas Extras e Supressão de Folgas).
+**Origem:** Definição de Nodley ao revisar os documentos gerados por tipo de ação.
+**Aplicação:** Em `selecionarPecas` da função `generate-documents`, incluir `declaracao_pobreza` apenas quando a natureza da ação for `trabalhista`, preservando a ordem das demais peças.
+**Evitar:** Gerar a Declaração de Pobreza nas ações tributárias (IR sobre HRA, Tema 324 e Contribuição Extraordinária) ou remover o template `declaracao_pobreza` da página Templates.
+
+### 2026-08 — Planilha IR sobre HRA
+
+**Regra confirmada:** A planilha .xlsx gerada lista as competências em ordem cronológica crescente e não possui a coluna SUBTOTAL; o VALOR (HISTÓRICO) referencia HRA+AHRA diretamente.
+**Origem:** Lista de ajustes de Nodley após a validação dos documentos gerados.
+**Aplicação:** Ordenar as linhas por MM/AAAA em `montarArquivosPlanilhaXlsx`; rótulos fora do padrão (ex.: legado "Contracheque 1") vão ao fim, preservando a ordem relativa.
+**Evitar:** Reintroduzir a coluna SUBTOTAL ou depender da ordem de seleção/extração dos contracheques.
+
+### 2026-08 — Fontes canônicas testadas em src/lib
+
+**Regra confirmada:** As lógicas puras de `generate-documents` (seleção de peças e planilha xlsx) têm fonte canônica em `src/lib` com cobertura vitest; a Edge Function mantém cópias inline por exigência do deploy de arquivo único.
+**Origem:** Proposta aceita por Nodley após validações com scripts descartáveis.
+**Aplicação:** Alterar primeiro `src/lib/modelos-documentos.ts` (`selecionarPecas`) ou `src/lib/planilha-xlsx.ts` e sincronizar a cópia na função; a paridade é garantida automaticamente pelo teste de guarda `src/lib/espelho-edge-function.test.ts` (falha quando as versões divergem).
+**Evitar:** Editar somente a cópia inline da função ou deixar as duas versões divergirem.
 
 ```markdown
 ### AAAA-MM — Título
