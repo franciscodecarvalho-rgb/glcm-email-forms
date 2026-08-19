@@ -23,7 +23,7 @@ export function ordenarPorCompetencia<T extends { competencia: string }>(linhas:
     .map(({ linha }) => linha);
 }
 
-const escXml = (s: string) => s.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+const escXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const numCell = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
 const tx = (ref: string, t: string, estilo = 0) =>
   `<c r="${ref}" t="inlineStr"${estilo ? ` s="${estilo}"` : ""}><is><t xml:space="preserve">${escXml(t)}</t></is></c>`;
@@ -90,7 +90,7 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="2">
-<numFmt numFmtId="164" formatCode="#.##0,00"/>
+<numFmt numFmtId="164" formatCode="#,##0.00"/>
 <numFmt numFmtId="165" formatCode="0,00%"/>
 </numFmts>
 <fonts count="6">
