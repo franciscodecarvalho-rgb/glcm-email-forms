@@ -6,21 +6,35 @@ import { saveAs } from "file-saver";
 import type { CasoData } from "@/pages/Caso";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PECA_LABELS } from "@/lib/status";
 import { toast } from "sonner";
+import { useRevisaoCalculos, UF_MAP } from "@/contexts/RevisaoCalculosContext";
 
 type Doc = { tipo: string; storage_path: string; nome: string };
 
 export function TelaDownload({ caso }: { caso: CasoData }) {
   const nav = useNavigate();
   const [regerando, setRegerando] = useState(false);
+  const { state, errors, setField } = useRevisaoCalculos();
+  const formValido = Object.keys(errors).length === 0;
 
   // Regera as peças (após corrigir dados, atualizar template ou deploy novo).
-  // A tela atualiza sozinha via realtime quando documentos_gerados muda.
+  // A Edge Function exige os mesmos campos da revisão de cálculos.
   const regerar = async () => {
+    if (!formValido) { toast.error("Preencha os dados obrigatórios para regerar"); return; }
     setRegerando(true);
     const { data, error } = await supabase.functions.invoke("generate-documents", {
-      body: { caso_id: caso.id },
+      body: {
+        caso_id: caso.id,
+        captador: state.captador.trim(),
+        oab: state.oab.trim(),
+        email_cliente: state.email.trim(),
+        telefone_cliente: state.telefone.trim(),
+        uf_comarca: UF_MAP[state.ufComarca.trim()],
+      },
     });
     setRegerando(false);
     if (error || (data as any)?.error) toast.error((data as any)?.error ?? "Falha ao regerar");
