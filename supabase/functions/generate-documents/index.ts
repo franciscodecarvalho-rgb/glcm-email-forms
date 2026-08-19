@@ -616,8 +616,11 @@ Deno.serve(async (req) => {
       const zipPl = new PizZip();
       for (const [caminho, conteudo] of Object.entries(partes)) zipPl.file(caminho, conteudo);
       const outPl: Uint8Array = zipPl.generate({ type: "uint8array" });
-      const nomePl = `planilha-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
-      const pathPl = `${caso.id}/${nomePl}`;
+      // Nome de exibição/download no padrão solicitado; a chave do Storage
+      // permanece sanitizada (convenção de src/lib/storage.ts).
+      const nomePl = `PLANILHA — ${caso.nome_cliente ?? ""} — IR SOBRE HRA.xlsx`;
+      const chavePl = `planilha-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
+      const pathPl = `${caso.id}/${chavePl}`;
       const { error: upPlErr } = await supabase.storage
         .from("casos-documentos")
         .upload(pathPl, outPl, {
