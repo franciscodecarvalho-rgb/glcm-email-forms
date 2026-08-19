@@ -260,6 +260,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Localizar o arquivo em `arquivos` (tipo `contracheque`, nome `contracheques-unificados.pdf`) e anexar; casos antigos sem o arquivo unificado não recebem a peça.
 **Evitar:** Reunificar os PDFs na geração ou reordenar páginas — o arquivo já vem pronto do upload.
 
+### 2026-08 — CPF: persistência em dígitos e exibição formatada
+
+**Regra confirmada:** `casos.cpf` guarda somente os 11 dígitos (sem pontuação); telas e documentos exibem `XXX.XXX.XXX-XX` via `formatarCpf`; CPF mascarado (ex.: `215.***.***-*0` de comprovantes) ou parcial é tratado como ausente e abre a confirmação manual.
+**Origem:** CPF mascarado extraído de comprovante chegou à petição gerada; Nodley definiu o formato obrigatório para os próximos casos (sem update retroativo).
+**Aplicação:** `src/lib/cpf.ts` (`normalizarCpf`/`formatarCpf`) é a fonte canônica; `process-documentos-pessoais-pdf` persiste o primeiro CPF válido entre os documentos (`primeiroCpfValido`); `generate-documents` mantém cópia inline de `formatarCpf` sincronizada; `TelaConfirmacao` grava somente dígitos e rejeita CPF que não tenha 11.
+**Evitar:** Persistir CPF formatado ou mascarado (a duplicidade do pre-extract-cpf compara dígitos) ou corrigir formato via update no banco em vez da camada de apresentação.
+
 ```markdown
 ### AAAA-MM — Título
 

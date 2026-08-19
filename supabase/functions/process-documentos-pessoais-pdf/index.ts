@@ -25,6 +25,19 @@ async function extrairComIa(blob: Blob, nome: string, apiKey: string) {
   return JSON.parse(argumentos) as Record<string, any>;
 }
 const primeiro = (docs: Array<Record<string, any>>, campo: string) => docs.map((d) => d[campo]).find((v) => typeof v === "string" && v.trim()) || null;
+// Espelho de src/lib/cpf.ts: CPF só persiste com os 11 dígitos (duplicidade do
+// pre-extract-cpf compara dígitos); mascarado (ex.: "215.***.***-*0" de
+// comprovantes) ou parcial vira ausente e o caso abre a confirmação manual.
+const normalizarCpf = (valor: unknown): string | null => {
+  const digitos = (valor ?? "").toString().replace(/\D/g, "");
+  return digitos.length === 11 ? digitos : null;
+};
+// Primeiro CPF completo entre os documentos: um comprovante com CPF mascarado
+// não pode ganhar de um RG/CNH com CPF completo.
+const primeiroCpfValido = (docs: Array<Record<string, any>>): string | null => {
+  for (const d of docs) { const c = normalizarCpf(d.cpf); if (c) return c; }
+  return null;
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -44,7 +57,7 @@ Deno.serve(async (req) => {
       if (arquivo.type !== "application/pdf") return json({ error: "O arquivo deve ser PDF" }, 400);
       if (arquivo.size > 10 * 1024 * 1024) return json({ error: "O PDF excede o limite de 10 MB" }, 400);
       const dados = await extrairComIa(arquivo, arquivo.name, apiKey);
-      const camposAusentes = [!dados.nome && "nome", !dados.cpf && "cpf", !dados.rg && "rg"].filter(Boolean);
+      const camposAusentes = [!dados.nome && "nome", !normalizarCpf(dados.cpf) && "cpf", !dados.rg && "rg"].filter(Boolean);
       return json({ ok: camposAusentes.length === 0, diagnostico: { arquivo: arquivo.name, tipo_documento: dados.tipo_documento, linhas_texto: 0, motivo: camposAusentes.length ? "campos_ausentes" : null }, dados, campos_ausentes: camposAusentes });
     }
 
@@ -74,7 +87,7 @@ Deno.serve(async (req) => {
     const endereco = documentos.map((d) => d.endereco).find((v) => v && Object.values(v).some(Boolean)) ?? caso.endereco;
     const q = caso.qualificacao && typeof caso.qualificacao === "object" ? caso.qualificacao : {};
     const qualificacao = { ...q, nacionalidade: primeiro(documentos, "nacionalidade") ?? q.nacionalidade ?? "brasileiro", estado_civil: primeiro(documentos, "estado_civil") ?? q.estado_civil ?? null, profissao: primeiro(documentos, "profissao") ?? q.profissao ?? null, documentos_pessoais: documentos };
-    const nome = primeiro(documentos, "nome"), cpf = primeiro(documentos, "cpf"), rg = primeiro(documentos, "rg");
+    const nome = primeiro(documentos, "nome"), cpf = primeiroCpfValido(documentos), rg = primeiro(documentos, "rg");
     const { error: updateError } = await supabase.from("casos").update({ nome_cliente: nome ?? caso.nome_cliente, nome_pre_extraido: nome, cpf, cpf_pre_extraido: cpf, rg, endereco, qualificacao, erro_processamento: revisao.length ? `${revisao.length} documento(s) pessoal(is) precisam de revisão` : null, status: "aguardando_confirmacao" }).eq("id", caso_id);
     if (updateError) throw updateError;
     return json({ ok: true, documentos, revisao });

@@ -3,6 +3,7 @@
 // usa para preencher as 8 peças. Função pura e testável.
 
 import { valorPorExtenso, extensoInteiro } from "./valor-extenso";
+import { formatarCpf } from "./cpf";
 import type { EnderecoCaso, Qualificacao, EscritorioId } from "./caso-tipos";
 
 export type CasoParaDocumento = {
@@ -66,7 +67,7 @@ export function montarVariaveisCaso(
 
   return {
     NOME_CLIENTE: caso.nome_cliente ?? "",
-    CPF: caso.cpf ?? "",
+    CPF: formatarCpf(caso.cpf),
     RG: caso.rg ?? "",
     NACIONALIDADE: q.nacionalidade?.trim() || "brasileiro(a)",
     ESTADO_CIVIL: q.estado_civil ?? "",

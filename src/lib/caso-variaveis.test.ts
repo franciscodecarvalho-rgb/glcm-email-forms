@@ -45,6 +45,7 @@ describe("montarVariaveisCaso", () => {
   it("preenche as variáveis principais", () => {
     const v = montarVariaveisCaso(casoRuan, new Date(2026, 3, 18)); // 18/04/2026
     expect(v.NOME_CLIENTE).toBe("RUAN VIEIRA D ECA");
+    expect(v.CPF).toBe("059.538.337-84");
     expect(v.ESTADO_CIVIL).toBe("solteiro");
     expect(v.PROFISSAO).toBe("industriário");
     expect(v.CIDADE_UF).toBe("Rio de Janeiro/RJ");
@@ -54,6 +55,11 @@ describe("montarVariaveisCaso", () => {
     expect(v.VALOR_CAUSA_EXTENSO).toBe(
       "trinta e seis mil, seiscentos e cinquenta reais e oitenta e um centavos",
     );
+  });
+
+  it("formata CPF de 11 dígitos no padrão das peças", () => {
+    const v = montarVariaveisCaso({ ...casoRuan, cpf: "05953833784" }, new Date(2026, 3, 18));
+    expect(v.CPF).toBe("059.538.337-84");
   });
 
   it("usa nacionalidade padrão e local de assinatura fixo", () => {

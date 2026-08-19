@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ContrachequesExtraidos } from "@/components/caso/ContrachequesExtraidos";
 import { toast } from "sonner";
+import { formatarCpf } from "@/lib/cpf";
 
 export function TelaDadosExtraidos({ caso, onCancel }: { caso: CasoData; onCancel: () => void }) {
   const [saving, setSaving] = useState(false);
@@ -44,7 +45,7 @@ export function TelaDadosExtraidos({ caso, onCancel }: { caso: CasoData; onCance
         <h2 className="font-semibold">Dados pessoais extraídos</h2>
         <dl className="grid gap-4 text-sm md:grid-cols-2">
           <div className="md:col-span-2"><dt className="text-muted-foreground">Nome completo</dt><dd className="font-medium">{caso.nome_cliente}</dd></div>
-          <div><dt className="text-muted-foreground">CPF</dt><dd className="font-medium">{caso.cpf}</dd></div>
+          <div><dt className="text-muted-foreground">CPF</dt><dd className="font-medium">{formatarCpf(caso.cpf)}</dd></div>
           <div><dt className="text-muted-foreground">RG</dt><dd className="font-medium">{caso.rg}</dd></div>
           {qualificacao.nacionalidade && <div><dt className="text-muted-foreground">Nacionalidade</dt><dd className="font-medium">{qualificacao.nacionalidade}</dd></div>}
           {enderecoCompleto && <div className="md:col-span-2"><dt className="text-muted-foreground">Endereço</dt><dd className="font-medium">{enderecoCompleto}</dd></div>}

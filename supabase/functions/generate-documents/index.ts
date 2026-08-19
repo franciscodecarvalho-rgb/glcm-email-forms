@@ -184,6 +184,14 @@ function montarEnderecoCompleto(e: any): string {
     .join(", ");
 }
 
+// Espelho de src/lib/cpf.ts (formato de exibição/documentos; sincronizar com a fonte).
+const formatarCpf = (valor: string | null | undefined): string => {
+  const digitos = (valor ?? "").replace(/\D/g, "");
+  return digitos.length === 11
+    ? `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9)}`
+    : (valor ?? "").trim();
+};
+
 function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string, string> {
   const e = caso.endereco ?? {};
   const q = caso.qualificacao ?? {};
@@ -192,7 +200,7 @@ function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string,
 
   return {
     NOME_CLIENTE: caso.nome_cliente ?? "",
-    CPF: caso.cpf ?? "",
+    CPF: formatarCpf(caso.cpf),
     RG: caso.rg ?? "",
     NACIONALIDADE: (q.nacionalidade ?? "").trim() || "brasileiro(a)",
     ESTADO_CIVIL: q.estado_civil ?? "",

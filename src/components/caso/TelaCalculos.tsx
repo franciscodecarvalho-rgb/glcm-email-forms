@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
+import { formatarCpf } from "@/lib/cpf";
 import { useRevisaoCalculos, UF_MAP } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -76,7 +77,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
         <h2 className="mb-3 font-semibold">Cliente</h2>
         <div className="grid gap-2 text-sm md:grid-cols-2">
           <div><span className="text-muted-foreground">Nome: </span>{caso.nome_cliente}</div>
-          <div><span className="text-muted-foreground">CPF: </span>{caso.cpf}</div>
+          <div><span className="text-muted-foreground">CPF: </span>{formatarCpf(caso.cpf)}</div>
           <div><span className="text-muted-foreground">RG: </span>{caso.rg}</div>
           <div className="md:col-span-2"><span className="text-muted-foreground">Endereço: </span>
             {[e.logradouro, e.numero, e.bairro, e.cidade, e.estado, e.cep].filter(Boolean).join(", ")}

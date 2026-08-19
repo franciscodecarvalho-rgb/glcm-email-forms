@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ContrachequesExtraidos } from "@/components/caso/ContrachequesExtraidos";
 import { toast } from "sonner";
+import { normalizarCpf } from "@/lib/cpf";
 
 type Contra = { id: string; label: string; valor_hra: number; valor_ahra: number };
 type Empreg = { id: string; razao_social: string; cnpj: string };
@@ -57,13 +58,14 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
   const removeEmp = (id: string) => setEmpregs((p) => p.filter((em) => em.id !== id));
 
   const confirmar = async () => {
-    if (!nome || !cpf) { toast.error("Nome e CPF são obrigatórios"); return; }
+    const cpfLimpo = normalizarCpf(cpf);
+    if (!nome.trim() || !cpfLimpo) { toast.error("Informe o nome e um CPF válido (11 dígitos)"); return; }
     setSaving(true);
     const { error } = await supabase
       .from("casos")
       .update({
         nome_cliente: nome,
-        cpf,
+        cpf: cpfLimpo,
         rg,
         endereco: end,
         qualificacao: qual,
