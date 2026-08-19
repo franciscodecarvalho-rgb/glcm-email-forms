@@ -68,6 +68,12 @@ git status      # árvore limpa, somente arquivos do escopo
   do Lovable;
 - Não expor chaves, tokens ou dados de clientes em commits ou logs.
 
+## Prompt de deploy pontual (Lovable)
+
+```text
+Sincronize a branch main no commit 34fb089. Não altere nenhum arquivo, banco, migration, RLS, dados, templates ou outras funções. Publique somente a Edge Function generate-documents exatamente como está nesse commit. Ao finalizar, confirme separadamente o commit sincronizado e o deploy da função.
+```
+
 ## Fontes deste procedimento
 
 - `MEMORY.md` — "Publicação pelo Lovable", "Publicação de Edge Functions",
