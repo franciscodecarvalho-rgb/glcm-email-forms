@@ -143,10 +143,16 @@ describe("planilha xlsx", () => {
     expect(sheet).toContain('<col min="5" max="5" width="22" customWidth="1"/>');
   });
 
-  it("estilos incluem numFmt 164 (#.##0,00) e 165 (0,00%)", () => {
+  it("estilos incluem numFmt 164 (#,##0.00) e 165 (0,00%)", () => {
     const styles = montarArquivosPlanilhaXlsx("FULANO", entrada)["xl/styles.xml"];
-    expect(styles).toContain('formatCode="#.##0,00"');
+    expect(styles).toContain('formatCode="#,##0.00"');
     expect(styles).toContain('formatCode="0,00%"');
+  });
+
+  it("escapa o caractere & no nome do cliente (não gera XML inválido)", () => {
+    const sheet = montarArquivosPlanilhaXlsx("MARIA & JOSÉ LTDA", entrada)["xl/worksheets/sheet1.xml"];
+    expect(sheet).toContain("MARIA &amp; JOSÉ LTDA");
+    expect(sheet).not.toMatch(/MARIA & JOSÉ/);
   });
 });
 
