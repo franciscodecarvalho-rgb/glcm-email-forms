@@ -42,9 +42,9 @@ describe("planilha xlsx", () => {
 
   it("lista as competências em ordem cronológica", () => {
     const ordem = [
-      ...sheet.matchAll(/<c r="A(\d+)" t="inlineStr"><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
+      ...sheet.matchAll(/<c r="A(\d+)" t="inlineStr"(?: s="\d+")?><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
     ]
-      .filter((m) => Number(m[1]) >= 3)
+      .filter((m) => Number(m[1]) >= 3 && m[2] !== "TOTAL")
       .map((m) => m[2]);
     expect(ordem).toEqual(["01/2023", "12/2023", "03/2024", "Contracheque 9"]);
   });
@@ -56,16 +56,16 @@ describe("planilha xlsx", () => {
 
   it("tem o cabeçalho P.A., HRA, AHRA, ALÍQ. IR, VALOR (HISTÓRICO)", () => {
     const cabecalho = [
-      ...sheet.matchAll(/<c r="([A-E])2" t="inlineStr" s="1"><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
+      ...sheet.matchAll(/<c r="([A-E])2" t="inlineStr" s="4"><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
     ].map((m) => `${m[1]}=${m[2]}`);
     expect(cabecalho).toEqual(["A=P. A.", "B=HRA", "C=AHRA", "D=ALÍQ. IR", "E=VALOR (HISTÓRICO)"]);
   });
 
   it("calcula o VALOR (HISTÓRICO) diretamente de HRA+AHRA na coluna E", () => {
-    expect(sheet.match(/<c r="E\d+" s="2"><f>ROUND\(\(B\d+\+C\d+\)\*0\.275,2\)<\/f>/g)).toHaveLength(4);
+    expect(sheet.match(/<c r="E\d+" s="6"><f>ROUND\(\(B\d+\+C\d+\)\*0\.275,2\)<\/f>/g)).toHaveLength(4);
     // 01/2023: 200 * 0,275 = 55,00 em cache
     expect(sheet).toContain(
-      '<c r="E3" s="2"><f>ROUND((B3+C3)*0.275,2)</f><v>55.00</v></c>',
+      '<c r="E3" s="6"><f>ROUND((B3+C3)*0.275,2)</f><v>55.00</v></c>',
     );
   });
 
@@ -74,8 +74,26 @@ describe("planilha xlsx", () => {
     expect(sheet).toMatch(/SUM\(C3:C6\)/);
     expect(sheet).toMatch(/SUM\(E3:E6\)/);
     expect(sheet).toContain(
-      '<c r="D7" t="inlineStr" s="1"><is><t xml:space="preserve">VALOR (HISTÓRICO)</t></is></c>',
+      '<c r="D7" t="inlineStr" s="10"><is><t xml:space="preserve">VALOR (HISTÓRICO)</t></is></c>',
     );
+  });
+
+  it("aplica o layout TEMA 306 (aba, título mesclado, larguras e alíquota)", () => {
+    const arquivos = montarArquivosPlanilhaXlsx("FULANO", entrada);
+    expect(arquivos["xl/workbook.xml"]).toContain('name="TEMA 306"');
+    expect(sheet).toContain("PLANILHA — FULANO — TEMA 306 (HRA)");
+    expect(sheet).toContain('<mergeCell ref="A1:E1"/>');
+    expect(sheet).toContain('<row r="2" ht="18" customHeight="1">');
+    expect(sheet).toContain('<col min="1" max="1" width="15" customWidth="1"/>');
+    expect(sheet).toContain('<col min="2" max="4" width="18" customWidth="1"/>');
+    expect(sheet).toContain('<col min="5" max="5" width="22" customWidth="1"/>');
+    expect(sheet.match(/<c r="D\d+" s="7"><v>0\.275<\/v><\/c>/g)).toHaveLength(4);
+    const styles = arquivos["xl/styles.xml"];
+    expect(styles).toContain('formatCode="0.00%"');
+    expect(styles).toContain('formatCode="#,##0.00"');
+    expect(styles).toContain('rgb="FF1F4E79"');
+    expect(styles).toContain('rgb="FF2B5B84"');
+    expect(styles).toContain('rgb="FFD9D9D9"');
   });
 
   it("entrada vazia não gera linha TOTAL", () => {
