@@ -163,7 +163,11 @@ export default function Caso() {
             <TelaCalculos caso={caso} onCancel={cancelar} />
           </RevisaoCalculosProvider>
         )}
-        {caso.status === "concluido" && <TelaDownload caso={caso} />}
+        {caso.status === "concluido" && (
+          <RevisaoCalculosProvider>
+            <TelaDownload caso={caso} />
+          </RevisaoCalculosProvider>
+        )}
         {caso.status === "cancelado" && (
           <div className="rounded-lg border bg-card p-8 text-center">
             <p className="text-lg font-medium">Este caso foi cancelado.</p>
