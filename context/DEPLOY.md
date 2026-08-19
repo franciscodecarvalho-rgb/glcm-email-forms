@@ -68,10 +68,31 @@ git status      # árvore limpa, somente arquivos do escopo
   do Lovable;
 - Não expor chaves, tokens ou dados de clientes em commits ou logs.
 
+## Rotina de publicação via PR (Lovable só faz o deploy)
+
+Fluxo recomendado para que o Lovable **somente execute o Publish**, sem trocar de
+branch nem gerenciar código:
+
+1. **Agente** faz a correção em uma branch (ex.: `fix/<descricao>`), valida
+   (test/build/lint) e envia a branch para o GitHub;
+2. **Agente** abre o PR da branch para `main` com `gh pr create`;
+3. **Nodley** (ou o agente com confirmação) faz o merge do PR na `main`
+   (`gh pr merge <numero> --merge --delete-branch`). Merge **não** é deploy;
+4. **Lovable** já sincronizado com a `main` puxa os commits automaticamente;
+5. **Nodley** no Lovable clica em **Publish** (ou envia o prompt de deploy
+   pontual abaixo) e valida em caso novo.
+
+Regras que mantêm essa rotina segura:
+
+- Manter sempre o espelho `src/lib` ↔ Edge Function sincronizado
+  (`espelho-edge-function.test.ts` precisa passar antes do merge);
+- Casos `concluido` nunca regeram: validar sempre em caso novo;
+- Nenhuma configuração de `supabase/config.toml` pode mudar durante o Publish.
+
 ## Prompt de deploy pontual (Lovable)
 
 ```text
-Sincronize a branch main no commit 34fb089. Não altere nenhum arquivo, banco, migration, RLS, dados, templates ou outras funções. Publique somente a Edge Function generate-documents exatamente como está nesse commit. Ao finalizar, confirme separadamente o commit sincronizado e o deploy da função.
+Sincronize a branch main no commit f87c348. Não altere nenhum arquivo, banco, migration, RLS, dados, templates ou outras funções. Publique somente a Edge Function generate-documents exatamente como está nesse commit. Ao finalizar, confirme separadamente o commit sincronizado e o deploy da função.
 ```
 
 ## Fontes deste procedimento
