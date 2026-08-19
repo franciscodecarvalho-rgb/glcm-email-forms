@@ -147,16 +147,32 @@ describe("planilha xlsx", () => {
     expect(sheet).toContain('<col min="5" max="5" width="22" customWidth="1"/>');
   });
 
-  it("estilos incluem numFmt 164 (#,##0.00) e 165 (0,00%)", () => {
+  it("estilos incluem numFmt 164 (#,##0.00) e 165 (0.00%)", () => {
     const styles = montarArquivosPlanilhaXlsx("FULANO", entrada)["xl/styles.xml"];
     expect(styles).toContain('formatCode="#,##0.00"');
-    expect(styles).toContain('formatCode="0,00%"');
+    expect(styles).toContain('formatCode="0.00%"');
   });
 
   it("escapa o caractere & no nome do cliente (não gera XML inválido)", () => {
     const sheet = montarArquivosPlanilhaXlsx("MARIA & JOSÉ LTDA", entrada)["xl/worksheets/sheet1.xml"];
     expect(sheet).toContain("MARIA &amp; JOSÉ LTDA");
     expect(sheet).not.toMatch(/MARIA & JOSÉ/);
+  });
+
+  it("exclui linhas com HRA e AHRA zerados", () => {
+    const comNula = [
+      { competencia: "01/2023", hra: 200, ahra: 0 },
+      { competencia: "06/2023", hra: 0, ahra: 0 },
+      { competencia: "03/2024", hra: 0, ahra: 0 },
+      { competencia: "12/2023", hra: 300, ahra: 25.5 },
+    ];
+    const s = montarArquivosPlanilhaXlsx("FULANO", comNula)["xl/worksheets/sheet1.xml"];
+    expect(s).not.toContain("06/2023");
+    expect(s).not.toContain("03/2024");
+    expect(s).toContain("01/2023");
+    expect(s).toContain("12/2023");
+    // total considera apenas as linhas não nulas (E3 e E4)
+    expect(s).toMatch(/SUM\(E3:E4\)/);
   });
 });
 

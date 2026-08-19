@@ -260,7 +260,9 @@ const fx = (ref: string, formula: string, cache: number, estilo = 0) =>
   `<c r="${ref}"${estilo ? ` s="${estilo}"` : ""}><f>${escXml(formula)}</f><v>${numCell(cache)}</v></c>`;
 
 function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]): Record<string, string> {
-  const ordenadas = ordenarPorCompetencia(linhas);
+  // Planilha não pode ser alimentada com linhas de valores zerados.
+  const naoNulas = linhas.filter((l) => l.hra !== 0 || l.ahra !== 0);
+  const ordenadas = ordenarPorCompetencia(naoNulas);
   const rows: string[] = [];
   rows.push(
     `<row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — TEMA 306 (HRA)`)}</t></is></c></row>`,
@@ -316,7 +318,7 @@ function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="2">
 <numFmt numFmtId="164" formatCode="#,##0.00"/>
-<numFmt numFmtId="165" formatCode="0,00%"/>
+<numFmt numFmtId="165" formatCode="0.00%"/>
 </numFmts>
 <fonts count="6">
 <font><sz val="11"/><name val="Arial"/></font>
