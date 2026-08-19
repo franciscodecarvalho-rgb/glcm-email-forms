@@ -83,8 +83,8 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
-<mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
 <sheetData>${rows.join("")}</sheetData>
+<mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
 </worksheet>`;
 
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

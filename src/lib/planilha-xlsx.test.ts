@@ -50,6 +50,10 @@ describe("planilha xlsx", () => {
     expect(sheet).toContain('PLANILHA — FULANO — TEMA 306 (HRA)');
   });
 
+  it("mergeCells vem DEPOIS do sheetData (ordem exigida pelo schema OOXML)", () => {
+    expect(sheet.indexOf("<sheetData>")).toBeLessThan(sheet.indexOf("<mergeCells"));
+  });
+
   it("linha 1 tem altura 30 e estilo 4 (título)", () => {
     expect(sheet).toContain('<row r="1" ht="30" customHeight="1">');
     expect(sheet).toContain('s="4"');
