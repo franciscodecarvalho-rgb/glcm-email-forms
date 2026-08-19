@@ -23,26 +23,26 @@ export function ordenarPorCompetencia<T extends { competencia: string }>(linhas:
     .map(({ linha }) => linha);
 }
 
-const escXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escXml = (s: string) => s.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
 const numCell = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
 const tx = (ref: string, t: string, estilo = 0) =>
   `<c r="${ref}" t="inlineStr"${estilo ? ` s="${estilo}"` : ""}><is><t xml:space="preserve">${escXml(t)}</t></is></c>`;
+const empty = (ref: string, estilo = 0) =>
+  `<c r="${ref}"${estilo ? ` s="${estilo}"` : ""}/>`;
 const nm = (ref: string, v: number, estilo = 0) =>
   `<c r="${ref}"${estilo ? ` s="${estilo}"` : ""}><v>${numCell(v)}</v></c>`;
 const fx = (ref: string, formula: string, cache: number, estilo = 0) =>
   `<c r="${ref}"${estilo ? ` s="${estilo}"` : ""}><f>${escXml(formula)}</f><v>${numCell(cache)}</v></c>`;
 
 export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]): Record<string, string> {
-  // Solicitação validada: linhas em ordem cronológica crescente e sem a coluna
-  // SUBTOTAL; VALOR (HISTÓRICO) passa a referenciar HRA+AHRA diretamente.
   const ordenadas = ordenarPorCompetencia(linhas);
   const rows: string[] = [];
   rows.push(
-    `<row r="1"><c r="A1" t="inlineStr" s="1"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — IR SOBRE HRA`)}</t></is></c></row>`,
+    `<row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — TEMA 306 (HRA)`)}</t></is></c></row>`,
   );
   rows.push(
-    `<row r="2">${["P. A.", "HRA", "AHRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
-      .map((t, i) => tx(`${"ABCDE"[i]}2`, t, 1))
+    `<row r="2" ht="18" customHeight="1">${["P. A.", "HRA", "AHRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
+      .map((t, i) => tx(`${"ABCDE"[i]}2`, t, 5))
       .join("")}</row>`,
   );
 
@@ -51,11 +51,11 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
     const sub = l.hra + l.ahra;
     rows.push(
       `<row r="${r}">` +
-        tx(`A${r}`, l.competencia) +
-        nm(`B${r}`, l.hra, 2) +
-        nm(`C${r}`, l.ahra, 2) +
-        tx(`D${r}`, "27,50%") +
-        fx(`E${r}`, `ROUND((B${r}+C${r})*0.275,2)`, Math.round(sub * 0.275 * 100) / 100, 2) +
+        tx(`A${r}`, l.competencia, 6) +
+        nm(`B${r}`, l.hra, 7) +
+        nm(`C${r}`, l.ahra, 7) +
+        `<c r="D${r}" s="8"><v>0.275</v></c>` +
+        fx(`E${r}`, `ROUND((B${r}+C${r})*0.275,2)`, Math.round(sub * 0.275 * 100) / 100, 7) +
         `</row>`,
     );
     r++;
@@ -66,15 +66,15 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
   if (ordenadas.length > 0) {
     rows.push(
       `<row r="${r}">` +
-        tx(`A${r}`, "TOTAL", 1) +
-        fx(`B${r}`, `SUM(B${primeira}:B${ultima})`, ordenadas.reduce((s, l) => s + l.hra, 0), 3) +
-        fx(`C${r}`, `SUM(C${primeira}:C${ultima})`, ordenadas.reduce((s, l) => s + l.ahra, 0), 3) +
-        tx(`D${r}`, "VALOR (HISTÓRICO)", 1) +
+        empty(`A${r}`, 9) +
+        empty(`B${r}`, 9) +
+        empty(`C${r}`, 9) +
+        tx(`D${r}`, "VALOR (HISTÓRICO)", 9) +
         fx(
           `E${r}`,
           `SUM(E${primeira}:E${ultima})`,
           ordenadas.reduce((s, l) => s + Math.round((l.hra + l.ahra) * 0.275 * 100) / 100, 0),
-          3,
+          10,
         ) +
         `</row>`,
     );
@@ -82,28 +82,71 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
 
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<cols><col min="1" max="1" width="22" customWidth="1"/><col min="2" max="5" width="16" customWidth="1"/></cols>
+<cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
+<mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
 <sheetData>${rows.join("")}</sheetData>
 </worksheet>`;
 
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot;\\ #,##0.00"/></numFmts>
-<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
-<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
-<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
-<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="4">
+<numFmts count="2">
+<numFmt numFmtId="164" formatCode="#.##0,00"/>
+<numFmt numFmtId="165" formatCode="0,00%"/>
+</numFmts>
+<fonts count="6">
+<font><sz val="11"/><name val="Arial"/></font>
+<font><b/><sz val="11"/><name val="Arial"/></font>
+<font><b/><sz val="14"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
+<font><b/><sz val="10"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
+<font><sz val="10"/><name val="Arial"/></font>
+<font><b/><sz val="10"/><name val="Arial"/></font>
+</fonts>
+<fills count="5">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF2B5B84"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/></patternFill></fill>
+</fills>
+<borders count="4">
+<border><left/><right/><top/><bottom/><diagonal/></border>
+<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>
+<border><left style="thick"><color auto="1"/></left><right style="thick"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="thick"><color auto="1"/></bottom><diagonal/></border>
+<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellStyleXfs>
+<cellXfs count="11">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="0" fontId="2" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center" wrapText="1"/>
+</xf>
+<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center"/>
+</xf>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center"/>
+</xf>
+<xf numFmtId="164" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="right" vertical="center"/>
+</xf>
+<xf numFmtId="165" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="right" vertical="center"/>
+</xf>
+<xf numFmtId="0" fontId="5" fillId="4" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center"/>
+</xf>
+<xf numFmtId="164" fontId="5" fillId="4" borderId="3" xfId="0" applyFont="1" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="right" vertical="center"/>
+</xf>
 </cellXfs>
 </styleSheet>`;
 
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets><sheet name="IR sobre HRA" sheetId="1" r:id="rId1"/></sheets>
+<sheets><sheet name="TEMA 306" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`;
 
   const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -225,7 +268,7 @@ export function montarArquivosPlanilhaCodigosXlsx(
 
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot;\\ #,##0.00"/></numFmts>
+<numFmts count="1"><numFmt numFmtId="164" formatCode=""R$"\\ #,##0.00"/></numFmts>
 <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
 <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
