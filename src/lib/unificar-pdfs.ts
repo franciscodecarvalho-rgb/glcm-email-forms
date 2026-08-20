@@ -45,7 +45,10 @@ async function descriptografarPdf(
 async function extrairItensPorPagina(bytes: ArrayBuffer | Uint8Array): Promise<TextItemPdf[][]> {
   const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist");
   GlobalWorkerOptions.workerSrc = workerUrl;
-  const doc = await getDocument({ data: bytes }).promise;
+  // Passa uma cópia para o pdf.js: ele transfere/detacha o buffer original
+  // (byteLength vira 0), o que corromperia os bytes usados depois no merge.
+  const copia = bytes instanceof Uint8Array ? bytes.slice() : new Uint8Array(bytes).slice();
+  const doc = await getDocument({ data: copia }).promise;
   try {
     const paginas: TextItemPdf[][] = [];
     for (let numero = 1; numero <= doc.numPages; numero++) {
