@@ -7,8 +7,8 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { selecionarPecas } from "./modelos-documentos";
 import {
-  agregarCodigosPorCompetencia,
-  montarArquivosPlanilhaCodigosXlsx,
+  agregarBancoHorasPorCompetencia,
+  montarArquivosPlanilhaBancoHorasXlsx,
   montarArquivosPlanilhaXlsx,
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
@@ -42,13 +42,13 @@ const edgePecas = carregarTrechoDaFuncao<{ selecionarPecas: typeof selecionarPec
 const edgePlanilha = carregarTrechoDaFuncao<{
   ordenarPorCompetencia: typeof ordenarPorCompetencia;
   montarArquivosPlanilhaXlsx: typeof montarArquivosPlanilhaXlsx;
-  agregarCodigosPorCompetencia: typeof agregarCodigosPorCompetencia;
-  montarArquivosPlanilhaCodigosXlsx: typeof montarArquivosPlanilhaCodigosXlsx;
+  agregarBancoHorasPorCompetencia: typeof agregarBancoHorasPorCompetencia;
+  montarArquivosPlanilhaBancoHorasXlsx: typeof montarArquivosPlanilhaBancoHorasXlsx;
 }>("type LinhaPlanilha", "// ---------------- função principal", [
   "ordenarPorCompetencia",
   "montarArquivosPlanilhaXlsx",
-  "agregarCodigosPorCompetencia",
-  "montarArquivosPlanilhaCodigosXlsx",
+  "agregarBancoHorasPorCompetencia",
+  "montarArquivosPlanilhaBancoHorasXlsx",
 ]);
 
 describe("guarda do espelho src/lib ↔ generate-documents", () => {
@@ -102,23 +102,23 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     expect(ordenarPorCompetencia(casos[2])).toEqual(edgePlanilha.ordenarPorCompetencia(casos[2]));
   });
 
-  it("planilha de códigos: agregação e saída idênticas", () => {
+  it("planilha Banco de Horas (1513): agregação e saída idênticas", () => {
     const contracheques = [
       { id: "a", competencia: "03/2024" },
       { id: "b", competencia: "01/2024" },
     ];
     const itens = [
-      { contracheque_id: "a", codigo: "1513", valor: 100.55 },
-      { contracheque_id: "a", codigo: "6050", valor: 25.5 },
-      { contracheque_id: "b", codigo: "1513", valor: 200 },
+      { contracheque_id: "a", codigo: "1513", valor: 100.55, referencia: 10 },
+      { contracheque_id: "a", codigo: "0001", valor: 1500 },
+      { contracheque_id: "b", codigo: "1513", valor: 200, referencia: 52 },
       { contracheque_id: "a", codigo: "1059", valor: 999 },
-      { contracheque_id: "a", codigo: "1513", valor: 50 },
+      { contracheque_id: "a", codigo: "1513", valor: 50, referencia: 2 },
     ];
-    const agregadoSrc = agregarCodigosPorCompetencia(contracheques, itens);
-    const agregadoEdge = edgePlanilha.agregarCodigosPorCompetencia(contracheques, itens);
+    const agregadoSrc = agregarBancoHorasPorCompetencia(contracheques, itens);
+    const agregadoEdge = edgePlanilha.agregarBancoHorasPorCompetencia(contracheques, itens);
     expect(agregadoSrc).toEqual(agregadoEdge);
-    expect(montarArquivosPlanilhaCodigosXlsx("FULANO <&>", agregadoSrc)).toEqual(
-      edgePlanilha.montarArquivosPlanilhaCodigosXlsx("FULANO <&>", agregadoEdge),
+    expect(montarArquivosPlanilhaBancoHorasXlsx("FULANO <&>", agregadoSrc)).toEqual(
+      edgePlanilha.montarArquivosPlanilhaBancoHorasXlsx("FULANO <&>", agregadoEdge),
     );
   });
 });

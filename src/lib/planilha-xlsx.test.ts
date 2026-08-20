@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  agregarCodigosPorCompetencia,
-  montarArquivosPlanilhaCodigosXlsx,
+  agregarBancoHorasPorCompetencia,
+  montarArquivosPlanilhaBancoHorasXlsx,
   montarArquivosPlanilhaXlsx,
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
@@ -176,67 +176,148 @@ describe("planilha xlsx", () => {
   });
 });
 
-describe("agregação dos códigos 1513/6050", () => {
+describe("agregação Banco de Horas (1513)", () => {
   const contracheques = [
     { id: "a", competencia: "03/2024" },
     { id: "b", competencia: "01/2024" },
   ];
 
-  it("soma os valores por código e competência, em ordem cronológica", () => {
-    const linhas = agregarCodigosPorCompetencia(contracheques, [
-      { contracheque_id: "a", codigo: "1513", valor: 100 },
-      { contracheque_id: "a", codigo: "6050", valor: 25.5 },
-      { contracheque_id: "b", codigo: "1513", valor: 200 },
-      { contracheque_id: "a", codigo: "1513", valor: 50 },
+  it("soma quantidade/valor do 1513 e a base de cálculo por competência", () => {
+    const linhas = agregarBancoHorasPorCompetencia(contracheques, [
+      { contracheque_id: "a", codigo: "1513", valor: 100, referencia: 10 },
+      { contracheque_id: "a", codigo: "0001", valor: 1500 },
+      { contracheque_id: "b", codigo: "1513", valor: 200, referencia: 52 },
+      { contracheque_id: "a", codigo: "1513", valor: 50, referencia: 2 },
+      { contracheque_id: "b", codigo: "0201", valor: 300 },
     ]);
     expect(linhas).toEqual([
-      { competencia: "01/2024", total1513: 200, total6050: 0 },
-      { competencia: "03/2024", total1513: 150, total6050: 25.5 },
+      {
+        competencia: "01/2024",
+        quantidade: 52,
+        valor: 200,
+        base: { "0001": 0, "0201": 300, "1061": 0, "1062": 0, "1059": 0, "0192": 0, "0015": 0 },
+      },
+      {
+        competencia: "03/2024",
+        quantidade: 12,
+        valor: 150,
+        base: { "0001": 1500, "0201": 0, "1061": 0, "1062": 0, "1059": 0, "0192": 0, "0015": 0 },
+      },
     ]);
   });
 
   it("ignora outros códigos e itens sem contracheque conhecido", () => {
-    const linhas = agregarCodigosPorCompetencia(contracheques, [
-      { contracheque_id: "a", codigo: "1059", valor: 999 },
+    const linhas = agregarBancoHorasPorCompetencia(contracheques, [
+      { contracheque_id: "a", codigo: "6050", valor: 999 },
       { contracheque_id: "inexistente", codigo: "1513", valor: 10 },
       { contracheque_id: "b", codigo: null, valor: 5 },
     ]);
-    expect(linhas).toEqual([{ competencia: "", total1513: 10, total6050: 0 }]);
+    expect(linhas).toEqual([]);
   });
 
   it("retorna vazio quando não há ocorrências", () => {
-    expect(agregarCodigosPorCompetencia(contracheques, [])).toEqual([]);
-    expect(agregarCodigosPorCompetencia(null, null)).toEqual([]);
+    expect(agregarBancoHorasPorCompetencia(contracheques, [])).toEqual([]);
+    expect(agregarBancoHorasPorCompetencia(null, null)).toEqual([]);
   });
 });
 
-describe("planilha de códigos 1513/6050", () => {
-  const sheet = montarArquivosPlanilhaCodigosXlsx("FULANO", [
-    { competencia: "03/2024", total1513: 150, total6050: 25.5 },
-    { competencia: "01/2024", total1513: 200, total6050: 0 },
-  ])["xl/worksheets/sheet1.xml"];
+describe("planilha Banco de Horas (1513)", () => {
+  const arquivos = montarArquivosPlanilhaBancoHorasXlsx("FULANO", [
+    {
+      competencia: "03/2024",
+      quantidade: 10,
+      valor: 1500,
+      base: { "0001": 2000, "0201": 100, "1061": 0, "1062": 0, "1059": 0, "0192": 0, "0015": 0 },
+    },
+    {
+      competencia: "01/2024",
+      quantidade: 52,
+      valor: 200,
+      base: { "0001": 0, "0201": 0, "1061": 0, "1062": 0, "1059": 0, "0192": 0, "0015": 0 },
+    },
+  ]);
+  const dados = arquivos["xl/worksheets/sheet3.xml"];
+  const calculo = arquivos["xl/worksheets/sheet2.xml"];
 
-  it("tem o cabeçalho P.A., 1513, 6050, TOTAL", () => {
+  it("aba DADOS: cabeçalho Código, Descrição, Quantidade, Valor", () => {
     const cabecalho = [
-      ...sheet.matchAll(/<c r="([A-D])2" t="inlineStr" s="1"><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
+      ...dados.matchAll(/<c r="([A-D])1" s="124" t="inlineStr"><is><t xml:space="preserve">([^<]+)<\/t><\/is><\/c>/g),
     ].map((m) => `${m[1]}=${m[2]}`);
-    expect(cabecalho).toEqual(["A=P. A.", "B=1513", "C=6050", "D=TOTAL"]);
+    expect(cabecalho).toEqual(["A=Código", "B=Descrição", "C=Quantidade", "D=Valor"]);
   });
 
-  it("lista competências em ordem cronológica com total por linha", () => {
-    expect(sheet.indexOf("01/2024")).toBeLessThan(sheet.indexOf("03/2024"));
-    expect(sheet).toContain('<c r="D4" s="2"><f>B4+C4</f><v>175.50</v></c>');
+  it("aba DADOS: lista competências em ordem cronológica com código 1513, quantidade e valor", () => {
+    // 01/2024 (qtd 52) vem antes de 03/2024 (qtd 10), sem coluna de competência
+    expect(dados.indexOf('<c r="C2" s="125"><v>52.00</v></c>')).toBeLessThan(
+      dados.indexOf('<c r="C3" s="125"><v>10.00</v></c>'),
+    );
+    expect(dados).toContain('<c r="A2" s="124"><v>1513</v></c>');
+    expect(dados).toContain('<c r="D2" s="126"><v>200.00</v></c>');
+    expect(dados).toContain('<c r="A3" s="124"><v>1513</v></c>');
+    expect(dados).toContain('<c r="D3" s="127"><v>1500.00</v></c>');
   });
 
-  it("totaliza as três colunas na linha TOTAL", () => {
-    expect(sheet).toMatch(/SUM\(B3:B4\)/);
-    expect(sheet).toMatch(/SUM\(C3:C4\)/);
-    expect(sheet).toMatch(/SUM\(D3:D4\)/);
+  it("aba DADOS: linha Total soma quantidade e valor", () => {
+    expect(dados).toMatch(/<c r="B4" s="128" t="inlineStr">/);
+    expect(dados).toMatch(/SUM\(C2:C3\)/);
+    expect(dados).toMatch(/SUM\(D2:D3\)/);
   });
 
-  it("nomeia a aba e o título para os códigos", () => {
-    const arquivos = montarArquivosPlanilhaCodigosXlsx("FULANO", []);
-    expect(arquivos["xl/workbook.xml"]).toContain('name="Códigos 1513-6050"');
-    expect(arquivos["xl/worksheets/sheet1.xml"]).toContain("PLANILHA — FULANO — CÓDIGOS 1513/6050");
+  it("aba CÁLCULO: tem cabeçalhos PERÍODO, BASE DE CÁLCULO e REFLEXOS", () => {
+    expect(calculo).toContain("PERÍODO");
+    expect(calculo).toContain("BASE DE CÁLCULO");
+    expect(calculo).toContain("Banco de Horas (1513)");
+    expect(calculo).toContain("REFLEXOS HORAS EXTRAS");
+    expect(calculo).toContain("Salário Base (0001)");
+    expect(calculo).toContain("RSR Devido");
+    expect(calculo).toContain("FGTS 8%");
+  });
+
+  it("aba CÁLCULO: período lê DADOS e calcula reflexos", () => {
+    // linha 14 = 01/2024 (valor 200): q=40, r13=20, ferias=26.67, fgts=22.93, grat=13.33
+    expect(calculo).toContain('<c r="L14" s="77"><f>DADOS!C2</f><v>52.00</v></c>');
+    expect(calculo).toContain('<c r="M14" s="84"><f>DADOS!D2</f><v>200.00</v></c>');
+    expect(calculo).toContain('<c r="O14" s="76"><f>M14*0.2</f><v>40.00</v></c>');
+    expect(calculo).toContain('<c r="Q14" s="76"><f>O14-P14</f><v>40.00</v></c>');
+    expect(calculo).toContain('<c r="R14" s="76"><f>(M14+Q14)/12</f><v>20.00</v></c>');
+    expect(calculo).toContain('<c r="S14" s="76"><f>(M14+Q14)/12/3*4</f><v>26.67</v></c>');
+    expect(calculo).toContain('<c r="T14" s="76"><f>((M14+Q14+R14+S14))*0.08</f><v>22.93</v></c>');
+    expect(calculo).toContain('<c r="U14" s="76"><f>(M14+Q14)/12/3*2</f><v>13.33</v></c>');
+    // total = Q+R+S+T+U (soma dos reflexos), sem duplicar RSR
+    expect(calculo).toContain('<c r="V14" s="76"><f>SUM(Q14:U14)</f><v>122.93</v></c>');
+    expect(calculo).toContain('<c r="W14" s="76"><v>122.93</v></c>');
+    expect(calculo).toContain('<c r="Y14" s="76"><f>W14*X14</f><v>122.93</v></c>');
+    expect(calculo).toContain('<c r="Z14" s="79"><f>(Q14+R14)*X14</f><v>60.00</v></c>');
+    expect(calculo).toContain('<c r="B15" s="75"><v>2000.00</v></c>');
+  });
+
+  it("aba CÁLCULO: linha TOTAL e seção IRRF presentes", () => {
+    expect(calculo).toContain("TOTAL");
+    expect(calculo).toContain("APURAÇÃO DO IMPOSTO DE RENDA RETIDO NA FONTE");
+    expect(calculo).toContain("DÉBITO TOTAL");
+  });
+
+  it("workbook tem três abas Resumo, CÁLCULO e DADOS (ordem do modelo)", () => {
+    expect(arquivos["xl/workbook.xml"]).toContain('name="Resumo da Condenação"');
+    expect(arquivos["xl/workbook.xml"]).toContain('name="CÁLCULO"');
+    expect(arquivos["xl/workbook.xml"]).toContain('name="DADOS"');
+  });
+
+  it("aba Resumo da Condenação: cabeçalho e referências ao CÁLCULO", () => {
+    const resumo = arquivos["xl/worksheets/sheet1.xml"];
+    expect(resumo).toContain("DEMONSTRATIVO DE CÁLCULO");
+    expect(resumo).toContain("Descrição");
+    expect(resumo).toContain("Valor Base");
+    expect(resumo).toContain("Valor Total Devido");
+    // linha de subtotais do CÁLCULO = 15 + n = 17 (2 períodos)
+    expect(resumo).toContain("CÁLCULO!Q17");
+    expect(resumo).toContain("CÁLCULO!R17");
+    expect(resumo).toContain("CÁLCULO!S17");
+    expect(resumo).toContain("CÁLCULO!T17");
+    expect(resumo).toContain("CÁLCULO!U17");
+    expect(resumo).toContain("INSS RECDA");
+    expect(resumo).toContain("CUSTAS");
+    expect(resumo).toContain("TOTAL DEVIDO");
+    expect(resumo).toMatch(/F13\+F16\+F14\+F15/);
   });
 });
