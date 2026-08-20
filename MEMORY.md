@@ -178,10 +178,10 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 
 ### 2026-08 — Unificação dos contracheques no upload
 
-**Regra confirmada:** Os PDFs de contracheques selecionados em um caso devem ser unidos, na ordem escolhida, em um único PDF antes do upload.
-**Origem:** Solicitação de Nodley durante o teste do processamento com múltiplos arquivos.
-**Aplicação:** Armazenar e processar um arquivo `contracheques-unificados.pdf`, exibindo o progresso das etapas ao usuário.
-**Evitar:** Unificar os documentos pessoais com os contracheques ou perder páginas durante a junção.
+**Regra confirmada:** Os PDFs de contracheques selecionados em um caso devem ser unidos, em ordem cronológica de competência (MM/AAAA crescente), em um único PDF antes do upload.
+**Origem:** Solicitação de Nodley durante o teste do processamento com múltiplos arquivos; a ordenação cronológica foi definida depois da unificação já funcionar.
+**Aplicação:** Armazenar e processar um arquivo `contracheques-unificados.pdf`, exibindo o progresso das etapas ao usuário; `src/lib/unificar-pdfs.ts` extrai a competência de cada PDF com pdf.js (`competenciaDoArquivo`) e ordena os arquivos antes de juntar (`ordenarPorCompetencia`), preservando a ordem relativa dos arquivos sem competência reconhecida ao final.
+**Evitar:** Unificar os documentos pessoais com os contracheques, perder páginas durante a junção ou confiar na ordem de seleção dos arquivos.
 
 ### 2026-08 — Contratos específicos por tipo de ação
 
