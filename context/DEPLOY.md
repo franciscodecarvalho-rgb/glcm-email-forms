@@ -92,7 +92,7 @@ Regras que mantêm essa rotina segura:
 ## Prompt de deploy pontual (Lovable)
 
 ```text
-Sincronize a branch main no commit c690002. Não altere nenhum arquivo, banco, migration, RLS, dados, templates ou outras funções. Publique somente a Edge Function generate-documents exatamente como está nesse commit. Ao finalizar, confirme separadamente o commit sincronizado e o deploy da função.
+Sincronize a branch main no commit 0e1ff8b. Não altere nenhum arquivo, banco, migration, RLS, dados, templates ou outras funções. Publique o frontend (build completo) exatamente como está nesse commit. Ao finalizar, confirme separadamente o commit sincronizado e a publicação do frontend.
 ```
 
 ## Fontes deste procedimento
