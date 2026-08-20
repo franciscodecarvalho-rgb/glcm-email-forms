@@ -118,6 +118,10 @@ export async function unificarPdfs(arquivos: File[]): Promise<File> {
         origem = await PDFDocument.load(bytes);
       }
 
+      // Normaliza o PDF antes de extrair e copiar as páginas para contornar
+      // erros de estrutura interna (PDFDict undefined) em PDFs descriptografados.
+      bytes = await origem.save();
+
       let competencia: string | null = null;
       try {
         competencia = competenciaDoArquivo(await extrairItensPorPagina(bytes));

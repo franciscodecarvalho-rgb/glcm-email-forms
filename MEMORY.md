@@ -267,6 +267,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `src/lib/cpf.ts` (`normalizarCpf`/`formatarCpf`) é a fonte canônica; `process-documentos-pessoais-pdf` persiste o primeiro CPF válido entre os documentos (`primeiroCpfValido`); `generate-documents` mantém cópia inline de `formatarCpf` sincronizada; `TelaConfirmacao` grava somente dígitos e rejeita CPF que não tenha 11.
 **Evitar:** Persistir CPF formatado ou mascarado (a duplicidade do pre-extract-cpf compara dígitos) ou corrigir formato via update no banco em vez da camada de apresentação.
 
+### 2026-08 — Normalização antes da extração de competência na unificação
+
+**Regra confirmada:** Na unificação no cliente, o PDF deve ser normalizado (re-serializado via `pdf-lib`) antes de extrair a competência e de copiar as páginas, para contornar erros de estrutura interna (`PDFDict undefined`) em PDFs descriptografados pelo QPDF.
+**Origem:** Caso validado por Nodley onde o PDF unificado saiu em ordem, exceto as páginas de comprovantes RECAP/Ajuste da Petrobras, que ficaram ao final por terem competência não reconhecida no upload; o parser posicional reconhecia essas competências no PDF normalizado.
+**Aplicação:** Em `unificarPdfs` (`src/lib/unificar-pdfs.ts`), após ler/descriptografar, executar `origem.save()` e usar esses bytes tanto na extração (`extrairItensPorPagina`) quanto no merge (`copyPages`), preservando os bytes normalizados na estrutura `preparados`.
+**Evitar:** Extrair competência dos bytes brutos/descriptografados sem normalizar, ou usar bytes diferentes entre a extração e a junção.
+
 ```markdown
 ### AAAA-MM — Título
 
