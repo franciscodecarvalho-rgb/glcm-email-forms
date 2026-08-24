@@ -274,6 +274,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Em `unificarPdfs` (`src/lib/unificar-pdfs.ts`), após ler/descriptografar, executar `origem.save()` e usar esses bytes tanto na extração (`extrairItensPorPagina`) quanto no merge (`copyPages`), preservando os bytes normalizados na estrutura `preparados`.
 **Evitar:** Extrair competência dos bytes brutos/descriptografados sem normalizar, ou usar bytes diferentes entre a extração e a junção.
 
+### 2026-08 — Códigos HRA específicos por empresa
+
+**Regra confirmada:** A rubrica de código `3A20` da BASF e a de código `1004` da Braskem pertencem à família HRA.
+**Origem:** Validação de Nodley sobre os modelos de contracheque dessas empresas.
+**Aplicação:** Em `process-contracheques-pdf`, classificar esses códigos como `hra` somente quando o modelo identificado for, respectivamente, `basf` ou `braskem`.
+**Evitar:** Tornar os códigos globais para outras empresas ou modificar as regras existentes dos demais modelos.
+
 ```markdown
 ### AAAA-MM — Título
 

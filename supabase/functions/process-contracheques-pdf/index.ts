@@ -41,7 +41,8 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
       const valor=Number(item.valor);
       const tipo=item.tipo;
       if(!descricao||!Number.isFinite(valor)||valor<0||!(tipo==="provento"||tipo==="desconto"||tipo==="informativo"))return [];
-      return [{codigo:typeof item.codigo==="string"?item.codigo.trim().toUpperCase():"",descricao,referencia:Number.isFinite(Number(item.referencia))?Number(item.referencia):null,valor,tipo,familia_hra:familia(descricao)} as Rubrica];
+      const codigo=typeof item.codigo==="string"?item.codigo.trim().toUpperCase():"";
+      return [{codigo,descricao,referencia:Number.isFinite(Number(item.referencia))?Number(item.referencia):null,valor,tipo,familia_hra:familia(codigo,descricao,typeof contra.modelo_origem==="string"?contra.modelo_origem:"")} as Rubrica];
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
@@ -123,7 +124,9 @@ function competencia(texto: string) {
   return null;
 }
 
-function familia(descricao: string) {
+function familia(codigo: string, descricao: string, modeloOrigem: string) {
+  const codigoNormalizado=codigo.trim().toUpperCase();
+  if((modeloOrigem==="basf"&&codigoNormalizado==="3A20")||(modeloOrigem==="braskem"&&codigoNormalizado==="1004"))return "hra";
   const n=norm(descricao); if(!/hra/.test(n))return null;
   if(/\bdif/.test(n)||/\bdi\b/.test(n))return "dif_ahra";
   if(/dobra/.test(n))return "ahra_dobra";
@@ -160,7 +163,8 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const rs=ri?.str.trim()??"";
     const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
     const tipo:Tipo=info?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
-    rubricas.push({codigo:cod?.str.trim().toUpperCase()??"",descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(descricao)});
+    const codigo=cod?.str.trim().toUpperCase()??"";
+    rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem)});
   }
   if(!/\bcontinua\b/.test(norm(texto))){
     total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;
