@@ -34,6 +34,14 @@ describe("classificarRubrica", () => {
     expect(classificarRubrica("0985", "Petros II Contr Regular").familia).toBeNull();
     expect(classificarRubrica(null, "INSS").familia).toBeNull();
   });
+
+  it("reconhece os códigos confirmados mesmo sem 'hra' na descrição", () => {
+    expect(classificarRubrica("1062", "Verba 1062").familia).not.toBeNull();
+    expect(classificarRubrica("0208", "Verba 0208").familia).not.toBeNull();
+    expect(classificarRubrica("4208", "Verba 4208").familia).not.toBeNull();
+    expect(classificarRubrica("062A", "Verba 062A").familia).not.toBeNull();
+    expect(classificarRubrica("2208", "Verba 2208").familia).not.toBeNull();
+  });
 });
 
 describe("contaNoCalculoHra", () => {

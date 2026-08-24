@@ -12,6 +12,7 @@ import { TelaDownload } from "@/components/caso/TelaDownload";
 import { TelaProcessando } from "@/components/caso/TelaProcessando";
 import { BlocoDuplicata } from "@/components/caso/BlocoDuplicata";
 import { AlertaRubricas } from "@/components/caso/AlertaRubricas";
+import { AlertaSemIr } from "@/components/caso/AlertaSemIr";
 import { RevisaoCalculosProvider } from "@/contexts/RevisaoCalculosContext";
 import { toast } from "sonner";
 import {
@@ -19,7 +20,7 @@ import {
   montarContrachequesRelacionais,
   type ContrachequeRelacional,
 } from "@/lib/contracheques-relacionais";
-import { encontrarRubricasAlerta } from "@/lib/alertas-rubricas";
+import { encontrarRubricasAlerta, encontrarRubricasSemIr } from "@/lib/alertas-rubricas";
 import { dadosEsperadosForamExtraidos } from "@/lib/dados-extraidos";
 
 export type CasoData = {
@@ -125,6 +126,7 @@ export default function Caso() {
   };
   const extracaoCompleta = dadosEsperadosForamExtraidos(caso);
   const alertasRubricas = encontrarRubricasAlerta(caso.contracheques_extraidos);
+  const rubricasSemIr = encontrarRubricasSemIr(caso.contracheques_extraidos);
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -150,6 +152,7 @@ export default function Caso() {
         />
 
         <AlertaRubricas alertas={alertasRubricas} />
+        <AlertaSemIr dados={rubricasSemIr} />
 
 
         {(caso.status === "novo" || caso.status === "em_analise") && <TelaProcessando caso={caso} />}

@@ -45,6 +45,24 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }]);
   });
 
+  it("debita descontos e credita proventos da mesma família HRA", () => {
+    expect(contrachequesRelacionaisParaRevisao([{
+      id: "contra-3",
+      competencia: "04/2026",
+      itens_contracheque: [
+        { familia_hra: "adicional_hra", valor: 500, tipo: "provento" },
+        { familia_hra: "adicional_hra", valor: 120, tipo: "desconto" },
+        { familia_hra: "ahra_dobra", valor: 80, tipo: "provento" },
+        { familia_hra: "ahra_dobra", valor: 30, tipo: "desconto" },
+      ],
+    }])).toEqual([{
+      id: "contra-3",
+      label: "04/2026",
+      valor_hra: 380,
+      valor_ahra: 50,
+    }]);
+  });
+
   it("mantém o contracheque visível quando nenhuma rubrica HRA foi localizada", () => {
     expect(contrachequesRelacionaisParaRevisao([{
       id: "contra-2",

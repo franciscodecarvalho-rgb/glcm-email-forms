@@ -15,6 +15,17 @@ export type FamiliaHra =
   | "ahra"
   | "hra";
 
+/**
+ * Códigos confirmados que sempre contam como rubrica HRA/AHRA, mesmo quando a
+ * descrição não traz o texto "hra" (ex.: ruído de OCR pesado ou descrição
+ * genérica). Complementa a detecção por descrição — não a substitui.
+ */
+export const CODIGOS_HRA_CONHECIDOS = ["1062", "0208", "4208", "062A", "2208"] as const;
+
+function normalizarCodigo(s: string | null | undefined): string {
+  return (s ?? "").trim().toUpperCase();
+}
+
 export type ClassificacaoRubrica = {
   /** Família para agrupar colunas na planilha; null = não é rubrica HRA/AHRA. */
   familia: FamiliaHra | null;
@@ -49,9 +60,13 @@ export function classificarRubrica(
   descricao: string,
 ): ClassificacaoRubrica {
   const n = normalizar(descricao);
+  const codigoConhecido = CODIGOS_HRA_CONHECIDOS.includes(
+    normalizarCodigo(codigo) as (typeof CODIGOS_HRA_CONHECIDOS)[number],
+  );
 
   // Precisa conter "hra" (cobre também "ahra") em qualquer ponto — pega o OCR.
-  if (!/hra/.test(n)) return { familia: null, semIr: false };
+  // Ou ter um código confirmado da tabela CODIGOS_HRA_CONHECIDOS.
+  if (!/hra/.test(n) && !codigoConhecido) return { familia: null, semIr: false };
 
   const semIr = ehSemIr(descricao);
 

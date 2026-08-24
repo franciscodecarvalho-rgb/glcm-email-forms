@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODIGOS_ALERTA, encontrarRubricasAlerta } from "./alertas-rubricas";
+import { CODIGOS_ALERTA, encontrarRubricasAlerta, encontrarRubricasSemIr } from "./alertas-rubricas";
 
 const cc = (competencia: string, itens: { codigo?: string | null; descricao?: string | null; referencia?: number | null; valor?: number | null }[]) => ({
   id: `cc-${competencia}`,
@@ -60,5 +60,35 @@ describe("encontrarRubricasAlerta", () => {
 
   it("a lista padrão é 1059, 1513, 6050", () => {
     expect(CODIGOS_ALERTA).toEqual(["1059", "1513", "6050"]);
+  });
+});
+
+describe("encontrarRubricasSemIr", () => {
+  it("retorna vazio quando não há rubricas HRA Sem IR", () => {
+    expect(encontrarRubricasSemIr(null)).toEqual({ linhas: [], total: 0 });
+    expect(
+      encontrarRubricasSemIr([cc("01/2024", [{ codigo: "0001", descricao: "Salário Básico", valor: 1000 }])]),
+    ).toEqual({ linhas: [], total: 0 });
+  });
+
+  it("ignora rubricas HRA normais (com IR retido)", () => {
+    expect(
+      encontrarRubricasSemIr([cc("01/2024", [{ codigo: "1062", descricao: "Adicional HRA", valor: 500 }])]),
+    ).toEqual({ linhas: [], total: 0 });
+  });
+
+  it("lista as linhas HRA/AHRA marcadas Sem IR e soma o total", () => {
+    const resultado = encontrarRubricasSemIr([
+      cc("01/2024", [
+        { codigo: "3100", descricao: "AHRA (Sem/IR)", valor: -300 },
+        { codigo: "1062", descricao: "Adicional HRA", valor: 500 },
+      ]),
+      cc("02/2024", [{ codigo: "1104", descricao: "HRA Dec.Jud. Seg. s/IRRF", valor: 120 }]),
+    ]);
+    expect(resultado.linhas).toEqual([
+      { competencia: "01/2024", codigo: "3100", descricao: "AHRA (Sem/IR)", valor: 300 },
+      { competencia: "02/2024", codigo: "1104", descricao: "HRA Dec.Jud. Seg. s/IRRF", valor: 120 },
+    ]);
+    expect(resultado.total).toBe(420);
   });
 });

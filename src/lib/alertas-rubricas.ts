@@ -3,6 +3,7 @@
 // 1059, 1513 ou 6050 (solicitação da Ana; relatório e viabilidade removidos do escopo).
 
 import type { ContrachequeRelacional } from "./contracheques-relacionais";
+import { classificarRubrica } from "./hra-catalog";
 
 export const CODIGOS_ALERTA = ["1059", "1513", "6050"] as const;
 
@@ -40,4 +41,45 @@ export function encontrarRubricasAlerta(
   return [...porCodigo.values()].sort(
     (a, b) => [...alvo].indexOf(a.codigo) - [...alvo].indexOf(b.codigo),
   );
+}
+
+export type LinhaSemIr = {
+  competencia: string | null;
+  codigo: string | null;
+  descricao: string;
+  valor: number;
+};
+
+export type RubricasSemIr = {
+  linhas: LinhaSemIr[];
+  total: number;
+};
+
+/**
+ * Localiza rubricas HRA/AHRA marcadas "Sem IR/IRRF" (mesma classificação de
+ * hra-catalog.ts) e retorna cada linha individual (competência, código,
+ * descrição, valor) junto do total — essas verbas já não tiveram IR retido,
+ * então não entram na base do cálculo, mas o escritório precisa vê-las.
+ */
+export function encontrarRubricasSemIr(
+  contracheques: ContrachequeRelacional[] | null | undefined,
+): RubricasSemIr {
+  const linhas: LinhaSemIr[] = [];
+
+  for (const contracheque of contracheques ?? []) {
+    for (const item of contracheque.itens_contracheque ?? []) {
+      const descricao = item.descricao ?? "";
+      const classificacao = classificarRubrica(item.codigo, descricao);
+      if (!classificacao.familia || !classificacao.semIr) continue;
+      linhas.push({
+        competencia: contracheque.competencia ?? null,
+        codigo: (item.codigo ?? "").trim() || null,
+        descricao,
+        valor: Math.abs(Number(item.valor) || 0),
+      });
+    }
+  }
+
+  const total = linhas.reduce((soma, l) => soma + l.valor, 0);
+  return { linhas, total };
 }

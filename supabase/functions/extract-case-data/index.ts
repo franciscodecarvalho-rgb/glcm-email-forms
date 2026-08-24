@@ -523,9 +523,14 @@ function normalizarDesc(s: string): string {
     .trim();
 }
 
-function classificarFamiliaHra(descricao: string): string | null {
+// Códigos confirmados que sempre contam como rubrica HRA/AHRA, mesmo quando a
+// descrição não traz o texto "hra" (ruído de OCR pesado ou descrição genérica).
+const CODIGOS_HRA_CONHECIDOS = new Set(["1062", "0208", "4208", "062A", "2208"]);
+
+function classificarFamiliaHra(descricao: string, codigo?: string | null): string | null {
   const n = normalizarDesc(descricao);
-  if (!/hra/.test(n)) return null;
+  const codigoConhecido = CODIGOS_HRA_CONHECIDOS.has((codigo ?? "").trim().toUpperCase());
+  if (!/hra/.test(n) && !codigoConhecido) return null;
   if (/\bdif/.test(n) || /\bdi\b/.test(n)) return "dif_ahra";
   if (/dobra/.test(n)) return "ahra_dobra";
   if (/adic/.test(n)) return "adicional_hra";
@@ -570,7 +575,7 @@ async function persistirGranular(supabase: any, casoId: string, contracheques: a
         descricao: it.descricao ?? "",
         valor: Number(it.valor) || 0,
         tipo: String(it.tipo ?? "").toLowerCase().startsWith("desc") ? "desconto" : "provento",
-        familia_hra: classificarFamiliaHra(it.descricao ?? ""),
+        familia_hra: classificarFamiliaHra(it.descricao ?? "", it.codigo),
       });
     }
   });

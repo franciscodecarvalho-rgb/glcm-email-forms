@@ -39,6 +39,13 @@ export function montarContrachequesRelacionais(
   }));
 }
 
+// Desconto abate a base; provento soma. O valor persistido é sempre uma
+// magnitude positiva, então o sinal vem só do campo `tipo`.
+function valorComSinal(item: ItemContrachequeRelacional): number {
+  const magnitude = Math.abs(Number(item.valor) || 0);
+  return item.tipo === "desconto" ? -magnitude : magnitude;
+}
+
 export function contrachequesRelacionaisParaRevisao(
   contracheques: ContrachequeRelacional[] | null | undefined,
 ): ContrachequeRevisao[] {
@@ -46,10 +53,10 @@ export function contrachequesRelacionaisParaRevisao(
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
       .filter((item) => item.familia_hra === "ahra_dobra")
-      .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
+      .reduce((total, item) => total + valorComSinal(item), 0);
     const valorHra = itens
       .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra")
-      .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
+      .reduce((total, item) => total + valorComSinal(item), 0);
 
     return {
       id: contracheque.id,
