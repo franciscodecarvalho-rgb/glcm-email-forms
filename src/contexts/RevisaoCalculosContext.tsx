@@ -19,8 +19,7 @@ export function validarRevisaoCalculos(state: RevisaoCalculosState): RevisaoCalc
   if (!state.oab.trim()) erros.oab = "Informe a OAB do advogado.";
   if (!state.email.trim()) erros.email = "Informe o e-mail do cliente.";
   else if (!EMAIL_REGEX.test(state.email.trim())) erros.email = "E-mail inválido.";
-  if (!state.telefone.trim()) erros.telefone = "Informe o telefone do cliente.";
-  else if (!PHONE_REGEX.test(state.telefone.trim())) erros.telefone = "Telefone inválido.";
+  if (state.telefone.trim() && !PHONE_REGEX.test(state.telefone.trim())) erros.telefone = "Telefone inválido.";
   if (!state.ufComarca.trim()) erros.ufComarca = "Informe a UF da comarca.";
   return erros;
 }

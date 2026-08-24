@@ -171,7 +171,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
             {errors.email && <p className="text-xs text-destructive mt-1">{errors.email}</p>}
           </div>
           <div>
-            <Label htmlFor="telefone" className="text-sm font-semibold">Telefone do Cliente *</Label>
+            <Label htmlFor="telefone" className="text-sm font-semibold">Telefone do Cliente</Label>
             <Input
               id="telefone"
               type="tel"

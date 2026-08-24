@@ -109,7 +109,7 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
             {errors.email && <p className="text-xs text-destructive mt-1">{errors.email}</p>}
           </div>
           <div>
-            <Label htmlFor="rg-telefone" className="text-sm font-semibold">Telefone do Cliente *</Label>
+            <Label htmlFor="rg-telefone" className="text-sm font-semibold">Telefone do Cliente</Label>
             <Input id="rg-telefone" type="tel" className="mt-2" value={state.telefone} onChange={(e) => setField("telefone", e.target.value)} placeholder="(71) 99999-9999" />
             {errors.telefone && <p className="text-xs text-destructive mt-1">{errors.telefone}</p>}
           </div>
