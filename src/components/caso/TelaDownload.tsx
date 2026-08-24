@@ -8,10 +8,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PECA_LABELS } from "@/lib/status";
 import { toast } from "sonner";
-import { useRevisaoCalculos, UF_MAP } from "@/contexts/RevisaoCalculosContext";
+import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 
 type Doc = { tipo: string; storage_path: string; nome: string };
 
@@ -33,7 +32,7 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
         oab: state.oab.trim(),
         email_cliente: state.email.trim(),
         telefone_cliente: state.telefone.trim(),
-        uf_comarca: UF_MAP[state.ufComarca.trim()],
+        uf_comarca: state.ufComarca.trim(),
       },
     });
     setRegerando(false);
@@ -116,16 +115,13 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
           </div>
           <div>
             <Label htmlFor="rg-uf" className="text-sm font-semibold">UF da Comarca *</Label>
-            <Select value={state.ufComarca} onValueChange={(value) => setField("ufComarca", value)}>
-              <SelectTrigger id="rg-uf" className="mt-2">
-                <SelectValue placeholder="Selecione a UF" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.keys(UF_MAP).map((uf) => (
-                  <SelectItem key={uf} value={uf}>{uf}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              id="rg-uf"
+              className="mt-2"
+              value={state.ufComarca}
+              onChange={(e) => setField("ufComarca", e.target.value)}
+              placeholder="ex: Salvador/BA"
+            />
             {errors.ufComarca && <p className="text-xs text-destructive mt-1">{errors.ufComarca}</p>}
           </div>
         </div>
