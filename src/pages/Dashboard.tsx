@@ -26,6 +26,8 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 import { CasoFlagBadge } from "@/components/CasoFlagBadge";
+import { Badge } from "@/components/ui/badge";
+import { encontrarRubricasAlerta } from "@/lib/alertas-rubricas";
 
 type Caso = {
   id: string;
@@ -37,6 +39,10 @@ type Caso = {
   mesclado_at: string | null;
   possivel_duplicata_de: string | null;
   cliente_recorrente_ref: string | null;
+  contracheques?: {
+    id: string;
+    itens_contracheque?: { codigo: string | null; descricao: string | null; referencia: number | null; valor: number | null }[];
+  }[];
 };
 
 export default function Dashboard() {
@@ -51,7 +57,7 @@ export default function Dashboard() {
     let ignore = false;
     supabase
       .from("casos")
-      .select("id, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref")
+      .select("id, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref, contracheques(id, itens_contracheque(codigo, descricao, referencia, valor))")
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error("Erro ao carregar casos");
@@ -189,14 +195,17 @@ export default function Dashboard() {
                 <TableHead>Cliente</TableHead>
                 <TableHead>Origem</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Rubricas Encontradas</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">Nenhum caso encontrado.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">Nenhum caso encontrado.</TableCell></TableRow>
               )}
-              {filtered.map((c) => (
+              {filtered.map((c) => {
+                const rubricasEncontradas = encontrarRubricasAlerta(c.contracheques);
+                return (
                 <TableRow key={c.id} className="cursor-pointer" onClick={() => nav(`/casos/${c.id}`)}>
                   <TableCell className="font-mono text-xs">{c.id.slice(0, 8)}</TableCell>
                   <TableCell>{format(new Date(c.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</TableCell>
@@ -207,6 +216,15 @@ export default function Dashboard() {
                       <StatusBadge status={c.status} />
                       {c.possivel_duplicata_de && <CasoFlagBadge flag="possivel_duplicata" />}
                       {c.cliente_recorrente_ref && <CasoFlagBadge flag="cliente_recorrente" />}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {rubricasEncontradas.length === 0
+                        ? <span className="text-muted-foreground">—</span>
+                        : rubricasEncontradas.map((r) => (
+                          <Badge key={r.codigo} variant="destructive">{r.codigo}</Badge>
+                        ))}
                     </div>
                   </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -220,7 +238,8 @@ export default function Dashboard() {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </div>
