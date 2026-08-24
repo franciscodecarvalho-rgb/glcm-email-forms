@@ -830,8 +830,9 @@ Deno.serve(async (req) => {
     if (!oab?.trim()) throw new Error("oab obrigatório");
     if (!email_cliente?.trim()) throw new Error("email_cliente obrigatório");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email_cliente.trim())) throw new Error("email_cliente inválido");
-    if (!telefone_cliente?.trim()) throw new Error("telefone_cliente obrigatório");
-    if (!/^\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/.test(telefone_cliente.trim())) throw new Error("telefone_cliente inválido");
+    if (telefone_cliente?.trim() && !/^\(?\d{2}\)?\s?\d{4,5}-?\d{4}$/.test(telefone_cliente.trim())) {
+      throw new Error("telefone_cliente inválido");
+    }
     if (!uf_comarca?.trim()) throw new Error("uf_comarca obrigatório");
 
     const { data: caso, error: cErr } = await supabase
@@ -876,7 +877,7 @@ Deno.serve(async (req) => {
       captador: captador.trim(),
       oab: oab.trim(),
       email_cliente: email_cliente.trim(),
-      telefone_cliente: telefone_cliente.trim(),
+      telefone_cliente: (telefone_cliente ?? "").trim(),
       uf_comarca: uf_comarca.trim(),
     };
     const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
