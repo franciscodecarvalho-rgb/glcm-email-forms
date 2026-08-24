@@ -1,3 +1,4 @@
+import type { TextItemPdf } from "@/lib/parse-contracheque-pdf";
 export type { TextItemPdf } from "@/lib/parse-contracheque-pdf";
 import { parsePaginaContracheque } from "@/lib/parse-contracheque-pdf";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
