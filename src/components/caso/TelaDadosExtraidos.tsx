@@ -25,7 +25,6 @@ export function TelaDadosExtraidos({ caso, onCancel }: { caso: CasoData; onCance
     const { error } = await supabase
       .from("casos")
       .update({
-        contracheques: caso.contracheques,
         status: "aguardando_pasta",
       })
       .eq("id", caso.id);

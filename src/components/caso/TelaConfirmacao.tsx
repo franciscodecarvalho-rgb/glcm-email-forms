@@ -70,7 +70,6 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         endereco: end,
         qualificacao: qual,
         empregadores: empregs.map((em) => ({ razao_social: em.razao_social, cnpj: em.cnpj })),
-        contracheques: contras,
         status: "aguardando_pasta",
       })
       .eq("id", caso.id);
