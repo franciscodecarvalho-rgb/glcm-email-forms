@@ -91,14 +91,10 @@ export default function Caso() {
       toast.error("Não foi possível carregar os contracheques extraídos");
     }
     const idsContracheques = (contrachequesPersistidos ?? []).map((contracheque) => contracheque.id);
-    const { data: itensPersistidos, error: itensError } = idsContracheques.length
-      ? await supabase
-          .from("itens_contracheque")
-          .select("id, contracheque_id, codigo, descricao, referencia, valor, tipo, familia_hra")
-          .in("contracheque_id", idsContracheques)
-          .order("descricao", { ascending: true })
-      : { data: [], error: null };
-    if (itensError) {
+    let itensPersistidos: any[] = [];
+    try {
+      itensPersistidos = await buscarItensContrachequePaginado(idsContracheques);
+    } catch {
       toast.error("Não foi possível carregar as rubricas extraídas");
     }
     const contrachequesRelacionados = montarContrachequesRelacionais(
