@@ -25,15 +25,6 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
     estado: e0.estado ?? "",
     cep: e0.cep ?? "",
   });
-  const init: Contra[] = Array.isArray(caso.contracheques) && caso.contracheques.length
-    ? caso.contracheques.map((c: any, i: number) => ({
-        id: c.id ?? crypto.randomUUID(),
-        label: c.label ?? `Contracheque ${i + 1}`,
-        valor_hra: Number(c.valor_hra) || 0,
-        valor_ahra: Number(c.valor_ahra) || 0,
-      }))
-    : [];
-  const [contras] = useState<Contra[]>(init);
   const q0 = caso.qualificacao ?? {};
   const [qual, setQual] = useState({
     nacionalidade: q0.nacionalidade ?? "brasileiro",
