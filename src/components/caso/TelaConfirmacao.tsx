@@ -9,7 +9,7 @@ import { ContrachequesExtraidos } from "@/components/caso/ContrachequesExtraidos
 import { toast } from "sonner";
 import { normalizarCpf } from "@/lib/cpf";
 
-type Contra = { id: string; label: string; valor_hra: number; valor_ahra: number };
+
 type Empreg = { id: string; razao_social: string; cnpj: string };
 
 export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: () => void }) {
