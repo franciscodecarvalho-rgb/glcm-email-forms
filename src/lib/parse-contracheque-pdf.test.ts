@@ -111,6 +111,50 @@ describe("parsePaginaContracheque", () => {
     expect(resultado.itens).toHaveLength(1);
     expect(resultado.itens[0].valor).toBe(6231.92);
   });
+
+  it("usa o mês/ano do campo Pagamento Referente (BASF) e ignora a data de admissão", () => {
+    // Layout BASF: a data de admissão (04.11.2013) contém "11.2013", que não pode
+    // ser confundida com a competência real "Abril 2021" do campo Pagamento Referente.
+    const resultado = parsePaginaContracheque([
+      item("BASF", 20, 500), item("Funcionário", 20, 470), item("37031684", 120, 470),
+      item("Senhor", 160, 470), item("JACSON", 200, 470), item("DA", 240, 470),
+      item("ANUNCIACAO", 260, 470), item("NUNES", 300, 470),
+      item("Cargo", 20, 450), item("Admissão", 400, 450), item("04.11.2013", 460, 450),
+      item("Pagamento", 20, 430), item("Referente", 80, 430), item("a", 130, 430),
+      item("Salario/Bolsa", 350, 430),
+      item("S-CP/SPAO2", 20, 410), item("BR100730", 120, 410), item("033", 200, 410),
+      item("Abril", 300, 410), item("2021", 330, 410), item("5.644,19", 380, 410),
+      item("Rubrica", 20, 380), item("Qtde.", 110, 380), item("Descrição", 180, 380),
+      item("Proventos", 580, 380), item("Descontos", 700, 380),
+      item("3A20", 20, 360), item("180,00", 110, 360), item("Adicional", 180, 360),
+      item("de", 220, 360), item("periculos.", 240, 360), item("1.693,26", 590, 360),
+    ], 842);
+
+    expect(resultado.competencia).toBe("04/2021");
+  });
+
+  it("usa a Data de Crédito do rodapé (BASF) mesmo quando Pagamento Referente está truncado", () => {
+    // 13º salário: "Pagamento Referente a: R Novembro 202" (ano truncado no PDF),
+    // mas o rodapé tem "Data de Crédito | 30.11.2021" -> competência 11/2021.
+    const resultado = parsePaginaContracheque([
+      item("BASF", 20, 500), item("Funcionário", 20, 470), item("37031684", 120, 470),
+      item("JACSON", 200, 470), item("DA", 240, 470), item("ANUNCIACAO", 260, 470), item("NUNES", 300, 470),
+      item("Admissão", 400, 450), item("04.11.2013", 460, 450),
+      item("Pagamento", 20, 430), item("Referente", 80, 430), item("a", 130, 430), item("Salario/Bolsa", 350, 430),
+      item("S-CP/SPAO5", 20, 410), item("BR100730", 120, 410), item("033", 200, 410),
+      item("R Novembro", 300, 410), item("202", 330, 410), item("6.232,31", 380, 410),
+      item("Rubrica", 20, 380), item("Qtde.", 110, 380), item("Descrição", 180, 380),
+      item("Proventos", 580, 380), item("Descontos", 700, 380),
+      item("3A20", 20, 360), item("180,00", 110, 360), item("Adicional", 180, 360),
+      item("de", 220, 360), item("periculos.", 240, 360), item("1.693,26", 590, 360),
+      // rodapé
+      item("Data de", 20, 100), item("Crédito", 60, 100),
+      item("Saldo", 200, 100), item("Devedor", 230, 100), item("Valor", 300, 100), item("Líquido", 330, 100),
+      item("30.11.2021", 60, 80), item("5.873,95", 330, 80),
+    ], 842);
+
+    expect(resultado.competencia).toBe("11/2021");
+  });
 });
 
 describe("consolidarPaginasContracheque", () => {

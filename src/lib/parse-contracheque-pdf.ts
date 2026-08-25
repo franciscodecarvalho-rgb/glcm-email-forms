@@ -75,17 +75,41 @@ function detectarModelo(texto: string): string {
   return "generico";
 }
 
-function extrairCompetencia(texto: string): string | null {
-  const n = normalizar(texto);
-  const numerica = n.match(/(?:mes\/ano|competencia|referencia)?\s*[:-]?\s*(0[1-9]|1[0-2])\s*[/.-]\s*(20\d{2})/i);
-  if (numerica) return `${numerica[1]}/${numerica[2]}`;
+function extrairCompetencia(texto: string): string | null {  const n = normalizar(texto);
+  // 1) Nome do mês (mais específico): "Abril 2021", "SETEMBRO/2025", "abr/2026".
+  //    Aceita espaços entre letras (PDFs com texto fragmentado, ex.: "mar c o 2021").
+  //    Evita pegar a data de admissão (DD.MM.AAAA) como competência.
   for (const [mes, numero] of Object.entries(MESES)) {
-    const comSeparador = n.match(new RegExp(`\\b${mes}[/.-](20\\d{2})\\b`));
+    const comEspacos = mes.replace(/(.)/g, "$1\\s*");
+    const comSeparador = n.match(new RegExp(`\\b${comEspacos}[/.-](20\\d{2})\\b`));
     if (comSeparador) return `${numero}/${comSeparador[1]}`;
-    const porNome = n.match(new RegExp(`\\b${mes}\\s+(20\\d{2})\\b`));
+    const porNome = n.match(new RegExp(`\\b${comEspacos}\\s+(?:de\\s+)?(20\\d{2})\\b`));
     if (porNome) return `${numero}/${porNome[1]}`;
-    const comDia = n.match(new RegExp(`\\d{1,2}[/-]${mes}[/-](20\\d{2})`));
+    const comDia = n.match(new RegExp(`\\d{1,2}[/-]${comEspacos}[/-](20\\d{2})`));
     if (comDia) return `${numero}/${comDia[1]}`;
+  }
+  // 2) MM/AAAA com prefixo explícito ("mes/ano", "competencia", "referencia",
+  //    "referente", "pagamento referente"): evita capturar datas soltas como a
+  //    de admissão (ex.: "04.11.2013" -> substring "11.2013").
+  const comPrefixo = n.match(/(?:mes\s*\/\s*ano|competencia|referencia|referente|pagamento referente)[:\s-]*(0[1-9]|1[0-2])\s*[/]\s*(20\d{2})/i);
+  if (comPrefixo) return `${comPrefixo[1]}/${comPrefixo[2]}`;
+  // 3) MM/AAAA isolado (não precedido de dígito, evitando DD.MM.AAAA).
+  const isolado = n.match(/(?<!\d)(?:0[1-9]|1[0-2])\s*[/]\s*(20\d{2})(?!\d)/);
+  if (isolado) return `${isolado[0].slice(0, 2)}/${isolado[2]}`;
+  return null;
+}
+
+// BASF: a competência confiável é a "Data de Crédito" do rodapé, que é o último
+// dia do mês de referência (ex.: "Data de Crédito | 30.04.2021" -> 04/2021).
+// Cobre inclusive recibos de 13º/adiantamento onde o campo "Pagamento Referente"
+// vem com o ano truncado ("R Novembro 202").
+function extrairCompetenciaBasf(linhas: Linha[]): string | null {
+  for (let i = 0; i < linhas.length; i++) {
+    const rotulo = normalizar(linhas[i].texto).replace(/\s+/g, "");
+    if (!rotulo.includes("datadecredito")) continue;
+    const valor = linhas[i + 1]?.texto ?? "";
+    const m = valor.match(/\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/);
+    if (m) return `${m[2].padStart(2, "0")}/${m[3]}`;
   }
   return null;
 }
@@ -119,7 +143,10 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   const linhas = linhasDaPagina(itensLeitura);
   const texto = linhas.map((l) => l.texto).join("\n");
   const modeloOrigem = detectarModelo(texto);
-  const competencia = extrairCompetencia(texto);
+  const competencia =
+    modeloOrigem === "basf"
+      ? extrairCompetenciaBasf(linhas) ?? extrairCompetencia(texto)
+      : extrairCompetencia(texto);
   const cabecalho = linhas.find((l) => {
     const n = normalizar(l.texto);
     return (/descricao/.test(n) && /provent|venciment|valor/.test(n)) || (/venciment/.test(n) && /descont/.test(n));

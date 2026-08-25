@@ -114,12 +114,33 @@ function modelo(texto: string) {
 
 function competencia(texto: string) {
   const n=norm(texto);
-  const m=n.match(/(?:mes\/ano|competencia|referencia)?\s*[:-]?\s*(0[1-9]|1[0-2])\s*[/.-]\s*(20\d{2})/i);
-  if(m)return `${m[1]}/${m[2]}`;
+  // 1) Nome do mês (mais específico). Aceita espaços entre letras (PDFs com
+  //    texto fragmentado, ex.: "mar c o 2021"). Evita pegar a data de admissão
+  //    (DD.MM.AAAA) como competência no BASF.
   for(const [nome,numero] of Object.entries(MESES)){
-    const separado=n.match(new RegExp(`\\b${nome}[/.-](20\\d{2})\\b`));if(separado)return `${numero}/${separado[1]}`;
-    const a=n.match(new RegExp(`\\b${nome}\\s+(20\\d{2})\\b`)); if(a)return `${numero}/${a[1]}`;
-    const b=n.match(new RegExp(`\\d{1,2}[/-]${nome}[/-](20\\d{2})`)); if(b)return `${numero}/${b[1]}`;
+    const comEspacos=nome.replace(/(.)/g,"$1\\s*");
+    const separado=n.match(new RegExp(`\\b${comEspacos}[/.-](20\\d{2})\\b`));if(separado)return `${numero}/${separado[1]}`;
+    const a=n.match(new RegExp(`\\b${comEspacos}\\s+(?:de\\s+)?(20\\d{2})\\b`)); if(a)return `${numero}/${a[1]}`;
+    const b=n.match(new RegExp(`\\d{1,2}[/-]${comEspacos}[/-](20\\d{2})`)); if(b)return `${numero}/${b[1]}`;
+  }
+  // 2) MM/AAAA com prefixo explícito (evita datas soltas como "11.2013").
+  const comPrefixo=n.match(/(?:mes\s*\/\s*ano|competencia|referencia|referente|pagamento referente)[:\s-]*(0[1-9]|1[0-2])\s*[/]\s*(20\d{2})/i);
+  if(comPrefixo)return `${comPrefixo[1]}/${comPrefixo[2]}`;
+  // 3) MM/AAAA isolado (não precedido de dígito, evitando DD.MM.AAAA).
+  const isolado=n.match(/(?<!\d)(?:0[1-9]|1[0-2])\s*[/]\s*(20\d{2})(?!\d)/);
+  if(isolado)return `${isolado[0].slice(0,2)}/${isolado[2]}`;
+  return null;
+}
+
+// BASF: competência confiável é a "Data de Crédito" do rodapé (último dia do mês).
+// Cobre inclusive recibos de 13º/adiantamento com ano truncado em "Pagamento Referente".
+function competenciaBasf(ls: Linha[]): string | null {
+  for(let i=0;i<ls.length;i++){
+    const rotulo=norm(ls[i].texto).replace(/\s+/g,"");
+    if(!rotulo.includes("datadecredito"))continue;
+    const valor=ls[i+1]?.texto??"";
+    const m=valor.match(/\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/);
+    if(m)return `${m[2].padStart(2,"0")}/${m[3]}`;
   }
   return null;
 }
@@ -171,7 +192,7 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;
     liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
   }
-  return{competencia:competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
+  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
 }
 
 function consolidar(paginas:Contra[]) {
