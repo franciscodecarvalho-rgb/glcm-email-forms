@@ -101,7 +101,12 @@ export default function Caso() {
       contrachequesPersistidos,
       itensPersistidos,
     );
-    const contrachequesEstruturados = contrachequesRelacionaisParaRevisao(contrachequesRelacionados);
+    const contrachequesEstruturados = ordenarPorCompetencia(
+      contrachequesRelacionaisParaRevisao(contrachequesRelacionados).map((contracheque) => ({
+        ...contracheque,
+        competencia: contracheque.label,
+      })),
+    ).map(({ competencia: _competencia, ...contracheque }) => contracheque);
     setCaso({
       ...(data as unknown as CasoData),
       contracheques: contrachequesEstruturados,
