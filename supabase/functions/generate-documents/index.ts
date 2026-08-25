@@ -807,6 +807,50 @@ ${resumoMerges}
   };
 }
 
+// ---------------- contracheques relacionais -> JSON de geração ----------------
+// Monta o array { label, valor_hra, valor_ahra } a partir das tabelas relacionais
+// (contracheques + itens_contracheque), mesmo cálculo do frontend
+// (src/lib/contracheques-relacionais.ts). Independe do JSON legado casos.contracheques,
+// que o fluxo de upload (process-contracheques-pdf) não atualiza.
+type ContrachequeRelacional = { id: string; competencia?: string | null; arquivo_origem?: string | null };
+type ItemContrachequeRelacional = {
+  contracheque_id?: string | null;
+  valor?: number | null;
+  tipo?: string | null;
+  familia_hra?: string | null;
+};
+
+function valorComSinal(item: ItemContrachequeRelacional): number {
+  const magnitude = Math.abs(Number(item.valor) || 0);
+  return item.tipo === "desconto" ? -magnitude : magnitude;
+}
+
+function montarContrasRelacionais(
+  contracheques: ContrachequeRelacional[] | null | undefined,
+  itens: ItemContrachequeRelacional[] | null | undefined,
+): Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> {
+  return (contracheques ?? []).map((contracheque, index) => {
+    const itensDoContra = (itens ?? []).filter(
+      (item) => item.contracheque_id === contracheque.id,
+    );
+    const valorAhra = itensDoContra
+      .filter((item) => item.familia_hra === "ahra_dobra")
+      .reduce((total, item) => total + valorComSinal(item), 0);
+    const valorHra = itensDoContra
+      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra")
+      .reduce((total, item) => total + valorComSinal(item), 0);
+    return {
+      id: contracheque.id,
+      label:
+        contracheque.competencia ||
+        contracheque.arquivo_origem ||
+        `Contracheque ${index + 1}`,
+      valor_hra: valorHra,
+      valor_ahra: valorAhra,
+    };
+  });
+}
+
 // ---------------- função principal ----------------
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -855,7 +899,31 @@ Deno.serve(async (req) => {
       throw new Error("Nenhum template configurado. Acesse /templates para enviar os modelos .docx.");
     }
 
-    const contras: any[] = Array.isArray(caso.contracheques) ? caso.contracheques : [];
+    // Fonte de verdade: tabelas relacionais (contracheques + itens_contracheque).
+    // O JSON legado casos.contracheques não é atualizado pelo fluxo de upload
+    // (process-contracheques-pdf), então usar as tabelas relacionais evita a
+    // planilha/petição saírem vazias. O JSON legado é apenas fallback.
+    const { data: contrasRel, error: ccRelErr } = await supabase
+      .from("contracheques")
+      .select("id, competencia, arquivo_origem")
+      .eq("caso_id", caso_id)
+      .order("competencia");
+    if (ccRelErr) throw ccRelErr;
+    const idsContrasRel = (contrasRel ?? []).map((c: ContrachequeRelacional) => c.id);
+    const { data: itensRel, error: itRelErr } = idsContrasRel.length
+      ? await supabase
+          .from("itens_contracheque")
+          .select("contracheque_id, valor, tipo, familia_hra")
+          .in("contracheque_id", idsContrasRel)
+      : { data: [], error: null };
+    if (itRelErr) throw itRelErr;
+
+    const contrasRelacionais = montarContrasRelacionais(contrasRel, itensRel);
+    const contras: Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> = contrasRelacionais.length
+      ? contrasRelacionais
+      : Array.isArray(caso.contracheques)
+        ? (caso.contracheques as Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }>)
+        : [];
     const linhas = contras.map((c) => {
       const hra = Number(c.valor_hra) || 0;
       const ahra = Number(c.valor_ahra) || 0;
