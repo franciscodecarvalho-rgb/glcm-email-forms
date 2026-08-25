@@ -854,7 +854,7 @@ function montarContrasRelacionais(
   contracheques: ContrachequeRelacional[] | null | undefined,
   itens: ItemContrachequeRelacional[] | null | undefined,
 ): Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> {
-  return (contracheques ?? []).map((contracheque, index) => {
+  const linhas = (contracheques ?? []).map((contracheque, index) => {
     const itensDoContra = (itens ?? []).filter(
       (item) => item.contracheque_id === contracheque.id,
     );
@@ -865,16 +865,39 @@ function montarContrasRelacionais(
       .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra")
       .reduce((total, item) => total + valorComSinal(item), 0);
     return {
-      id: contracheque.id,
-      label:
-        contracheque.competencia ||
-        contracheque.arquivo_origem ||
-        `Contracheque ${index + 1}`,
-      valor_hra: valorHra,
-      valor_ahra: valorAhra,
+      competencia: contracheque.competencia || null,
+      linha: {
+        id: contracheque.id,
+        label:
+          contracheque.competencia ||
+          contracheque.arquivo_origem ||
+          `Contracheque ${index + 1}`,
+        valor_hra: valorHra,
+        valor_ahra: valorAhra,
+      },
     };
   });
+
+  // Uma linha por competência (soma HRA/AHRA); sem competência permanece individual.
+  const consolidado: Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> = [];
+  const porCompetencia = new Map<string, { id: string; label: string; valor_hra: number; valor_ahra: number }>();
+  for (const { competencia, linha } of linhas) {
+    if (!competencia) {
+      consolidado.push(linha);
+      continue;
+    }
+    const existente = porCompetencia.get(competencia);
+    if (existente) {
+      existente.valor_hra += linha.valor_hra;
+      existente.valor_ahra += linha.valor_ahra;
+      continue;
+    }
+    porCompetencia.set(competencia, linha);
+    consolidado.push(linha);
+  }
+  return consolidado;
 }
+
 
 // ---------------- função principal ----------------
 Deno.serve(async (req) => {

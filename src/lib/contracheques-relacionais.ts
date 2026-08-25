@@ -49,7 +49,7 @@ function valorComSinal(item: ItemContrachequeRelacional): number {
 export function contrachequesRelacionaisParaRevisao(
   contracheques: ContrachequeRelacional[] | null | undefined,
 ): ContrachequeRevisao[] {
-  return (contracheques ?? []).map((contracheque, index) => {
+  const linhas = (contracheques ?? []).map((contracheque, index) => {
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
       .filter((item) => item.familia_hra === "ahra_dobra")
@@ -59,10 +59,34 @@ export function contrachequesRelacionaisParaRevisao(
       .reduce((total, item) => total + valorComSinal(item), 0);
 
     return {
-      id: contracheque.id,
-      label: contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${index + 1}`,
-      valor_hra: valorHra,
-      valor_ahra: valorAhra,
+      competencia: contracheque.competencia || null,
+      linha: {
+        id: contracheque.id,
+        label: contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${index + 1}`,
+        valor_hra: valorHra,
+        valor_ahra: valorAhra,
+      },
     };
   });
+
+  // Consolida linhas da mesma competência (uma linha por competência),
+  // preservando a ordem de primeira ocorrência. Sem competência = linha própria.
+  const consolidado: ContrachequeRevisao[] = [];
+  const porCompetencia = new Map<string, ContrachequeRevisao>();
+  for (const { competencia, linha } of linhas) {
+    if (!competencia) {
+      consolidado.push(linha);
+      continue;
+    }
+    const existente = porCompetencia.get(competencia);
+    if (existente) {
+      existente.valor_hra += linha.valor_hra;
+      existente.valor_ahra += linha.valor_ahra;
+      continue;
+    }
+    porCompetencia.set(competencia, linha);
+    consolidado.push(linha);
+  }
+  return consolidado;
 }
+

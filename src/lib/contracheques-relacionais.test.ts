@@ -77,3 +77,35 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }]);
   });
 });
+
+describe("consolidação de competências duplicadas", () => {
+  it("soma HRA e AHRA de contracheques da mesma competência em uma única linha", () => {
+    expect(contrachequesRelacionaisParaRevisao([
+      {
+        id: "contra-a",
+        competencia: "09/2024",
+        itens_contracheque: [
+          { familia_hra: "hra", valor: 484.2 },
+          { familia_hra: "ahra_dobra", valor: 10 },
+        ],
+      },
+      {
+        id: "contra-b",
+        competencia: "09/2024",
+        itens_contracheque: [
+          { familia_hra: "hra", valor: 463.36 },
+          { familia_hra: "ahra_dobra", valor: 5 },
+        ],
+      },
+      {
+        id: "contra-c",
+        competencia: null,
+        arquivo_origem: "avulso.pdf",
+        itens_contracheque: [{ familia_hra: "hra", valor: 100 }],
+      },
+    ])).toEqual([
+      { id: "contra-a", label: "09/2024", valor_hra: 947.56, valor_ahra: 15 },
+      { id: "contra-c", label: "avulso.pdf", valor_hra: 100, valor_ahra: 0 },
+    ]);
+  });
+});
