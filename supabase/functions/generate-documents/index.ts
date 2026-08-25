@@ -820,6 +820,31 @@ type ItemContrachequeRelacional = {
   familia_hra?: string | null;
 };
 
+// PostgREST limita cada resposta a 1.000 linhas; casos com muitos contracheques
+// perdem rubricas (inclusive HRA) sem paginação explícita.
+const PAGINA_ITENS = 1000;
+
+async function buscarItensContrachequePaginado(
+  client: any,
+  contrachequeIds: string[],
+): Promise<ItemContrachequeRelacional[]> {
+  if (!contrachequeIds.length) return [];
+  const todos: ItemContrachequeRelacional[] = [];
+  for (let inicio = 0; ; inicio += PAGINA_ITENS) {
+    const { data, error } = await client
+      .from("itens_contracheque")
+      .select("contracheque_id, valor, tipo, familia_hra")
+      .in("contracheque_id", contrachequeIds)
+      .order("id", { ascending: true })
+      .range(inicio, inicio + PAGINA_ITENS - 1);
+    if (error) throw error;
+    const pagina = data ?? [];
+    todos.push(...pagina);
+    if (pagina.length < PAGINA_ITENS) break;
+  }
+  return todos;
+}
+
 function valorComSinal(item: ItemContrachequeRelacional): number {
   const magnitude = Math.abs(Number(item.valor) || 0);
   return item.tipo === "desconto" ? -magnitude : magnitude;
