@@ -910,13 +910,7 @@ Deno.serve(async (req) => {
       .order("competencia");
     if (ccRelErr) throw ccRelErr;
     const idsContrasRel = (contrasRel ?? []).map((c: ContrachequeRelacional) => c.id);
-    const { data: itensRel, error: itRelErr } = idsContrasRel.length
-      ? await supabase
-          .from("itens_contracheque")
-          .select("contracheque_id, valor, tipo, familia_hra")
-          .in("contracheque_id", idsContrasRel)
-      : { data: [], error: null };
-    if (itRelErr) throw itRelErr;
+    const itensRel = await buscarItensContrachequePaginado(supabase, idsContrasRel);
 
     const contrasRelacionais = montarContrasRelacionais(contrasRel, itensRel);
     const contras: Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> = contrasRelacionais.length
