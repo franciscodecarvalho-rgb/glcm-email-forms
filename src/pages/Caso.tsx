@@ -22,6 +22,7 @@ import {
 } from "@/lib/contracheques-relacionais";
 import { encontrarRubricasAlerta, encontrarRubricasSemIr } from "@/lib/alertas-rubricas";
 import { dadosEsperadosForamExtraidos } from "@/lib/dados-extraidos";
+import { ordenarPorCompetencia } from "@/lib/planilha-xlsx";
 
 export type CasoData = {
   id: string;
