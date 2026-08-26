@@ -1186,13 +1186,21 @@ Deno.serve(async (req) => {
     }
 
     // Planilha de cálculo: .xlsx com fórmulas (sempre, sem template).
+    // Para a ação de contribuição extraordinária a planilha é exclusiva
+    // (rubricas familia_hra = "contrib_extra"); a planilha HRA não é gerada.
+    const ehContribExtra = caso.tipo_acao === "contribuicao_extraordinaria";
     {
       const linhasXlsx: LinhaPlanilha[] = contras.map((c: any) => ({
         competencia: c.label ?? "",
         hra: Number(c.valor_hra) || 0,
         ahra: Number(c.valor_ahra) || 0,
       }));
-      const partes = montarArquivosPlanilhaXlsx(caso.nome_cliente ?? "", linhasXlsx);
+      const partes = ehContribExtra
+        ? montarArquivosPlanilhaContribExtraXlsx(
+            caso.nome_cliente ?? "",
+            agregarContribExtraPorCompetencia(contrasRel, itensRel),
+          )
+        : montarArquivosPlanilhaXlsx(caso.nome_cliente ?? "", linhasXlsx);
       const zipPl = new PizZip();
       for (const [caminho, conteudo] of Object.entries(partes)) zipPl.file(caminho, conteudo);
       const outPl: Uint8Array = zipPl.generate({ type: "uint8array" });
