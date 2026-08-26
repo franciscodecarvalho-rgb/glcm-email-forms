@@ -47,18 +47,16 @@ async function aguardarConclusaoLote(casoId: string, loteId: string): Promise<vo
   let ultimoErroConsulta: unknown = null;
 
   while (Date.now() < limite) {
+    let lote: StatusLote | null = null;
     try {
-      const lote = await consultarStatusLote(casoId, loteId);
+      lote = await consultarStatusLote(casoId, loteId);
       ultimoErroConsulta = null;
-      if (lote.status === "concluido") return;
-      if (lote.status === "erro") throw new Error(lote.erro || "Falha ao processar o lote");
-      if (lote.status !== "processando") throw new Error(`Lote em estado inesperado: ${lote.status}`);
     } catch (error) {
-      if (error instanceof Error && (error.message.startsWith("Falha ao processar") || error.message.startsWith("Lote em estado"))) {
-        throw error;
-      }
       ultimoErroConsulta = error;
     }
+    if (lote?.status === "concluido") return;
+    if (lote?.status === "erro") throw new Error(lote.erro || "Falha ao processar o lote");
+    if (lote && lote.status !== "processando") throw new Error(`Lote em estado inesperado: ${lote.status}`);
     await esperar(INTERVALO_POLLING_LOTE_MS);
   }
 
@@ -77,10 +75,13 @@ async function processarLoteComRetomada(casoId: string, loteId: string): Promise
   }
   if (statusAtual.status === "erro") throw new Error(statusAtual.erro || "Falha ao processar o lote");
 
-  const { error } = await supabase.functions.invoke("process-contracheques-pdf", {
+  const { data, error } = await supabase.functions.invoke("process-contracheques-pdf", {
     body: { caso_id: casoId, acao: "processar_lote", lote_id: loteId },
   });
-  if (!error) return;
+  if (!error) {
+    if (data?.em_processamento) await aguardarConclusaoLote(casoId, loteId);
+    return;
+  }
 
   // A conexão pode fechar antes da resposta embora a função continue e conclua
   // no backend. Nunca redispara: acompanha exclusivamente o estado persistido.
