@@ -163,7 +163,12 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   let totalDescontos: number | null = null;
   let liquido: number | null = null;
 
+  let antesDoCabecalho = cabecalho != null;
   for (const linha of linhas) {
+    if (antesDoCabecalho) {
+      if (linha === cabecalho) antesDoCabecalho = false;
+      continue;
+    }
     const n = normalizar(linha.texto);
     if (/base\s*\/\s*outros|custo\s+empresa.*informativo/.test(n)) informativo = true;
     if (/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)) { totalProventos = totalNaLinha(linha); secao = "desconto"; continue; }
