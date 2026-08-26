@@ -164,6 +164,12 @@ function familia(codigo: string, descricao: string, modeloOrigem: string) {
   // Unigel: "015 — Hrs/Horas de Repouso e Alimentação". O cabeçalho Unigel nem sempre é
   // detectado, então classificamos pelo par código + descrição, como na Braskem.
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
+  // Petrobras: contribuição extraordinária PPSP (aceita pontuação e sufixo PPSP-R).
+  // Só vale para o par código + nomenclatura PPSP, e apenas no modelo petrobras.
+  if(modeloOrigem==="petrobras"){
+    if(codigoNormalizado==="1489"&&/contrib\W*extra\W*ppsp/.test(n))return "contrib_extra";
+    if(["6050","6060","6070"].includes(codigoNormalizado)&&/contrib\W*extraordinaria\W*ppsp/.test(n))return "contrib_extra";
+  }
   if(!/hra/.test(n))return null;
 
   if(/\bdif/.test(n)||/\bdi\b/.test(n))return "dif_ahra";

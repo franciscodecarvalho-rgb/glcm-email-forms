@@ -259,6 +259,63 @@ const nm = (ref: string, v: number, estilo = 0) =>
 const fx = (ref: string, formula: string, cache: number, estilo = 0) =>
   `<c r="${ref}"${estilo ? ` s="${estilo}"` : ""}><f>${escXml(formula)}</f><v>${numCell(cache)}</v></c>`;
 
+const ESTILOS_PLANILHA_XLSX = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="2">
+<numFmt numFmtId="164" formatCode="#,##0.00"/>
+<numFmt numFmtId="165" formatCode="0.00%"/>
+</numFmts>
+<fonts count="6">
+<font><sz val="11"/><name val="Arial"/></font>
+<font><b/><sz val="11"/><name val="Arial"/></font>
+<font><b/><sz val="14"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
+<font><b/><sz val="10"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
+<font><sz val="10"/><name val="Arial"/></font>
+<font><b/><sz val="10"/><name val="Arial"/></font>
+</fonts>
+<fills count="5">
+<fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF2B5B84"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/></patternFill></fill>
+</fills>
+<borders count="4">
+<border><left/><right/><top/><bottom/><diagonal/></border>
+<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>
+<border><left style="thick"><color auto="1"/></left><right style="thick"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="thick"><color auto="1"/></bottom><diagonal/></border>
+<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellStyleXfs>
+<cellXfs count="11">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="0" fontId="2" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center" wrapText="1"/>
+</xf>
+<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center"/>
+</xf>
+<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center"/>
+</xf>
+<xf numFmtId="164" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="right" vertical="center"/>
+</xf>
+<xf numFmtId="165" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="right" vertical="center"/>
+</xf>
+<xf numFmtId="0" fontId="5" fillId="4" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="center" vertical="center"/>
+</xf>
+<xf numFmtId="164" fontId="5" fillId="4" borderId="3" xfId="0" applyFont="1" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1">
+  <alignment horizontal="right" vertical="center"/>
+</xf>
+</cellXfs>
+</styleSheet>`;
+
 function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]): Record<string, string> {
   // Planilha não pode ser alimentada com linhas de valores zerados.
   const naoNulas = linhas.filter((l) => l.hra !== 0 || l.ahra !== 0);
@@ -331,62 +388,7 @@ ${cols}
 </worksheet>`;
 
 
-  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="2">
-<numFmt numFmtId="164" formatCode="#,##0.00"/>
-<numFmt numFmtId="165" formatCode="0.00%"/>
-</numFmts>
-<fonts count="6">
-<font><sz val="11"/><name val="Arial"/></font>
-<font><b/><sz val="11"/><name val="Arial"/></font>
-<font><b/><sz val="14"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
-<font><b/><sz val="10"/><name val="Arial"/><color rgb="FFFFFFFF"/></font>
-<font><sz val="10"/><name val="Arial"/></font>
-<font><b/><sz val="10"/><name val="Arial"/></font>
-</fonts>
-<fills count="5">
-<fill><patternFill patternType="none"/></fill>
-<fill><patternFill patternType="gray125"/></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF2B5B84"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/></patternFill></fill>
-</fills>
-<borders count="4">
-<border><left/><right/><top/><bottom/><diagonal/></border>
-<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>
-<border><left style="thick"><color auto="1"/></left><right style="thick"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="thick"><color auto="1"/></bottom><diagonal/></border>
-<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>
-</borders>
-<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellStyleXfs>
-<cellXfs count="11">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
-<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
-<xf numFmtId="0" fontId="2" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="center" vertical="center" wrapText="1"/>
-</xf>
-<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="center" vertical="center"/>
-</xf>
-<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="center" vertical="center"/>
-</xf>
-<xf numFmtId="164" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="right" vertical="center"/>
-</xf>
-<xf numFmtId="165" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="right" vertical="center"/>
-</xf>
-<xf numFmtId="0" fontId="5" fillId="4" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="center" vertical="center"/>
-</xf>
-<xf numFmtId="164" fontId="5" fillId="4" borderId="3" xfId="0" applyFont="1" applyNumberFormat="1" applyFill="1" applyBorder="1" applyAlignment="1">
-  <alignment horizontal="right" vertical="center"/>
-</xf>
-</cellXfs>
-</styleSheet>`;
+  const styles = ESTILOS_PLANILHA_XLSX;
 
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -419,6 +421,134 @@ ${cols}
     "xl/workbook.xml": workbook,
     "xl/_rels/workbook.xml.rels": workbookRels,
     "xl/styles.xml": styles,
+    "xl/worksheets/sheet1.xml": sheet,
+  };
+}
+
+// ---------------- planilha Contribuição Extraordinária (Petrobras) ----------------
+// Agrega, por competência, as rubricas classificadas como familia_hra
+// "contrib_extra". Descontos entram pelo valor absoluto (a contribuição é
+// descontada em folha), e competências sem valor não geram linha.
+type LinhaContribExtra = { competencia: string; valor: number };
+type ContrachequeParaContribExtra = {
+  id: string;
+  competencia?: string | null;
+  arquivo_origem?: string | null;
+};
+type ItemParaContribExtra = {
+  contracheque_id?: string | null;
+  valor?: number | null;
+  familia_hra?: string | null;
+};
+
+function agregarContribExtraPorCompetencia(
+  contracheques: ContrachequeParaContribExtra[] | null | undefined,
+  itens: ItemParaContribExtra[] | null | undefined,
+): LinhaContribExtra[] {
+  const totais = new Map<string, number>();
+  const ordem: string[] = [];
+  (contracheques ?? []).forEach((contracheque, indice) => {
+    const label =
+      contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${indice + 1}`;
+    const soma = (itens ?? [])
+      .filter(
+        (item) =>
+          item.contracheque_id === contracheque.id && item.familia_hra === "contrib_extra",
+      )
+      .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
+    if (soma <= 0) return;
+    if (!totais.has(label)) ordem.push(label);
+    totais.set(label, (totais.get(label) ?? 0) + soma);
+  });
+  return ordenarPorCompetencia(
+    ordem.map((competencia) => ({ competencia, valor: totais.get(competencia) ?? 0 })),
+  );
+}
+
+function montarArquivosPlanilhaContribExtraXlsx(
+  nomeCliente: string,
+  linhas: LinhaContribExtra[],
+): Record<string, string> {
+  const ordenadas = ordenarPorCompetencia((linhas ?? []).filter((l) => l.valor !== 0));
+  const rows: string[] = [];
+  rows.push(
+    `<row r="1" ht="30" customHeight="1"><c r="B1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA`)}</t></is></c></row>`,
+  );
+  rows.push(
+    `<row r="2" ht="18" customHeight="1">${["P. A.", "CONTR. EXTRAORDINÁRIA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
+      .map((t, i) => tx(`${"BCDE"[i]}2`, t, 5))
+      .join("")}</row>`,
+  );
+
+  let r = 3;
+  for (const l of ordenadas) {
+    rows.push(
+      `<row r="${r}">` +
+        tx(`B${r}`, l.competencia, 6) +
+        nm(`C${r}`, l.valor, 7) +
+        `<c r="D${r}" s="8"><v>0.275</v></c>` +
+        fx(`E${r}`, `ROUND(C${r}*0.275,2)`, Math.round(l.valor * 0.275 * 100) / 100, 7) +
+        `</row>`,
+    );
+    r++;
+  }
+
+  const primeira = 3;
+  const ultima = r - 1;
+  if (ordenadas.length > 0) {
+    rows.push(
+      `<row r="${r}">` +
+        empty(`B${r}`, 9) +
+        empty(`C${r}`, 9) +
+        tx(`D${r}`, "VALOR (HISTÓRICO)", 9) +
+        fx(
+          `E${r}`,
+          `SUM(E${primeira}:E${ultima})`,
+          ordenadas.reduce((s, l) => s + Math.round(l.valor * 0.275 * 100) / 100, 0),
+          10,
+        ) +
+        `</row>`,
+    );
+  }
+
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<cols><col min="1" max="1" width="4" customWidth="1"/><col min="2" max="2" width="15" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
+<sheetData>${rows.join("")}</sheetData>
+<mergeCells count="1"><mergeCell ref="B1:E1"/></mergeCells>
+</worksheet>`;
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Plan1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+
+  const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  return {
+    "[Content_Types].xml": contentTypes,
+    "_rels/.rels": rels,
+    "xl/workbook.xml": workbook,
+    "xl/_rels/workbook.xml.rels": workbookRels,
+    "xl/styles.xml": ESTILOS_PLANILHA_XLSX,
     "xl/worksheets/sheet1.xml": sheet,
   };
 }
@@ -1056,19 +1186,29 @@ Deno.serve(async (req) => {
     }
 
     // Planilha de cálculo: .xlsx com fórmulas (sempre, sem template).
+    // Para a ação de contribuição extraordinária a planilha é exclusiva
+    // (rubricas familia_hra = "contrib_extra"); a planilha HRA não é gerada.
+    const ehContribExtra = caso.tipo_acao === "contribuicao_extraordinaria";
     {
       const linhasXlsx: LinhaPlanilha[] = contras.map((c: any) => ({
         competencia: c.label ?? "",
         hra: Number(c.valor_hra) || 0,
         ahra: Number(c.valor_ahra) || 0,
       }));
-      const partes = montarArquivosPlanilhaXlsx(caso.nome_cliente ?? "", linhasXlsx);
+      const partes = ehContribExtra
+        ? montarArquivosPlanilhaContribExtraXlsx(
+            caso.nome_cliente ?? "",
+            agregarContribExtraPorCompetencia(contrasRel, itensRel),
+          )
+        : montarArquivosPlanilhaXlsx(caso.nome_cliente ?? "", linhasXlsx);
       const zipPl = new PizZip();
       for (const [caminho, conteudo] of Object.entries(partes)) zipPl.file(caminho, conteudo);
       const outPl: Uint8Array = zipPl.generate({ type: "uint8array" });
       // Nome de exibição/download no padrão solicitado; a chave do Storage
       // permanece sanitizada (convenção de src/lib/storage.ts).
-      const nomePl = `PLANILHA — ${caso.nome_cliente ?? ""} — IR SOBRE HRA.xlsx`;
+      const nomePl = ehContribExtra
+        ? `PLANILHA — ${caso.nome_cliente ?? ""} — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA.xlsx`
+        : `PLANILHA — ${caso.nome_cliente ?? ""} — IR SOBRE HRA.xlsx`;
       const chavePl = `planilha-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
       const pathPl = `${caso.id}/${chavePl}`;
       const { error: upPlErr } = await supabase.storage

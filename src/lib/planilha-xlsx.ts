@@ -34,62 +34,7 @@ const nm = (ref: string, v: number, estilo = 0) =>
 const fx = (ref: string, formula: string, cache: number, estilo = 0) =>
   `<c r="${ref}"${estilo ? ` s="${estilo}"` : ""}><f>${escXml(formula)}</f><v>${numCell(cache)}</v></c>`;
 
-export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]): Record<string, string> {
-  // Planilha não pode ser alimentada com linhas de valores zerados.
-  const naoNulas = linhas.filter((l) => l.hra !== 0 || l.ahra !== 0);
-  const ordenadas = ordenarPorCompetencia(naoNulas);
-  const rows: string[] = [];
-  rows.push(
-    `<row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — TEMA 306 (HRA)`)}</t></is></c></row>`,
-  );
-  rows.push(
-    `<row r="2" ht="18" customHeight="1">${["P. A.", "HRA", "AHRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
-      .map((t, i) => tx(`${"ABCDE"[i]}2`, t, 5))
-      .join("")}</row>`,
-  );
-
-  let r = 3;
-  for (const l of ordenadas) {
-    const sub = l.hra + l.ahra;
-    rows.push(
-      `<row r="${r}">` +
-        tx(`A${r}`, l.competencia, 6) +
-        nm(`B${r}`, l.hra, 7) +
-        nm(`C${r}`, l.ahra, 7) +
-        `<c r="D${r}" s="8"><v>0.275</v></c>` +
-        fx(`E${r}`, `ROUND((B${r}+C${r})*0.275,2)`, Math.round(sub * 0.275 * 100) / 100, 7) +
-        `</row>`,
-    );
-    r++;
-  }
-
-  const primeira = 3;
-  const ultima = r - 1;
-  if (ordenadas.length > 0) {
-    rows.push(
-      `<row r="${r}">` +
-        empty(`A${r}`, 9) +
-        empty(`B${r}`, 9) +
-        empty(`C${r}`, 9) +
-        tx(`D${r}`, "VALOR (HISTÓRICO)", 9) +
-        fx(
-          `E${r}`,
-          `SUM(E${primeira}:E${ultima})`,
-          ordenadas.reduce((s, l) => s + Math.round((l.hra + l.ahra) * 0.275 * 100) / 100, 0),
-          10,
-        ) +
-        `</row>`,
-    );
-  }
-
-  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
-<sheetData>${rows.join("")}</sheetData>
-<mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
-</worksheet>`;
-
-  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+export const ESTILOS_PLANILHA_XLSX = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="2">
 <numFmt numFmtId="164" formatCode="#,##0.00"/>
@@ -146,6 +91,63 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
 </cellXfs>
 </styleSheet>`;
 
+export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]): Record<string, string> {
+  // Planilha não pode ser alimentada com linhas de valores zerados.
+  const naoNulas = linhas.filter((l) => l.hra !== 0 || l.ahra !== 0);
+  const ordenadas = ordenarPorCompetencia(naoNulas);
+  const rows: string[] = [];
+  rows.push(
+    `<row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — TEMA 306 (HRA)`)}</t></is></c></row>`,
+  );
+  rows.push(
+    `<row r="2" ht="18" customHeight="1">${["P. A.", "HRA", "AHRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
+      .map((t, i) => tx(`${"ABCDE"[i]}2`, t, 5))
+      .join("")}</row>`,
+  );
+
+  let r = 3;
+  for (const l of ordenadas) {
+    const sub = l.hra + l.ahra;
+    rows.push(
+      `<row r="${r}">` +
+        tx(`A${r}`, l.competencia, 6) +
+        nm(`B${r}`, l.hra, 7) +
+        nm(`C${r}`, l.ahra, 7) +
+        `<c r="D${r}" s="8"><v>0.275</v></c>` +
+        fx(`E${r}`, `ROUND((B${r}+C${r})*0.275,2)`, Math.round(sub * 0.275 * 100) / 100, 7) +
+        `</row>`,
+    );
+    r++;
+  }
+
+  const primeira = 3;
+  const ultima = r - 1;
+  if (ordenadas.length > 0) {
+    rows.push(
+      `<row r="${r}">` +
+        empty(`A${r}`, 9) +
+        empty(`B${r}`, 9) +
+        empty(`C${r}`, 9) +
+        tx(`D${r}`, "VALOR (HISTÓRICO)", 9) +
+        fx(
+          `E${r}`,
+          `SUM(E${primeira}:E${ultima})`,
+          ordenadas.reduce((s, l) => s + Math.round((l.hra + l.ahra) * 0.275 * 100) / 100, 0),
+          10,
+        ) +
+        `</row>`,
+    );
+  }
+
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
+<sheetData>${rows.join("")}</sheetData>
+<mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
+</worksheet>`;
+
+  const styles = ESTILOS_PLANILHA_XLSX;
+
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <sheets><sheet name="TEMA 306" sheetId="1" r:id="rId1"/></sheets>
@@ -177,6 +179,134 @@ export function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPla
     "xl/workbook.xml": workbook,
     "xl/_rels/workbook.xml.rels": workbookRels,
     "xl/styles.xml": styles,
+    "xl/worksheets/sheet1.xml": sheet,
+  };
+}
+
+// ---------------- planilha Contribuição Extraordinária (Petrobras) ----------------
+// Agrega, por competência, as rubricas classificadas como familia_hra
+// "contrib_extra". Descontos entram pelo valor absoluto (a contribuição é
+// descontada em folha), e competências sem valor não geram linha.
+export type LinhaContribExtra = { competencia: string; valor: number };
+export type ContrachequeParaContribExtra = {
+  id: string;
+  competencia?: string | null;
+  arquivo_origem?: string | null;
+};
+export type ItemParaContribExtra = {
+  contracheque_id?: string | null;
+  valor?: number | null;
+  familia_hra?: string | null;
+};
+
+export function agregarContribExtraPorCompetencia(
+  contracheques: ContrachequeParaContribExtra[] | null | undefined,
+  itens: ItemParaContribExtra[] | null | undefined,
+): LinhaContribExtra[] {
+  const totais = new Map<string, number>();
+  const ordem: string[] = [];
+  (contracheques ?? []).forEach((contracheque, indice) => {
+    const label =
+      contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${indice + 1}`;
+    const soma = (itens ?? [])
+      .filter(
+        (item) =>
+          item.contracheque_id === contracheque.id && item.familia_hra === "contrib_extra",
+      )
+      .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
+    if (soma <= 0) return;
+    if (!totais.has(label)) ordem.push(label);
+    totais.set(label, (totais.get(label) ?? 0) + soma);
+  });
+  return ordenarPorCompetencia(
+    ordem.map((competencia) => ({ competencia, valor: totais.get(competencia) ?? 0 })),
+  );
+}
+
+export function montarArquivosPlanilhaContribExtraXlsx(
+  nomeCliente: string,
+  linhas: LinhaContribExtra[],
+): Record<string, string> {
+  const ordenadas = ordenarPorCompetencia((linhas ?? []).filter((l) => l.valor !== 0));
+  const rows: string[] = [];
+  rows.push(
+    `<row r="1" ht="30" customHeight="1"><c r="B1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA`)}</t></is></c></row>`,
+  );
+  rows.push(
+    `<row r="2" ht="18" customHeight="1">${["P. A.", "CONTR. EXTRAORDINÁRIA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
+      .map((t, i) => tx(`${"BCDE"[i]}2`, t, 5))
+      .join("")}</row>`,
+  );
+
+  let r = 3;
+  for (const l of ordenadas) {
+    rows.push(
+      `<row r="${r}">` +
+        tx(`B${r}`, l.competencia, 6) +
+        nm(`C${r}`, l.valor, 7) +
+        `<c r="D${r}" s="8"><v>0.275</v></c>` +
+        fx(`E${r}`, `ROUND(C${r}*0.275,2)`, Math.round(l.valor * 0.275 * 100) / 100, 7) +
+        `</row>`,
+    );
+    r++;
+  }
+
+  const primeira = 3;
+  const ultima = r - 1;
+  if (ordenadas.length > 0) {
+    rows.push(
+      `<row r="${r}">` +
+        empty(`B${r}`, 9) +
+        empty(`C${r}`, 9) +
+        tx(`D${r}`, "VALOR (HISTÓRICO)", 9) +
+        fx(
+          `E${r}`,
+          `SUM(E${primeira}:E${ultima})`,
+          ordenadas.reduce((s, l) => s + Math.round(l.valor * 0.275 * 100) / 100, 0),
+          10,
+        ) +
+        `</row>`,
+    );
+  }
+
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<cols><col min="1" max="1" width="4" customWidth="1"/><col min="2" max="2" width="15" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
+<sheetData>${rows.join("")}</sheetData>
+<mergeCells count="1"><mergeCell ref="B1:E1"/></mergeCells>
+</worksheet>`;
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Plan1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+
+  const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  return {
+    "[Content_Types].xml": contentTypes,
+    "_rels/.rels": rels,
+    "xl/workbook.xml": workbook,
+    "xl/_rels/workbook.xml.rels": workbookRels,
+    "xl/styles.xml": ESTILOS_PLANILHA_XLSX,
     "xl/worksheets/sheet1.xml": sheet,
   };
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   agregarBancoHorasPorCompetencia,
+  agregarContribExtraPorCompetencia,
   montarArquivosPlanilhaBancoHorasXlsx,
+  montarArquivosPlanilhaContribExtraXlsx,
   montarArquivosPlanilhaXlsx,
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
@@ -319,5 +321,40 @@ describe("planilha Banco de Horas (1513)", () => {
     expect(resumo).toContain("CUSTAS");
     expect(resumo).toContain("TOTAL DEVIDO");
     expect(resumo).toMatch(/F13\+F16\+F14\+F15/);
+  });
+});
+describe("planilha IR sobre Contribuição Extraordinária", () => {
+  const contracheques = [
+    { id: "a", competencia: "03/2024" },
+    { id: "b", competencia: "01/2024" },
+  ];
+  const itens = [
+    { contracheque_id: "a", valor: -100.5, familia_hra: "contrib_extra" },
+    { contracheque_id: "a", valor: 50, familia_hra: "contrib_extra" },
+    { contracheque_id: "a", valor: 900, familia_hra: "hra" },
+    { contracheque_id: "b", valor: -200, familia_hra: "contrib_extra" },
+    { contracheque_id: "b", valor: 10, familia_hra: null },
+  ];
+
+  it("agrega por competência usando valor absoluto e ordem cronológica", () => {
+    expect(agregarContribExtraPorCompetencia(contracheques, itens)).toEqual([
+      { competencia: "01/2024", valor: 200 },
+      { competencia: "03/2024", valor: 150.5 },
+    ]);
+  });
+
+  it("monta a planilha em B:E com aba Plan1, título mesclado e IR de 27,5%", () => {
+    const arquivos = montarArquivosPlanilhaContribExtraXlsx(
+      "FULANO",
+      agregarContribExtraPorCompetencia(contracheques, itens),
+    );
+    const sheet = arquivos["xl/worksheets/sheet1.xml"];
+    expect(arquivos["xl/workbook.xml"]).toContain('name="Plan1"');
+    expect(sheet).toContain("PLANILHA — FULANO — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA");
+    expect(sheet).toContain('<mergeCell ref="B1:E1"/>');
+    expect(sheet).toContain("CONTR. EXTRAORDINÁRIA");
+    expect(sheet).toContain("ROUND(C3*0.275,2)");
+    expect(sheet).toContain("SUM(E3:E4)");
+    expect(sheet).toContain('<c r="B3" t="inlineStr" s="6"><is><t xml:space="preserve">01/2024');
   });
 });

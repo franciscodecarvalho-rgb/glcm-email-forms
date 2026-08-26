@@ -58,8 +58,8 @@ describe("encontrarRubricasAlerta", () => {
     expect(alertas.map((a) => a.codigo)).toEqual(["7777"]);
   });
 
-  it("a lista padrão é 1059, 1513, 6050", () => {
-    expect(CODIGOS_ALERTA).toEqual(["1059", "1513", "6050"]);
+  it("a lista padrão é 1059, 1513, 1489, 6050, 6060 e 6070", () => {
+    expect(CODIGOS_ALERTA).toEqual(["1059", "1513", "1489", "6050", "6060", "6070"]);
   });
 });
 
