@@ -1,11 +1,12 @@
 // Sinalização de rubricas monitoradas nos contracheques do caso.
 // Regra confirmada: alertar o usuário quando houver os códigos
-// 1059, 1513 ou 6050 (solicitação da Ana; relatório e viabilidade removidos do escopo).
+// 1059, 1513 (solicitação da Ana; relatório e viabilidade removidos do escopo)
+// e as contribuições extraordinárias PPSP 1489, 6050, 6060 e 6070.
 
 import type { ContrachequeRelacional } from "./contracheques-relacionais";
 import { classificarRubrica } from "./hra-catalog";
 
-export const CODIGOS_ALERTA = ["1059", "1513", "6050"] as const;
+export const CODIGOS_ALERTA = ["1059", "1513", "1489", "6050", "6060", "6070"] as const;
 
 export type RubricaAlertada = {
   codigo: string;
