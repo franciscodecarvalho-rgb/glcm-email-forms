@@ -3,6 +3,8 @@ import { PDFDocument } from "pdf-lib";
 import {
   unificarPdfs,
   competenciaDoArquivo,
+  competenciasPorPagina,
+  agruparPaginasPorCompetencia,
   ordenarPorCompetencia,
   type TextItemPdf,
   unificarPdfsEmLotes,
@@ -30,6 +32,12 @@ vi.mock("pdfjs-dist", () => ({
 async function criarPdf(paginas: number, nome: string, tamanho?: [number, number]) {
   const pdf = await PDFDocument.create();
   for (let i = 0; i < paginas; i++) pdf.addPage(tamanho ?? [595.28, 841.89]);
+  return new File([(await pdf.save()) as BlobPart], nome, { type: "application/pdf" });
+}
+
+async function criarPdfComTamanhos(tamanhos: [number, number][], nome: string) {
+  const pdf = await PDFDocument.create();
+  for (const tamanho of tamanhos) pdf.addPage(tamanho);
   return new File([(await pdf.save()) as BlobPart], nome, { type: "application/pdf" });
 }
 
@@ -107,6 +115,44 @@ describe("unificarPdfs", () => {
     await expect(unificarPdfs([])).rejects.toThrow("Nenhum contracheque");
   });
 
+  it("mantém a ordem cronológica quando um arquivo mistura páginas de duas competências", async () => {
+    // Reproduz o caso real da BASF: um único PDF pode trazer o adiantamento
+    // quinzenal e o recibo integral de um mês junto com o adiantamento do mês
+    // seguinte (ex.: setembro/setembro/outubro/outubro no mesmo arquivo).
+    // Tratar o arquivo inteiro pela competência da primeira página arrastaria
+    // as páginas de outubro para antes do arquivo de setembro seguinte.
+    pdfjsMocks.getDocument
+      .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([
+          paginaComMesAno("09/2026"),
+          paginaComMesAno("09/2026"),
+          paginaComMesAno("10/2026"),
+          paginaComMesAno("10/2026"),
+        ])),
+      }))
+      .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([paginaComMesAno("09/2026")])),
+      }))
+      .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([paginaComMesAno("11/2026")])),
+      }));
+
+    const setembroEOutubro = await criarPdfComTamanhos(
+      [[50, 50], [60, 60], [70, 70], [80, 80]],
+      "setembro-e-outubro.pdf",
+    );
+    const setembro = await criarPdfComTamanhos([[90, 90]], "setembro.pdf");
+    const novembro = await criarPdfComTamanhos([[100, 100]], "novembro.pdf");
+
+    const unificado = await unificarPdfs([setembroEOutubro, setembro, novembro]);
+    const resultado = await PDFDocument.load(await lerArquivo(unificado));
+    const larguras = Array.from({ length: resultado.getPageCount() }, (_, i) =>
+      Math.round(resultado.getPage(i).getSize().width),
+    );
+
+    expect(larguras).toEqual([50, 60, 90, 70, 80, 100]);
+  });
+
   it("descriptografa a origem antes de copiar suas páginas", async () => {
     const arquivo = await criarPdf(1, "criptografado.pdf");
     const carregarPdf = PDFDocument.load.bind(PDFDocument);
@@ -146,6 +192,34 @@ describe("competenciaDoArquivo", () => {
 
   it("retorna null quando nenhuma página tem competência", () => {
     expect(competenciaDoArquivo([[]])).toBeNull();
+  });
+});
+
+describe("competenciasPorPagina", () => {
+  it("retorna a competência de cada página, mesmo quando diferem entre si", () => {
+    expect(competenciasPorPagina([paginaComMesAno("09/2026"), paginaComMesAno("10/2026"), []])).toEqual([
+      "09/2026",
+      "10/2026",
+      null,
+    ]);
+  });
+});
+
+describe("agruparPaginasPorCompetencia", () => {
+  it("agrupa páginas consecutivas da mesma competência em um único bloco", () => {
+    const blocos = agruparPaginasPorCompetencia(["09/2026", "09/2026", "10/2026", "10/2026"]);
+    expect(blocos).toEqual([
+      { paginaInicio: 1, paginaFim: 2, competencia: "09/2026" },
+      { paginaInicio: 3, paginaFim: 4, competencia: "10/2026" },
+    ]);
+  });
+
+  it("trata página sem competência reconhecida como continuação do bloco anterior", () => {
+    const blocos = agruparPaginasPorCompetencia(["09/2026", null, "10/2026"]);
+    expect(blocos).toEqual([
+      { paginaInicio: 1, paginaFim: 2, competencia: "09/2026" },
+      { paginaInicio: 3, paginaFim: 3, competencia: "10/2026" },
+    ]);
   });
 });
 

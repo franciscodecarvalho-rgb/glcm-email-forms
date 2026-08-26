@@ -281,6 +281,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Em `process-contracheques-pdf`, classificar esses códigos como `hra` somente quando o modelo identificado for, respectivamente, `basf` ou `braskem`.
 **Evitar:** Tornar os códigos globais para outras empresas ou modificar as regras existentes dos demais modelos.
 
+### 2026-08 — Unificação: ordenar por página, não pelo arquivo inteiro
+
+**Regra confirmada:** Um único PDF de contracheque pode conter páginas de mais de uma competência (ex.: a BASF costuma emitir o adiantamento quinzenal e o recibo integral de um mês junto com o adiantamento do mês seguinte no mesmo arquivo). Ordenar a unificação pela competência do arquivo inteiro (só a primeira página) arrasta as páginas do mês seguinte para a posição do primeiro mês, embaralhando a ordem cronológica quando outro arquivo desse primeiro mês é selecionado depois na lista.
+**Origem:** Caso de Nodley com os contracheques BASF de 2022 de JACSON DA ANUNCIACAO NUNES: `out22.pdf` traz 4 páginas (setembro/setembro/outubro/outubro) e, com a lógica antiga, era marcado inteiro como `09/2022`; ao lado de `set22.pdf` (competência real `09/2022`) selecionado depois na ordem alfabética, as páginas de outubro do `out22.pdf` ficavam entre as duas páginas de setembro no PDF unificado. Validado com os arquivos reais em `Modelo Contra Cheques/VAlidar/2022/`.
+**Aplicação:** `src/lib/unificar-pdfs.ts` calcula a competência de cada página (`competenciasPorPagina`), agrupa páginas consecutivas da mesma competência em blocos (`agruparPaginasPorCompetencia`, página sem competência reconhecida vira continuação do bloco anterior) e ordena os blocos com `ordenarPorCompetencia` (`ordenarUnidades`), não mais os arquivos inteiros — `prepararArquivos`/`montarUnificado`/`unificarPdfsEmLotes` usam esse fluxo. Só confia no agrupamento por página quando a extração via pdf.js enxerga o mesmo número de páginas que o pdf-lib real; senão mantém o arquivo inteiro como um bloco único (fallback de segurança para não perder páginas).
+**Evitar:** Voltar a tratar o arquivo inteiro como uma única unidade de ordenação, ou confiar no agrupamento por página quando a contagem de páginas da extração não bate com a do PDF real.
+
 ```markdown
 ### AAAA-MM — Título
 

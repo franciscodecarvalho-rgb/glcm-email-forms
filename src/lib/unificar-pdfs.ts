@@ -83,6 +83,38 @@ export function competenciaDoArquivo(paginas: TextItemPdf[][]): string | null {
   return null;
 }
 
+// Competência (MM/AAAA) de cada página individualmente. Um mesmo arquivo pode
+// conter contracheques de competências diferentes (ex.: BASF costuma agrupar
+// o adiantamento quinzenal e o recibo integral de um mês com o adiantamento
+// do mês seguinte no mesmo PDF); tratar o arquivo inteiro pela competência da
+// primeira página arrastaria as páginas do mês seguinte para a posição errada.
+export function competenciasPorPagina(paginas: TextItemPdf[][]): (string | null)[] {
+  return paginas.map((pagina) => {
+    const largura = Math.max(...pagina.map((i) => i.x + i.width), 595);
+    return parsePaginaContracheque(pagina, largura).competencia;
+  });
+}
+
+export type BlocoPaginas = { paginaInicio: number; paginaFim: number; competencia: string | null };
+
+// Agrupa páginas consecutivas da mesma competência em um bloco só; uma página
+// sem competência reconhecida (ex.: continuação de um contracheque) é tratada
+// como parte do bloco anterior, preservando a leitura de contracheques que
+// ocupam mais de uma página física.
+export function agruparPaginasPorCompetencia(competencias: (string | null)[]): BlocoPaginas[] {
+  const blocos: BlocoPaginas[] = [];
+  competencias.forEach((competencia, indice) => {
+    const numeroPagina = indice + 1;
+    const anterior = blocos[blocos.length - 1];
+    if (anterior && (competencia == null || competencia === anterior.competencia)) {
+      anterior.paginaFim = numeroPagina;
+    } else {
+      blocos.push({ paginaInicio: numeroPagina, paginaFim: numeroPagina, competencia });
+    }
+  });
+  return blocos;
+}
+
 function chaveCompetencia(competencia: string | null): [number, number] | null {
   const m = competencia?.match(/(0[1-9]|1[0-2])\/(20\d{2})/);
   return m ? [Number(m[2]), Number(m[1])] : null;
@@ -102,7 +134,8 @@ export function ordenarPorCompetencia<T extends { competencia: string | null }>(
     .map(({ item }) => item);
 }
 
-type ArquivoPreparado = { bytes: ArrayBuffer | Uint8Array; competencia: string | null };
+type ArquivoPreparado = { bytes: ArrayBuffer | Uint8Array; blocos: BlocoPaginas[] };
+type UnidadePreparada = BlocoPaginas & { arquivoIndice: number };
 
 // Páginas por lote físico: mantém cada invocação da Edge Function com custo
 // limitado (o PDF consolidado inteiro nunca é processado numa só chamada).
@@ -110,7 +143,9 @@ export const TAMANHO_LOTE_PAGINAS = 5;
 
 export type LotePdf = { ordem: number; pagina_inicio: number; pagina_fim: number; file: File };
 
-// Normaliza, descriptografa e ordena por competência os PDFs de origem.
+// Normaliza e descriptografa os PDFs de origem, calculando a competência de
+// cada página (ver `agruparPaginasPorCompetencia`). Não ordena aqui: a ordem
+// depende dos blocos de todos os arquivos juntos (ver `ordenarUnidades`).
 async function prepararArquivos(arquivos: File[]): Promise<ArquivoPreparado[]> {
   if (arquivos.length === 0) throw new Error("Nenhum contracheque foi selecionado");
 
@@ -133,27 +168,50 @@ async function prepararArquivos(arquivos: File[]): Promise<ArquivoPreparado[]> {
       // erros de estrutura interna (PDFDict undefined) em PDFs descriptografados.
       bytes = await origem.save();
 
-      let competencia: string | null = null;
+      const totalPaginasArquivo = origem.getPageCount();
+      let blocos: BlocoPaginas[] = totalPaginasArquivo
+        ? [{ paginaInicio: 1, paginaFim: totalPaginasArquivo, competencia: null }]
+        : [];
       try {
-        competencia = competenciaDoArquivo(await extrairItensPorPagina(bytes));
+        const competencias = competenciasPorPagina(await extrairItensPorPagina(bytes));
+        // Só confia no agrupamento por página quando a extração via pdf.js
+        // enxergou o mesmo número de páginas que o pdf-lib (fonte real da
+        // cópia); caso contrário mantém o bloco único acima para não perder
+        // páginas que a extração não conseguiu enumerar.
+        if (competencias.length === totalPaginasArquivo) {
+          blocos = agruparPaginasPorCompetencia(competencias);
+        }
       } catch {
-        competencia = null;
+        // mantém o bloco único de competência nula calculado acima
       }
-      preparados.push({ bytes, competencia });
+      preparados.push({ bytes, blocos });
     }
 
-    return ordenarPorCompetencia(preparados);
+    return preparados;
   } finally {
     await descriptografador?.destroy();
   }
 }
 
-async function montarUnificado(ordenados: ArquivoPreparado[]): Promise<Uint8Array> {
+// Ordena os blocos de páginas de todos os arquivos juntos por competência,
+// não os arquivos inteiros: um arquivo pode ter páginas de mais de um mês.
+function ordenarUnidades(preparados: ArquivoPreparado[]): UnidadePreparada[] {
+  const unidades: UnidadePreparada[] = preparados.flatMap((preparado, arquivoIndice) =>
+    preparado.blocos.map((bloco) => ({ ...bloco, arquivoIndice })),
+  );
+  return ordenarPorCompetencia(unidades);
+}
+
+async function montarUnificado(preparados: ArquivoPreparado[]): Promise<Uint8Array> {
   const { PDFDocument } = await import("pdf-lib");
   const destino = await PDFDocument.create();
-  for (const { bytes } of ordenados) {
-    const origem = await PDFDocument.load(bytes, { ignoreEncryption: true });
-    const paginas = await destino.copyPages(origem, origem.getPageIndices());
+  for (const unidade of ordenarUnidades(preparados)) {
+    const origem = await PDFDocument.load(preparados[unidade.arquivoIndice].bytes, { ignoreEncryption: true });
+    const indices = Array.from(
+      { length: unidade.paginaFim - unidade.paginaInicio + 1 },
+      (_, i) => unidade.paginaInicio - 1 + i,
+    );
+    const paginas = await destino.copyPages(origem, indices);
     paginas.forEach((pagina) => destino.addPage(pagina));
   }
   return await destino.save();

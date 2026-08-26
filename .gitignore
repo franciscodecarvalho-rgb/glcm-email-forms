@@ -27,3 +27,9 @@ tmp/
 # templates de trabalho (fonte do escritorio / convertidos para upload)
 templates-fonte/
 templates-convertidos/
+
+# artefatos locais (staging de deploy, saidas de teste/geracao, backups, cache do build)
+.tmp-main-deploy/
+.artifacts/
+output/templates-docx-local-backup/
+*.tsbuildinfo
