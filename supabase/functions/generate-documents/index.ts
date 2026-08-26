@@ -845,9 +845,13 @@ async function buscarItensContrachequePaginado(
   return todos;
 }
 
-function valorComSinal(item: ItemContrachequeRelacional): number {
-  const magnitude = Math.abs(Number(item.valor) || 0);
-  return item.tipo === "desconto" ? -magnitude : magnitude;
+// Descontos nunca compoem a base HRA/AHRA (nem como valor negativo).
+function ehProventoHra(item: ItemContrachequeRelacional): boolean {
+  return (item.tipo ?? "provento") === "provento";
+}
+
+function valorProvento(item: ItemContrachequeRelacional): number {
+  return Math.abs(Number(item.valor) || 0);
 }
 
 function montarContrasRelacionais(
@@ -859,11 +863,11 @@ function montarContrasRelacionais(
       (item) => item.contracheque_id === contracheque.id,
     );
     const valorAhra = itensDoContra
-      .filter((item) => item.familia_hra === "ahra_dobra")
-      .reduce((total, item) => total + valorComSinal(item), 0);
+      .filter((item) => item.familia_hra === "ahra_dobra" && ehProventoHra(item))
+      .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itensDoContra
-      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra")
-      .reduce((total, item) => total + valorComSinal(item), 0);
+      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra" && ehProventoHra(item))
+      .reduce((total, item) => total + valorProvento(item), 0);
     return {
       competencia: contracheque.competencia || null,
       linha: {
