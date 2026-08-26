@@ -452,6 +452,143 @@ async function processarArquivoComIa(supabase: any, casoId: string, arq: { id: s
   return { total, erro: erroFatal };
 }
 
+// ---------------- fluxo por LOTES FÍSICOS (um PDF por lote no Storage) ----------------
+// Cada invocação lida com um único lote: nunca baixa nem percorre o PDF
+// consolidado inteiro, o que eliminava o timeout em conjuntos grandes.
+
+const PREFIXO_LOTES = (casoId: string) => `${casoId}/contracheques-lotes/`;
+
+// Semente de dedup: assinaturas do que já está gravado para este arquivo.
+async function assinaturasExistentes(supabase: any, casoId: string, arquivoNome: string): Promise<Set<string>> {
+  const vistos = new Set<string>();
+  const { data: existentes } = await supabase.from("contracheques")
+    .select("competencia, total_proventos, total_descontos, itens_contracheque(codigo, valor)")
+    .eq("caso_id", casoId).eq("arquivo_origem", arquivoNome);
+  for(const c of existentes ?? []){
+    const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
+    vistos.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, itens }));
+  }
+  return vistos;
+}
+
+// Cria (idempotentemente) os registros de lote apontando ao PDF físico já
+// enviado pelo cliente. Não cria registros em `arquivos`.
+async function planejarLotes(supabase: any, casoId: string, lotes: any[]) {
+  if(!Array.isArray(lotes) || !lotes.length) throw new Error("lotes obrigatórios");
+
+  const { data: arquivos, error: ae } = await supabase.from("arquivos")
+    .select("id,nome,storage_path").eq("caso_id", casoId).eq("tipo", "contracheque").order("created_at");
+  if(ae) throw ae;
+  const arquivo = (arquivos ?? [])[0];
+  if(!arquivo) throw new Error("Arquivo de contracheques não encontrado");
+
+  const { data: jaPlanejados } = await supabase.from("lotes_contracheques")
+    .select("id,ordem,pagina_inicio,pagina_fim,status,storage_path")
+    .eq("caso_id", casoId).not("storage_path", "is", null).order("ordem");
+  if(jaPlanejados && jaPlanejados.length) return { lotes: jaPlanejados, arquivo_nome: arquivo.nome };
+
+  const prefixo = PREFIXO_LOTES(casoId);
+  const inserts = lotes.map((l: any, indice: number) => {
+    const storagePath = String(l.storage_path ?? "");
+    if(!storagePath.startsWith(prefixo)) throw new Error(`storage_path inválido para o lote ${indice + 1}`);
+    const inicio = Number(l.pagina_inicio), fim = Number(l.pagina_fim);
+    if(!Number.isInteger(inicio) || !Number.isInteger(fim) || inicio < 1 || fim < inicio) throw new Error(`intervalo inválido no lote ${indice + 1}`);
+    if(fim - inicio + 1 > TAMANHO_LOTE_PAGINAS) throw new Error(`lote ${indice + 1} excede ${TAMANHO_LOTE_PAGINAS} páginas`);
+    return {
+      caso_id: casoId, arquivo_id: arquivo.id,
+      ordem: Number.isInteger(Number(l.ordem)) ? Number(l.ordem) : indice,
+      pagina_inicio: inicio, pagina_fim: fim, status: "pendente", storage_path: storagePath,
+    };
+  });
+
+  // Primeiro planejamento deste arquivo: limpa contracheques anteriores dele.
+  await supabase.from("contracheques").delete().eq("caso_id", casoId).eq("arquivo_origem", arquivo.nome);
+
+  const { data: criados, error: ie } = await supabase.from("lotes_contracheques")
+    .insert(inserts).select("id,ordem,pagina_inicio,pagina_fim,status,storage_path");
+  if(ie) throw ie;
+  return { lotes: (criados ?? []).sort((a: any, b: any) => a.ordem - b.ordem), arquivo_nome: arquivo.nome };
+}
+
+// Processa UM lote físico por invocação. Exige o lote anterior concluído para
+// que `estado_saida` (contracheque continuado entre lotes) seja preservado.
+async function processarLoteFisico(supabase: any, casoId: string, loteId: string) {
+  const { data: lote, error: le } = await supabase.from("lotes_contracheques").select("*").eq("id", loteId).eq("caso_id", casoId).single();
+  if(le || !lote) throw le ?? new Error("Lote não encontrado");
+  if(!lote.storage_path) throw new Error("Lote sem arquivo físico");
+  if(lote.status === "concluido") return { ok: true, contracheques: 0, ja_concluido: true };
+
+  const { data: lotesCaso, error: lce } = await supabase.from("lotes_contracheques")
+    .select("id,ordem,status,estado_saida").eq("caso_id", casoId).not("storage_path", "is", null).order("ordem");
+  if(lce) throw lce;
+  const indice = (lotesCaso ?? []).findIndex((l: any) => l.id === lote.id);
+  const anterior = indice > 0 ? lotesCaso[indice - 1] : null;
+  if(anterior && anterior.status !== "concluido") throw new Error("O lote anterior ainda não foi concluído");
+  const ehUltimoLote = indice === (lotesCaso ?? []).length - 1;
+
+  const { data: arquivo } = await supabase.from("arquivos").select("nome").eq("id", lote.arquivo_id).single();
+  const arquivoNome = arquivo?.nome ?? "contracheques-unificados.pdf";
+
+  await supabase.from("lotes_contracheques").update({ status:"processando", erro:null, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+
+  try{
+    const { data: blob, error: de } = await supabase.storage.from("casos-arquivos").download(lote.storage_path);
+    if(de || !blob) throw de ?? new Error(`Falha ao baixar o lote ${lote.ordem + 1}`);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
+
+    const itensPaginas = await extrairItensDoIntervalo(pdf, 1, pdf.numPages);
+    const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+
+    const assinaturasVistas = await assinaturasExistentes(supabase, casoId, arquivoNome);
+    const estadoEntrada = (anterior?.estado_saida as Contra | null) ?? null;
+
+    const temDados = paginasContra.some((p) => p.itens.length || p.total_proventos != null);
+    let total = 0;
+    let estadoSaida: Contra | null = null;
+    let usouIa = false;
+
+    if(temDados){
+      const { fechados, aberto } = consolidarLote(paginasContra, estadoEntrada);
+      const fecharAgora = ehUltimoLote && aberto ? [...fechados, aberto] : fechados;
+      for(const c of fecharAgora){
+        const assinatura = assinaturaContra(c);
+        if(assinaturasVistas.has(assinatura)) continue;
+        assinaturasVistas.add(assinatura);
+        await persistirContra(supabase, casoId, c, arquivoNome);
+        total++;
+      }
+      estadoSaida = ehUltimoLote ? null : aberto;
+    } else {
+      // Sem camada de texto/dados NESTE lote: fallback de IA só para ele.
+      const apiKey = Deno.env.get("LOVABLE_API_KEY");
+      if(!apiKey) throw new Error("pdf_sem_texto_estruturado");
+      usouIa = true;
+      const contrasIa = await extrairComIa(bytes, arquivoNome, apiKey);
+      for(const c of contrasIa){
+        const assinatura = assinaturaContra(c);
+        if(assinaturasVistas.has(assinatura)) continue;
+        assinaturasVistas.add(assinatura);
+        await persistirContra(supabase, casoId, c, arquivoNome);
+        total++;
+      }
+      estadoSaida = estadoEntrada; // a IA fecha por competência; propaga o estado recebido
+    }
+
+    await supabase.from("lotes_contracheques").update({
+      status:"concluido", estado_saida: estadoSaida, ia_status: usouIa ? "concluido" : null,
+      erro:null, atualizado_em:new Date().toISOString(),
+    }).eq("id", lote.id);
+
+    return { ok: true, contracheques: total, ordem: lote.ordem, usou_ia: usouIa };
+  }catch(erro){
+    const msg = erro instanceof Error ? erro.message : String(erro);
+    await supabase.from("lotes_contracheques").update({ status:"erro", erro:msg, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+    throw erro;
+  }
+}
+
+
 Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});
