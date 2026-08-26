@@ -39,11 +39,14 @@ export function montarContrachequesRelacionais(
   }));
 }
 
-// Desconto abate a base; provento soma. O valor persistido é sempre uma
-// magnitude positiva, então o sinal vem só do campo `tipo`.
-function valorComSinal(item: ItemContrachequeRelacional): number {
-  const magnitude = Math.abs(Number(item.valor) || 0);
-  return item.tipo === "desconto" ? -magnitude : magnitude;
+// Descontos nunca compõem a base HRA/AHRA (nem como valor negativo):
+// somente proventos entram no cálculo.
+function ehProventoHra(item: ItemContrachequeRelacional): boolean {
+  return (item.tipo ?? "provento") === "provento";
+}
+
+function valorProvento(item: ItemContrachequeRelacional): number {
+  return Math.abs(Number(item.valor) || 0);
 }
 
 export function contrachequesRelacionaisParaRevisao(
@@ -52,11 +55,11 @@ export function contrachequesRelacionaisParaRevisao(
   const linhas = (contracheques ?? []).map((contracheque, index) => {
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
-      .filter((item) => item.familia_hra === "ahra_dobra")
-      .reduce((total, item) => total + valorComSinal(item), 0);
+      .filter((item) => item.familia_hra === "ahra_dobra" && ehProventoHra(item))
+      .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itens
-      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra")
-      .reduce((total, item) => total + valorComSinal(item), 0);
+      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra" && ehProventoHra(item))
+      .reduce((total, item) => total + valorProvento(item), 0);
 
     return {
       competencia: contracheque.competencia || null,
