@@ -90,6 +90,7 @@ export function contrachequesRelacionaisParaRevisao(
     porCompetencia.set(competencia, linha);
     consolidado.push(linha);
   }
-  return consolidado;
+  // Competências sem HRA/AHRA calculável (após excluir descontos) não geram linha.
+  return consolidado.filter((linha) => linha.valor_hra > 0 || linha.valor_ahra > 0);
 }
 
