@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import { selecionarPecas } from "./modelos-documentos";
 import {
   agregarBancoHorasPorCompetencia,
+  agregarContribExtraPorCompetencia,
   montarArquivosPlanilhaBancoHorasXlsx,
+  montarArquivosPlanilhaContribExtraXlsx,
   montarArquivosPlanilhaXlsx,
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
@@ -44,11 +46,15 @@ const edgePlanilha = carregarTrechoDaFuncao<{
   montarArquivosPlanilhaXlsx: typeof montarArquivosPlanilhaXlsx;
   agregarBancoHorasPorCompetencia: typeof agregarBancoHorasPorCompetencia;
   montarArquivosPlanilhaBancoHorasXlsx: typeof montarArquivosPlanilhaBancoHorasXlsx;
+  agregarContribExtraPorCompetencia: typeof agregarContribExtraPorCompetencia;
+  montarArquivosPlanilhaContribExtraXlsx: typeof montarArquivosPlanilhaContribExtraXlsx;
 }>("type LinhaPlanilha", "// ---------------- função principal", [
   "ordenarPorCompetencia",
   "montarArquivosPlanilhaXlsx",
   "agregarBancoHorasPorCompetencia",
   "montarArquivosPlanilhaBancoHorasXlsx",
+  "agregarContribExtraPorCompetencia",
+  "montarArquivosPlanilhaContribExtraXlsx",
 ]);
 
 describe("guarda do espelho src/lib ↔ generate-documents", () => {
@@ -119,6 +125,25 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     expect(agregadoSrc).toEqual(agregadoEdge);
     expect(montarArquivosPlanilhaBancoHorasXlsx("FULANO <&>", agregadoSrc)).toEqual(
       edgePlanilha.montarArquivosPlanilhaBancoHorasXlsx("FULANO <&>", agregadoEdge),
+    );
+  });
+
+  it("planilha Contribuição Extraordinária: agregação e saída idênticas", () => {
+    const contracheques = [
+      { id: "a", competencia: "03/2024" },
+      { id: "b", competencia: "01/2024" },
+    ];
+    const itens = [
+      { contracheque_id: "a", valor: -100.5, familia_hra: "contrib_extra" },
+      { contracheque_id: "a", valor: 50, familia_hra: "contrib_extra" },
+      { contracheque_id: "b", valor: -200, familia_hra: "contrib_extra" },
+      { contracheque_id: "b", valor: 10, familia_hra: "hra" },
+    ];
+    const src = agregarContribExtraPorCompetencia(contracheques, itens);
+    const edge = edgePlanilha.agregarContribExtraPorCompetencia(contracheques, itens);
+    expect(src).toEqual(edge);
+    expect(montarArquivosPlanilhaContribExtraXlsx("FULANO <&>", src)).toEqual(
+      edgePlanilha.montarArquivosPlanilhaContribExtraXlsx("FULANO <&>", edge),
     );
   });
 });

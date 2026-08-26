@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   agregarBancoHorasPorCompetencia,
+  agregarContribExtraPorCompetencia,
   montarArquivosPlanilhaBancoHorasXlsx,
+  montarArquivosPlanilhaContribExtraXlsx,
   montarArquivosPlanilhaXlsx,
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
