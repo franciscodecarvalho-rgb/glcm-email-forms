@@ -5,6 +5,7 @@ import {
   competenciaDoArquivo,
   ordenarPorCompetencia,
   type TextItemPdf,
+  unificarPdfsEmLotes,
 } from "./unificar-pdfs";
 
 const qpdfMocks = vi.hoisted(() => ({
@@ -166,5 +167,39 @@ describe("ordenarPorCompetencia", () => {
       { competencia: "01/2026", id: "b" },
     ];
     expect(ordenarPorCompetencia(itens).map((i) => i.id)).toEqual(["b", "a", "x", "y"]);
+  });
+});
+
+describe("unificarPdfsEmLotes", () => {
+  beforeEach(() => {
+    pdfjsMocks.getDocument.mockReset();
+    pdfjsMocks.getDocument.mockImplementation(() => ({ promise: Promise.resolve(documentoVazio()) }));
+  });
+
+  it("divide 31 páginas em lotes de 15/15/1 sem perder páginas", async () => {
+    const arquivo = await criarPdf(31, "contracheques.pdf");
+
+    const { unificado, lotes } = await unificarPdfsEmLotes([arquivo]);
+
+    const total = await PDFDocument.load(await lerArquivo(unificado));
+    expect(total.getPageCount()).toBe(31);
+
+    expect(lotes.map((l) => [l.ordem, l.pagina_inicio, l.pagina_fim])).toEqual([
+      [0, 1, 15],
+      [1, 16, 30],
+      [2, 31, 31],
+    ]);
+    expect(lotes.map((l) => l.file.name)).toEqual([
+      "contracheques-lote-001.pdf",
+      "contracheques-lote-002.pdf",
+      "contracheques-lote-003.pdf",
+    ]);
+
+    const contagens = [];
+    for (const lote of lotes) {
+      contagens.push((await PDFDocument.load(await lerArquivo(lote.file))).getPageCount());
+    }
+    expect(contagens).toEqual([15, 15, 1]);
+    expect(contagens.reduce((a, b) => a + b, 0)).toBe(31);
   });
 });

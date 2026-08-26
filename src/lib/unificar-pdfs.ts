@@ -104,7 +104,14 @@ export function ordenarPorCompetencia<T extends { competencia: string | null }>(
 
 type ArquivoPreparado = { bytes: ArrayBuffer | Uint8Array; competencia: string | null };
 
-export async function unificarPdfs(arquivos: File[]): Promise<File> {
+// Páginas por lote físico: mantém cada invocação da Edge Function com custo
+// limitado (o PDF consolidado inteiro nunca é processado numa só chamada).
+export const TAMANHO_LOTE_PAGINAS = 15;
+
+export type LotePdf = { ordem: number; pagina_inicio: number; pagina_fim: number; file: File };
+
+// Normaliza, descriptografa e ordena por competência os PDFs de origem.
+async function prepararArquivos(arquivos: File[]): Promise<ArquivoPreparado[]> {
   if (arquivos.length === 0) throw new Error("Nenhum contracheque foi selecionado");
 
   const { PDFDocument } = await import("pdf-lib");
@@ -135,18 +142,74 @@ export async function unificarPdfs(arquivos: File[]): Promise<File> {
       preparados.push({ bytes, competencia });
     }
 
-    const ordenados = ordenarPorCompetencia(preparados);
-
-    const destino = await PDFDocument.create();
-    for (const { bytes } of ordenados) {
-      const origem = await PDFDocument.load(bytes, { ignoreEncryption: true });
-      const paginas = await destino.copyPages(origem, origem.getPageIndices());
-      paginas.forEach((pagina) => destino.addPage(pagina));
-    }
-
-    const bytes = await destino.save();
-    return new File([bytes as BlobPart], "contracheques-unificados.pdf", { type: "application/pdf" });
+    return ordenarPorCompetencia(preparados);
   } finally {
     await descriptografador?.destroy();
   }
 }
+
+async function montarUnificado(ordenados: ArquivoPreparado[]): Promise<Uint8Array> {
+  const { PDFDocument } = await import("pdf-lib");
+  const destino = await PDFDocument.create();
+  for (const { bytes } of ordenados) {
+    const origem = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const paginas = await destino.copyPages(origem, origem.getPageIndices());
+    paginas.forEach((pagina) => destino.addPage(pagina));
+  }
+  return await destino.save();
+}
+
+function arquivoUnificado(bytes: Uint8Array): File {
+  return new File([bytes as BlobPart], "contracheques-unificados.pdf", { type: "application/pdf" });
+}
+
+export async function unificarPdfs(arquivos: File[]): Promise<File> {
+  return arquivoUnificado(await montarUnificado(await prepararArquivos(arquivos)));
+}
+
+// Divide o PDF unificado em intervalos de no máximo `tamanhoLote` páginas.
+export function planejarIntervalos(
+  totalPaginas: number,
+  tamanhoLote = TAMANHO_LOTE_PAGINAS,
+): Array<{ ordem: number; pagina_inicio: number; pagina_fim: number }> {
+  const intervalos: Array<{ ordem: number; pagina_inicio: number; pagina_fim: number }> = [];
+  let ordem = 0;
+  for (let inicio = 1; inicio <= totalPaginas; inicio += tamanhoLote) {
+    intervalos.push({
+      ordem: ordem++,
+      pagina_inicio: inicio,
+      pagina_fim: Math.min(inicio + tamanhoLote - 1, totalPaginas),
+    });
+  }
+  return intervalos;
+}
+
+/**
+ * Gera o PDF unificado e também os PDFs físicos de lote (máx. 15 páginas cada),
+ * já com `ordem`, `pagina_inicio` e `pagina_fim`.
+ */
+export async function unificarPdfsEmLotes(
+  arquivos: File[],
+  tamanhoLote = TAMANHO_LOTE_PAGINAS,
+): Promise<{ unificado: File; lotes: LotePdf[] }> {
+  const { PDFDocument } = await import("pdf-lib");
+  const bytesUnificado = await montarUnificado(await prepararArquivos(arquivos));
+
+  const origem = await PDFDocument.load(bytesUnificado, { ignoreEncryption: true });
+  const total = origem.getPageCount();
+
+  const lotes: LotePdf[] = [];
+  for (const intervalo of planejarIntervalos(total, tamanhoLote)) {
+    const destino = await PDFDocument.create();
+    const indices: number[] = [];
+    for (let p = intervalo.pagina_inicio; p <= intervalo.pagina_fim; p++) indices.push(p - 1);
+    const paginas = await destino.copyPages(origem, indices);
+    paginas.forEach((pagina) => destino.addPage(pagina));
+    const bytes = await destino.save();
+    const nome = `contracheques-lote-${String(intervalo.ordem + 1).padStart(3, "0")}.pdf`;
+    lotes.push({ ...intervalo, file: new File([bytes as BlobPart], nome, { type: "application/pdf" }) });
+  }
+
+  return { unificado: arquivoUnificado(bytesUnificado), lotes };
+}
+
