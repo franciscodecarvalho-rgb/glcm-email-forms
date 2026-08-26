@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { mensagemErroFuncao } from "@/lib/edge-function-error";
 import { toast } from "sonner";
 
 type ResultadoTeste = {
@@ -32,8 +33,9 @@ export default function TesteExtracaoPdfs() {
     const { data, error } = await supabase.functions.invoke("process-documentos-pessoais-pdf", { body: form });
     setProcessando(false);
     if (error) {
-      toast.error("Falha ao executar o teste de extração");
-      setResultado({ ok: false, error: error.message });
+      const mensagem = await mensagemErroFuncao(error, "Falha ao executar o teste de extração");
+      toast.error(mensagem);
+      setResultado({ ok: false, error: mensagem });
       return;
     }
     setResultado(data as ResultadoTeste);
