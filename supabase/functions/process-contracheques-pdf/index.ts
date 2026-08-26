@@ -104,7 +104,7 @@ function linhas(itens: TextItem[]): Linha[] {
 
 function modelo(texto: string) {
   const n=norm(texto);
-  if(n.includes("companhia brasileira de estireno")||n.includes("unigel"))return "unigel";
+  if(n.includes("companhia brasileira de estireno")||n.includes("unigel")||n.includes("proquigel"))return "unigel";
   if(n.includes("elekeiroz"))return "elekeiroz";
   if(n.includes("termobahia")||n.includes("termo bahia"))return "termo_bahia";
   if(n.includes("petroleo brasileiro")||n.includes("petrobras"))return "petrobras";
@@ -127,11 +127,11 @@ function competencia(texto: string) {
     const b=n.match(new RegExp(`\\d{1,2}[/-]${comEspacos}[/-](20\\d{2})`)); if(b)return `${numero}/${b[1]}`;
   }
   // 2) MM/AAAA com prefixo explícito (evita datas soltas como "11.2013").
-  const comPrefixo=n.match(/(?:mes\s*\/\s*ano|competencia|referencia|referente|pagamento referente)[:\s-]*(0[1-9]|1[0-2])\s*[/]\s*(20\d{2})/i);
-  if(comPrefixo)return `${comPrefixo[1]}/${comPrefixo[2]}`;
-  // 3) MM/AAAA isolado (não precedido de dígito, evitando DD.MM.AAAA).
-  const isolado=n.match(/(?<!\d)(?:0[1-9]|1[0-2])\s*[/]\s*(20\d{2})(?!\d)/);
-  if(isolado)return `${isolado[0].slice(0,2)}/${isolado[2]}`;
+  const comPrefixo=n.match(/(?:mes\s*\/\s*ano|competencia|referencia|referente|pagamento referente)[:\s-]*(0?[1-9]|1[0-2])\s*[/]\s*(20\d{2})/i);
+  if(comPrefixo)return `${comPrefixo[1].padStart(2,"0")}/${comPrefixo[2]}`;
+  // 3) MM/AAAA isolado (não precedido de dígito ou separador de data, evitando DD/MM/AAAA e DD.MM.AAAA).
+  const isolado=n.match(/(?<![\d/.-])(0?[1-9]|1[0-2])\s*[/]\s*(20\d{2})(?!\d)/);
+  if(isolado)return `${isolado[1].padStart(2,"0")}/${isolado[2]}`;
   return null;
 }
 
