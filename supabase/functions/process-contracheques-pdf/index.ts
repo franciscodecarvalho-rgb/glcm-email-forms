@@ -606,6 +606,18 @@ Deno.serve(async(req)=>{
       return json({lotes:data??[]});
     }
 
+    // Fluxo por lotes físicos (um PDF por lote enviado pelo cliente).
+    if(body.acao==="planejar_lotes"){
+      const resultado=await planejarLotes(supabase,caso_id,body.lotes);
+      return json({ok:true,...resultado});
+    }
+    if(body.acao==="processar_lote"){
+      if(!body.lote_id)return json({error:"lote_id obrigatório"},400);
+      return json(await processarLoteFisico(supabase,caso_id,body.lote_id));
+    }
+
+
+
     const {data:arquivos,error}=await supabase.from("arquivos").select("id,nome,storage_path,mime_type").eq("caso_id",caso_id).eq("tipo","contracheque");if(error)throw error;
 
     const revisao:Array<{arquivo:string;motivo:string}>=[];
