@@ -4,6 +4,7 @@ import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeStorageName } from "@/lib/storage";
 import { unificarPdfs } from "@/lib/unificar-pdfs";
+import { mensagemErroFuncao } from "@/lib/edge-function-error";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,7 +128,9 @@ export default function NovoCaso() {
           "process-contracheques-pdf",
           { body: { caso_id: caso.id } },
         );
-        if (processamentoError) throw processamentoError;
+        if (processamentoError) {
+          throw new Error(await mensagemErroFuncao(processamentoError, "Falha ao extrair contracheques"));
+        }
         if (processamento?.revisao?.length) {
           toast.warning(`${processamento.revisao.length} contracheque(s) precisam de revisão manual`);
         }
@@ -138,7 +141,9 @@ export default function NovoCaso() {
       const { data: pessoais, error: pessoaisError } = await supabase.functions.invoke("process-documentos-pessoais-pdf", {
         body: { caso_id: caso.id },
       });
-      if (pessoaisError) throw pessoaisError;
+      if (pessoaisError) {
+        throw new Error(await mensagemErroFuncao(pessoaisError, "Falha ao extrair dados pessoais"));
+      }
       if (pessoais?.revisao?.length) {
         toast.warning(`${pessoais.revisao.length} documento(s) pessoal(is) precisam de revisão manual`);
       }

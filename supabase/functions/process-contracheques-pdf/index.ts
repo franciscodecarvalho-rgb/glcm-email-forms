@@ -50,9 +50,11 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
   });
 }
 
-async function extrairItensPorPagina(pdf: Awaited<ReturnType<typeof getDocumentProxy>>) {
+// Extrai texto+coordenadas só das páginas [inicio, fim] (1-based, inclusive) —
+// não do PDF inteiro — para manter cada lote com custo de memória/CPU limitado.
+async function extrairItensDoIntervalo(pdf: Awaited<ReturnType<typeof getDocumentProxy>>, inicio: number, fim: number) {
   const paginas: TextItem[][] = [];
-  for (let numero = 1; numero <= pdf.numPages; numero++) {
+  for (let numero = inicio; numero <= fim; numero++) {
     const pagina = await pdf.getPage(numero);
     const conteudo = await pagina.getTextContent();
     paginas.push(conteudo.items.flatMap((item) => {
@@ -195,27 +197,186 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
 }
 
-function consolidar(paginas:Contra[]) {
-  const out:Contra[]=[]; let atual:Contra|null=null;
-  for(const p of paginas){
-    if(!p.itens.length&&p.total_proventos==null)continue;
-    const continuaElekeiroz=atual?.modelo_origem==="elekeiroz"&&p.modelo_origem==="elekeiroz"&&atual.competencia===p.competencia;
-    const novaCompetencia=atual?.competencia!=null&&p.competencia!=null&&atual.competencia!==p.competencia;
-    const novoModelo=atual?.modelo_origem!=="generico"&&p.modelo_origem!=="generico"&&atual?.modelo_origem!==p.modelo_origem;
-    if(!atual||novaCompetencia||novoModelo||(!continuaElekeiroz&&atual.total_proventos!=null&&atual.total_descontos!=null)){atual={...p,itens:[...p.itens]};out.push(atual);}
-    else{atual.itens.push(...p.itens);if(p.total_proventos!=null)atual.total_proventos=p.total_proventos;if(p.total_descontos!=null)atual.total_descontos=p.total_descontos;if(p.liquido!=null)atual.liquido=p.liquido;}
-  }
-  for(const contra of out){
-    const rubricasVistas=new Set<string>();
-    contra.itens=contra.itens.filter((item)=>{
-      const chave=`${item.codigo}|${norm(item.descricao)}|${item.referencia}|${item.valor}|${item.tipo}`;
-      if(rubricasVistas.has(chave))return false;
-      rubricasVistas.add(chave);
-      return true;
-    });
-  }
+// ---------------- consolidação incremental (por lote, com estado entre lotes) ----------------
+// Mesmo critério que decidia, no consolidador original de arquivo inteiro,
+// quando uma página nova é a CONTINUAÇÃO do contracheque atual (mesma
+// competência/modelo, ainda sem os dois totais) em vez de iniciar um novo.
+function continuaMesmoContra(atual: Contra, p: Contra): boolean {
+  const continuaElekeiroz = atual.modelo_origem==="elekeiroz" && p.modelo_origem==="elekeiroz" && atual.competencia===p.competencia;
+  const novaCompetencia = atual.competencia!=null && p.competencia!=null && atual.competencia!==p.competencia;
+  const novoModelo = atual.modelo_origem!=="generico" && p.modelo_origem!=="generico" && atual.modelo_origem!==p.modelo_origem;
+  if(novaCompetencia||novoModelo)return false;
+  if(!continuaElekeiroz && atual.total_proventos!=null && atual.total_descontos!=null)return false;
+  return true;
+}
+
+function mesclarContra(atual: Contra, p: Contra): Contra {
+  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens] };
+  if(p.total_proventos!=null) mesclado.total_proventos=p.total_proventos;
+  if(p.total_descontos!=null) mesclado.total_descontos=p.total_descontos;
+  if(p.liquido!=null) mesclado.liquido=p.liquido;
+  return mesclado;
+}
+
+// Elimina rubricas repetidas dentro do MESMO contracheque (páginas continuadas
+// ou duplicadas, ex.: cópia espelhada do Termo Bahia, continuação do Elekeiroz).
+function dedupItens(contra: Contra): Contra {
   const vistos=new Set<string>();
-  return out.filter((c)=>{const k=`${c.competencia}|${c.total_proventos}|${c.total_descontos}|${c.itens.map((i)=>`${i.codigo}:${i.valor}`).join(",")}`;if(vistos.has(k))return false;vistos.add(k);return true;});
+  const itens=contra.itens.filter((item)=>{
+    const chave=`${item.codigo}|${norm(item.descricao)}|${item.referencia}|${item.valor}|${item.tipo}`;
+    if(vistos.has(chave))return false;
+    vistos.add(chave);
+    return true;
+  });
+  return { ...contra, itens };
+}
+
+// Assinatura para detectar um contracheque inteiro duplicado (ex.: página
+// repetida no PDF). Independente da ordem das rubricas para funcionar mesmo
+// quando o estado é reconstruído do banco numa retomada.
+function assinaturaContra(c: Pick<Contra,"competencia"|"total_proventos"|"total_descontos"|"itens">): string {
+  const itens=c.itens.map((i)=>`${i.codigo}:${i.valor}`).sort().join(",");
+  return `${c.competencia}|${c.total_proventos}|${c.total_descontos}|${itens}`;
+}
+
+// Consolida as páginas de UM lote a partir do estado (contracheque ainda
+// "aberto") vindo do lote anterior. Devolve os contracheques já fechados
+// (prontos para persistir) e, se houver, o que ainda pode continuar no
+// próximo lote — nunca mantém o restante do arquivo em memória.
+function consolidarLote(paginas: Contra[], entrada: Contra | null): { fechados: Contra[]; aberto: Contra | null } {
+  const validas=paginas.filter((p)=>p.itens.length||p.total_proventos!=null);
+  const out: Contra[]=[];
+  let atual: Contra | null = entrada ? { ...entrada, itens:[...entrada.itens] } : null;
+  for(const p of validas){
+    if(atual && continuaMesmoContra(atual,p)) atual=mesclarContra(atual,p);
+    else { if(atual) out.push(atual); atual={ ...p, itens:[...p.itens] }; }
+  }
+  if(atual) out.push(atual);
+  const fechados=out.slice(0,-1).map(dedupItens);
+  const aberto=out.length?dedupItens(out[out.length-1]):null;
+  return { fechados, aberto };
+}
+
+// Grava um contracheque fechado (com suas rubricas) imediatamente — nunca
+// espera o arquivo/caso inteiro terminar para persistir.
+async function persistirContra(supabase: any, casoId: string, contra: Contra, arquivoNome: string) {
+  const { data: row, error: ie } = await supabase.from("contracheques").insert({
+    caso_id: casoId, competencia: contra.competencia, total_proventos: contra.total_proventos,
+    total_descontos: contra.total_descontos, liquido: contra.liquido, arquivo_origem: arquivoNome,
+    modelo_origem: contra.modelo_origem,
+  }).select("id").single();
+  if(ie) throw ie;
+  if(contra.itens.length){
+    const { error: itemError } = await supabase.from("itens_contracheque")
+      .insert(contra.itens.map((item)=>({ ...item, contracheque_id: row.id })));
+    if(itemError) throw itemError;
+  }
+}
+
+const TAMANHO_LOTE_PAGINAS = 15; // páginas por lote: mantém memória/CPU de cada chamada limitadas.
+
+// Garante o plano de lotes de páginas de um arquivo (idempotente — se já
+// existir, é uma retomada e nada é recriado).
+async function garantirPlanoLotes(supabase: any, casoId: string, arq: { id: string; storage_path: string; nome: string }) {
+  const { data: existentes } = await supabase.from("lotes_contracheques").select("id").eq("arquivo_id", arq.id).limit(1);
+  if(existentes && existentes.length) return;
+
+  // Primeira vez processando este arquivo (não é retomada): remove
+  // contracheques antigos SÓ dele, como um reprocessamento do zero faria —
+  // sem afetar o que já foi gravado para os outros arquivos do caso.
+  await supabase.from("contracheques").delete().eq("caso_id", casoId).eq("arquivo_origem", arq.nome);
+
+  const { data: blob, error: de } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
+  if(de || !blob) throw de ?? new Error(`Falha ao baixar ${arq.nome}`);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
+  const totalPaginas = pdf.numPages;
+
+  const { data: ultimoLote } = await supabase.from("lotes_contracheques").select("ordem").eq("caso_id", casoId).order("ordem", { ascending: false }).limit(1);
+  let ordem = (ultimoLote?.[0]?.ordem ?? -1) + 1;
+
+  const inserts = [];
+  for(let inicio=1; inicio<=totalPaginas; inicio+=TAMANHO_LOTE_PAGINAS){
+    const fim = Math.min(inicio+TAMANHO_LOTE_PAGINAS-1, totalPaginas);
+    inserts.push({ caso_id: casoId, arquivo_id: arq.id, ordem: ordem++, pagina_inicio: inicio, pagina_fim: fim, status: "pendente" });
+  }
+  if(inserts.length){
+    const { error: insErr } = await supabase.from("lotes_contracheques").insert(inserts);
+    if(insErr) throw insErr;
+  }
+}
+
+// Processa (ou retoma) os lotes de páginas de UM arquivo, gravando cada
+// contracheque fechado assim que o lote que o concluiu termina. Devolve o
+// total de contracheques do arquivo já persistidos (deste e de execuções
+// anteriores). Lança se um lote falhar — os lotes já concluídos permanecem
+// gravados e uma nova chamada retoma só o que falta.
+async function processarArquivo(supabase: any, casoId: string, arq: { id: string; storage_path: string; nome: string }): Promise<number> {
+  await garantirPlanoLotes(supabase, casoId, arq);
+
+  const { data: lotes, error: lErr } = await supabase.from("lotes_contracheques").select("*").eq("arquivo_id", arq.id).order("ordem");
+  if(lErr) throw lErr;
+  if(!lotes || !lotes.length) return 0;
+
+  // Semente do dedup + do total já persistido: o que já está gravado de
+  // execuções anteriores (retomada) — nunca reconstruído a partir do PDF.
+  const assinaturasVistas = new Set<string>();
+  let fechadosTotal = 0;
+  {
+    const { data: existentes } = await supabase.from("contracheques")
+      .select("competencia, total_proventos, total_descontos, itens_contracheque(codigo, valor)")
+      .eq("caso_id", casoId).eq("arquivo_origem", arq.nome);
+    for(const c of existentes ?? []){
+      const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
+      assinaturasVistas.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, itens }));
+      fechadosTotal++;
+    }
+  }
+
+  const ultimoLoteConcluido = [...lotes].reverse().find((l: any) => l.status === "concluido");
+  let estado: Contra | null = (ultimoLoteConcluido?.estado_saida as Contra | null) ?? null;
+
+  const pendentes = lotes.filter((l: any) => l.status !== "concluido");
+  if(!pendentes.length) return fechadosTotal;
+
+  const idUltimoLote = lotes[lotes.length-1].id;
+  // Baixa e abre o PDF uma única vez para todos os lotes pendentes deste
+  // arquivo (o custo caro é decodificar o CONTEÚDO de cada página, feito só
+  // para as páginas do lote da vez — não a estrutura do documento).
+  const { data: blob, error: de } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
+  if(de || !blob) throw de ?? new Error(`Falha ao baixar ${arq.nome}`);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
+
+  for(const lote of pendentes){
+    try{
+      await supabase.from("lotes_contracheques").update({ status:"processando", erro:null, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+
+      const itensPaginas = await extrairItensDoIntervalo(pdf, lote.pagina_inicio, lote.pagina_fim);
+      // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
+      const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+
+      const { fechados, aberto } = consolidarLote(paginasContra, estado);
+      const ehUltimoLote = lote.id === idUltimoLote;
+      const fecharAgora = ehUltimoLote && aberto ? [...fechados, aberto] : fechados;
+
+      for(const c of fecharAgora){
+        const assinatura = assinaturaContra(c);
+        if(assinaturasVistas.has(assinatura)) continue;
+        assinaturasVistas.add(assinatura);
+        await persistirContra(supabase, casoId, c, arq.nome);
+        fechadosTotal++;
+      }
+      estado = ehUltimoLote ? null : aberto;
+
+      await supabase.from("lotes_contracheques").update({ status:"concluido", estado_saida: estado, erro:null, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+    }catch(loteError){
+      const msg = loteError instanceof Error ? loteError.message : String(loteError);
+      await supabase.from("lotes_contracheques").update({ status:"erro", erro:msg, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+      throw loteError;
+    }
+  }
+  return fechadosTotal;
 }
 
 Deno.serve(async(req)=>{
@@ -226,36 +387,44 @@ Deno.serve(async(req)=>{
     const supabase=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const {data:{user},error:authError}=await supabase.auth.getUser(auth.replace(/^Bearer\s+/i,""));
     if(authError||!user)return json({error:"Não autenticado"},401);
-    const {caso_id}=await req.json();if(!caso_id)return json({error:"caso_id obrigatório"},400);
-    const {data:arquivos,error}=await supabase.from("arquivos").select("nome,storage_path,mime_type").eq("caso_id",caso_id).eq("tipo","contracheque");if(error)throw error;
-    const extraidos:Array<Contra&{arquivo_origem:string}>=[],revisao=[];let arquivosComIa=0;
+    const body=await req.json();
+    const {caso_id}=body;if(!caso_id)return json({error:"caso_id obrigatório"},400);
+
+    // Modo progress: estado dos lotes de páginas para a tela de acompanhamento.
+    if(body.progress){
+      const {data}=await supabase.from("lotes_contracheques").select("id,ordem,pagina_inicio,pagina_fim,status,erro,atualizado_em").eq("caso_id",caso_id).order("ordem");
+      return json({lotes:data??[]});
+    }
+
+    const {data:arquivos,error}=await supabase.from("arquivos").select("id,nome,storage_path,mime_type").eq("caso_id",caso_id).eq("tipo","contracheque");if(error)throw error;
+
+    const revisao:Array<{arquivo:string;motivo:string}>=[];
+    let arquivosComIa=0, totalFechados=0;
     for(const arq of arquivos??[]){
       if(arq.mime_type!=="application/pdf"){revisao.push({arquivo:arq.nome,motivo:"formato_nao_pdf"});continue;}
-      const {data:blob,error:de}=await supabase.storage.from("casos-arquivos").download(arq.storage_path);if(de||!blob)throw de??new Error(`Falha ao baixar ${arq.nome}`);
-      const bytes=new Uint8Array(await blob.arrayBuffer());
-      const pdf=await getDocumentProxy(bytes,{maxImageSize:16_777_216});
-      const items=await extrairItensPorPagina(pdf);
-      // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
-      const paginas=items.map((pagina)=>parsePagina(pagina as TextItem[],Math.max(...pagina.map((x)=>x.x+x.width),595)));
-      let contras=consolidar(paginas);
-      if(!contras.length){
-        const apiKey=Deno.env.get("LOVABLE_API_KEY");
-        if(apiKey){
-          try{contras=await extrairComIa(bytes,arq.nome,apiKey);if(contras.length)arquivosComIa++;}
-          catch(fallbackError){revisao.push({arquivo:arq.nome,motivo:fallbackError instanceof Error?fallbackError.message:"falha_na_ia"});continue;}
+      try{
+        const fechadosArquivo=await processarArquivo(supabase,caso_id,arq);
+        totalFechados+=fechadosArquivo;
+        if(fechadosArquivo===0){
+          const apiKey=Deno.env.get("LOVABLE_API_KEY");
+          if(!apiKey){revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});continue;}
+          const {data:blob,error:de}=await supabase.storage.from("casos-arquivos").download(arq.storage_path);
+          if(de||!blob)throw de??new Error(`Falha ao baixar ${arq.nome}`);
+          const bytes=new Uint8Array(await blob.arrayBuffer());
+          try{
+            const contrasIa=await extrairComIa(bytes,arq.nome,apiKey);
+            if(!contrasIa.length){revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});continue;}
+            for(const c of contrasIa) await persistirContra(supabase,caso_id,c,arq.nome);
+            arquivosComIa++;totalFechados+=contrasIa.length;
+          }catch(fallbackError){
+            revisao.push({arquivo:arq.nome,motivo:fallbackError instanceof Error?fallbackError.message:"falha_na_ia"});
+          }
         }
-      }
-      if(!contras.length){revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});continue;}
-      extraidos.push(...contras.map((c)=>({...c,arquivo_origem:arq.nome})));
-    }
-    if(extraidos.length){
-      await supabase.from("contracheques").delete().eq("caso_id",caso_id);
-      for(const c of extraidos){
-        const {data:row,error:ie}=await supabase.from("contracheques").insert({caso_id,competencia:c.competencia,total_proventos:c.total_proventos,total_descontos:c.total_descontos,liquido:c.liquido,arquivo_origem:c.arquivo_origem,modelo_origem:c.modelo_origem}).select("id").single();if(ie)throw ie;
-        const {error:itemError}=await supabase.from("itens_contracheque").insert(c.itens.map(({familia_hra,...i})=>({...i,familia_hra,contracheque_id:row.id})));if(itemError)throw itemError;
+      }catch(arquivoError){
+        revisao.push({arquivo:arq.nome,motivo:arquivoError instanceof Error?arquivoError.message:"falha_no_processamento"});
       }
     }
-    return json({ok:true,contracheques:extraidos.length,arquivos_processados_com_ia:arquivosComIa,revisao});
+    return json({ok:true,contracheques:totalFechados,arquivos_processados_com_ia:arquivosComIa,revisao});
   }catch(e){
     const detalhe=e instanceof Error
       ? {name:e.name,message:e.message,stack:e.stack}
