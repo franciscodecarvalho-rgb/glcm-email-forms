@@ -176,7 +176,7 @@ describe("unificarPdfsEmLotes", () => {
     pdfjsMocks.getDocument.mockImplementation(() => ({ promise: Promise.resolve(documentoVazio()) }));
   });
 
-  it("divide 31 páginas em lotes de 15/15/1 sem perder páginas", async () => {
+  it("divide 31 páginas em lotes de 5/5/5/5/5/5/1 sem perder páginas", async () => {
     const arquivo = await criarPdf(31, "contracheques.pdf");
 
     const { unificado, lotes } = await unificarPdfsEmLotes([arquivo]);
@@ -185,21 +185,29 @@ describe("unificarPdfsEmLotes", () => {
     expect(total.getPageCount()).toBe(31);
 
     expect(lotes.map((l) => [l.ordem, l.pagina_inicio, l.pagina_fim])).toEqual([
-      [0, 1, 15],
-      [1, 16, 30],
-      [2, 31, 31],
+      [0, 1, 5],
+      [1, 6, 10],
+      [2, 11, 15],
+      [3, 16, 20],
+      [4, 21, 25],
+      [5, 26, 30],
+      [6, 31, 31],
     ]);
     expect(lotes.map((l) => l.file.name)).toEqual([
       "contracheques-lote-001.pdf",
       "contracheques-lote-002.pdf",
       "contracheques-lote-003.pdf",
+      "contracheques-lote-004.pdf",
+      "contracheques-lote-005.pdf",
+      "contracheques-lote-006.pdf",
+      "contracheques-lote-007.pdf",
     ]);
 
     const contagens = [];
     for (const lote of lotes) {
       contagens.push((await PDFDocument.load(await lerArquivo(lote.file))).getPageCount());
     }
-    expect(contagens).toEqual([15, 15, 1]);
+    expect(contagens).toEqual([5, 5, 5, 5, 5, 5, 1]);
     expect(contagens.reduce((a, b) => a + b, 0)).toBe(31);
   });
 });

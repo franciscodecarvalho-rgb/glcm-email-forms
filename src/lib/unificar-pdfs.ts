@@ -106,7 +106,7 @@ type ArquivoPreparado = { bytes: ArrayBuffer | Uint8Array; competencia: string |
 
 // Páginas por lote físico: mantém cada invocação da Edge Function com custo
 // limitado (o PDF consolidado inteiro nunca é processado numa só chamada).
-export const TAMANHO_LOTE_PAGINAS = 15;
+export const TAMANHO_LOTE_PAGINAS = 5;
 
 export type LotePdf = { ordem: number; pagina_inicio: number; pagina_fim: number; file: File };
 
@@ -185,7 +185,7 @@ export function planejarIntervalos(
 }
 
 /**
- * Gera o PDF unificado e também os PDFs físicos de lote (máx. 15 páginas cada),
+ * Gera o PDF unificado e também os PDFs físicos de lote (máx. 5 páginas cada),
  * já com `ordem`, `pagina_inicio` e `pagina_fim`.
  */
 export async function unificarPdfsEmLotes(

@@ -26,6 +26,74 @@ const ESCRITORIOS_OPCOES = [
   { id: "polkowski", label: "Polkowski" },
 ];
 
+type StatusLote = { id: string; status: string; erro: string | null };
+const INTERVALO_POLLING_LOTE_MS = 2_000;
+const LIMITE_POLLING_LOTE_MS = 120_000;
+
+const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function consultarStatusLote(casoId: string, loteId: string): Promise<StatusLote> {
+  const { data, error } = await supabase.functions.invoke("process-contracheques-pdf", {
+    body: { caso_id: casoId, progress: true },
+  });
+  if (error) throw error;
+  const lote = (data?.lotes as StatusLote[] | undefined)?.find((item) => item.id === loteId);
+  if (!lote) throw new Error("Status do lote não encontrado");
+  return lote;
+}
+
+async function aguardarConclusaoLote(casoId: string, loteId: string): Promise<void> {
+  const limite = Date.now() + LIMITE_POLLING_LOTE_MS;
+  let ultimoErroConsulta: unknown = null;
+
+  while (Date.now() < limite) {
+    try {
+      const lote = await consultarStatusLote(casoId, loteId);
+      ultimoErroConsulta = null;
+      if (lote.status === "concluido") return;
+      if (lote.status === "erro") throw new Error(lote.erro || "Falha ao processar o lote");
+      if (lote.status !== "processando") throw new Error(`Lote em estado inesperado: ${lote.status}`);
+    } catch (error) {
+      if (error instanceof Error && (error.message.startsWith("Falha ao processar") || error.message.startsWith("Lote em estado"))) {
+        throw error;
+      }
+      ultimoErroConsulta = error;
+    }
+    await esperar(INTERVALO_POLLING_LOTE_MS);
+  }
+
+  if (ultimoErroConsulta) {
+    throw new Error(await mensagemErroFuncao(ultimoErroConsulta, "Não foi possível consultar o processamento do lote"));
+  }
+  throw new Error("O lote continua em processamento após o tempo limite de acompanhamento");
+}
+
+async function processarLoteComRetomada(casoId: string, loteId: string): Promise<void> {
+  const statusAtual = await consultarStatusLote(casoId, loteId);
+  if (statusAtual.status === "concluido") return;
+  if (statusAtual.status === "processando") {
+    await aguardarConclusaoLote(casoId, loteId);
+    return;
+  }
+  if (statusAtual.status === "erro") throw new Error(statusAtual.erro || "Falha ao processar o lote");
+
+  const { error } = await supabase.functions.invoke("process-contracheques-pdf", {
+    body: { caso_id: casoId, acao: "processar_lote", lote_id: loteId },
+  });
+  if (!error) return;
+
+  // A conexão pode fechar antes da resposta embora a função continue e conclua
+  // no backend. Nunca redispara: acompanha exclusivamente o estado persistido.
+  try {
+    await aguardarConclusaoLote(casoId, loteId);
+  } catch (statusError) {
+    if (statusError instanceof Error && statusError.message !== "O lote continua em processamento após o tempo limite de acompanhamento") {
+      throw statusError;
+    }
+    throw new Error(await mensagemErroFuncao(error, "Falha de rede ao processar o lote"));
+  }
+}
+
 export default function NovoCaso() {
   const nav = useNavigate();
   const [contracheques, setContracheques] = useState<File[]>([]);
@@ -152,12 +220,7 @@ export default function NovoCaso() {
       const lotesPlanejados: Array<{ id: string }> = plano?.lotes ?? [];
       for (let indice = 0; indice < lotesPlanejados.length; indice++) {
         setEtapa(`Extraindo contracheques (lote ${indice + 1}/${lotesPlanejados.length})`);
-        const { error: loteError } = await supabase.functions.invoke("process-contracheques-pdf", {
-          body: { caso_id: caso.id, acao: "processar_lote", lote_id: lotesPlanejados[indice].id },
-        });
-        if (loteError) {
-          throw new Error(await mensagemErroFuncao(loteError, `Falha ao extrair o lote ${indice + 1}`));
-        }
+        await processarLoteComRetomada(caso.id, lotesPlanejados[indice].id);
         setProgresso(55 + Math.round(((indice + 1) / lotesPlanejados.length) * 25));
       }
 

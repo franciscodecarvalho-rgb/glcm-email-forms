@@ -286,7 +286,7 @@ async function fatiarPaginas(bytesOriginal: Uint8Array, inicio: number, fim: num
   return await destino.save();
 }
 
-const TAMANHO_LOTE_PAGINAS = 15; // páginas por lote: mantém memória/CPU de cada chamada limitadas.
+const TAMANHO_LOTE_PAGINAS = 5; // páginas por lote: mantém memória/CPU e duração de cada chamada limitadas.
 
 // Garante o plano de lotes de páginas de um arquivo (idempotente — se já
 // existir, é uma retomada e nada é recriado).
@@ -517,6 +517,7 @@ async function processarLoteFisico(supabase: any, casoId: string, loteId: string
   if(le || !lote) throw le ?? new Error("Lote não encontrado");
   if(!lote.storage_path) throw new Error("Lote sem arquivo físico");
   if(lote.status === "concluido") return { ok: true, contracheques: 0, ja_concluido: true };
+  if(lote.status === "processando") return { ok: true, contracheques: 0, em_processamento: true };
 
   const { data: lotesCaso, error: lce } = await supabase.from("lotes_contracheques")
     .select("id,ordem,status,estado_saida").eq("caso_id", casoId).not("storage_path", "is", null).order("ordem");
