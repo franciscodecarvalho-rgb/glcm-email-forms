@@ -32,7 +32,7 @@ describe("contrachequesRelacionaisParaRevisao", () => {
       competencia: "03/2026",
       arquivo_origem: "folha.pdf",
       itens_contracheque: [
-        { familia_hra: "adicional_hra", valor: 100 },
+        { codigo: "023", descricao: "Vlr Adicional HRA S Hextra", familia_hra: "adicional_hra", valor: 100 },
         { familia_hra: "hra", valor: 50 },
         { familia_hra: "ahra_dobra", valor: 25 },
         { familia_hra: null, valor: 900 },
@@ -40,8 +40,8 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }])).toEqual([{
       id: "contra-1",
       label: "03/2026",
-      valor_hra: 150,
-      valor_ahra: 25,
+      valor_hra: 50,
+      valor_ahra: 125,
     }]);
   });
 
@@ -58,8 +58,8 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }])).toEqual([{
       id: "contra-3",
       label: "04/2026",
-      valor_hra: 500,
-      valor_ahra: 80,
+      valor_hra: 0,
+      valor_ahra: 580,
     }]);
   });
 

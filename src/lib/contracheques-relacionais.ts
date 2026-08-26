@@ -45,6 +45,10 @@ function ehProventoHra(item: ItemContrachequeRelacional): boolean {
   return (item.tipo ?? "provento") === "provento";
 }
 
+function ehFamiliaAhra(item: ItemContrachequeRelacional): boolean {
+  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra";
+}
+
 function valorProvento(item: ItemContrachequeRelacional): number {
   return Math.abs(Number(item.valor) || 0);
 }
@@ -55,10 +59,10 @@ export function contrachequesRelacionaisParaRevisao(
   const linhas = (contracheques ?? []).map((contracheque, index) => {
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
-      .filter((item) => item.familia_hra === "ahra_dobra" && ehProventoHra(item))
+      .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itens
-      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra" && ehProventoHra(item))
+      .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
 
     return {

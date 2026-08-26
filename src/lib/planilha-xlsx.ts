@@ -195,6 +195,8 @@ export type ContrachequeParaContribExtra = {
 };
 export type ItemParaContribExtra = {
   contracheque_id?: string | null;
+  codigo?: string | null;
+  tipo?: string | null;
   valor?: number | null;
   familia_hra?: string | null;
 };
@@ -211,7 +213,10 @@ export function agregarContribExtraPorCompetencia(
     const soma = (itens ?? [])
       .filter(
         (item) =>
-          item.contracheque_id === contracheque.id && item.familia_hra === "contrib_extra",
+          item.contracheque_id === contracheque.id &&
+          item.familia_hra === "contrib_extra" &&
+          item.tipo === "desconto" &&
+          String(item.codigo ?? "").trim() !== "6050",
       )
       .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
     if (soma <= 0) return;

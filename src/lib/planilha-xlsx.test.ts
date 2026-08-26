@@ -329,10 +329,12 @@ describe("planilha IR sobre Contribuição Extraordinária", () => {
     { id: "b", competencia: "01/2024" },
   ];
   const itens = [
-    { contracheque_id: "a", valor: -100.5, familia_hra: "contrib_extra" },
-    { contracheque_id: "a", valor: 50, familia_hra: "contrib_extra" },
+    { contracheque_id: "a", codigo: "1489", tipo: "desconto", valor: -100.5, familia_hra: "contrib_extra" },
+    { contracheque_id: "a", codigo: "6060", tipo: "desconto", valor: 50, familia_hra: "contrib_extra" },
+    { contracheque_id: "a", codigo: "6050", tipo: "desconto", valor: -300, familia_hra: "contrib_extra" },
+    { contracheque_id: "a", codigo: "1489", tipo: "provento", valor: 99, familia_hra: "contrib_extra" },
     { contracheque_id: "a", valor: 900, familia_hra: "hra" },
-    { contracheque_id: "b", valor: -200, familia_hra: "contrib_extra" },
+    { contracheque_id: "b", codigo: "6070", tipo: "desconto", valor: -200, familia_hra: "contrib_extra" },
     { contracheque_id: "b", valor: 10, familia_hra: null },
   ];
 

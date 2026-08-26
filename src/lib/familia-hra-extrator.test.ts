@@ -51,6 +51,7 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("3A20", "Verba 3A20", "basf")).toBe("hra");
     expect(familia("3A20", "Verba 3A20", "braskem")).toBeNull();
     expect(familia("1062", "Adicional HRA", "")).toBe("adicional_hra");
+    expect(familia("023", "Vlr Adicional HRA S Hextra", "unigel")).toBe("adicional_hra");
     expect(familia("0208", "AHRA/Dobra de Turno", "")).toBe("ahra_dobra");
     expect(familia("4208", "Dif AHRA Dobra", "")).toBe("dif_ahra");
     expect(familia("0077", "HRA", "")).toBe("hra");
@@ -60,12 +61,12 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
 });
 
 describe("contribuição extraordinária PPSP (Petrobras)", () => {
-  it("classifica 1489 e 6050/6060/6070 pelo par código + nomenclatura PPSP", () => {
-    expect(familia("1489", "Contrib Extra PPSP", "petrobras")).toBe("contrib_extra");
-    expect(familia("1489", "CONTRIB. EXTRA PPSP-R", "petrobras")).toBe("contrib_extra");
-    expect(familia("6050", "CONTRIB EXTRAORDINARIA PPSP", "petrobras")).toBe("contrib_extra");
-    expect(familia("6060", "Contrib. Extraordinária PPSP-R", "petrobras")).toBe("contrib_extra");
-    expect(familia("6070", "CONTRIB EXTRAORDINARIA PPSP", "petrobras")).toBe("contrib_extra");
+  it("classifica 1489 e 6060/6070 pelo par código + nomenclatura PPSP somente como desconto", () => {
+    expect(familia("1489", "Contrib Extra PPSP", "petrobras", "desconto")).toBe("contrib_extra");
+    expect(familia("1489", "CONTRIB. EXTRA PPSP-R", "petrobras", "desconto")).toBe("contrib_extra");
+    expect(familia("6060", "Contrib. Extraordinária PPSP-R", "petrobras", "desconto")).toBe("contrib_extra");
+    expect(familia("6070", "CONTRIB EXTRAORDINARIA PPSP", "petrobras", "desconto")).toBe("contrib_extra");
+    expect(familia("1489", "Contrib Extra PPSP", "petrobras", "provento")).toBeNull();
   });
 
   it("não classifica fora do modelo petrobras nem para descrições diferentes", () => {
@@ -73,6 +74,7 @@ describe("contribuição extraordinária PPSP (Petrobras)", () => {
     expect(familia("6050", "CONTRIB EXTRAORDINARIA PPSP", "")).toBeNull();
     expect(familia("6050", "Salário Básico", "petrobras")).toBeNull();
     expect(familia("1489", "Contribuição Sindical", "petrobras")).toBeNull();
+    expect(familia("6050", "CONTRIB EXTRAORDINARIA PPSP", "petrobras")).toBeNull();
     expect(familia("6060", "Contrib Extra PPSP", "petrobras")).toBeNull();
   });
 });

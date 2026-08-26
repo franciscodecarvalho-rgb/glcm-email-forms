@@ -437,6 +437,8 @@ type ContrachequeParaContribExtra = {
 };
 type ItemParaContribExtra = {
   contracheque_id?: string | null;
+  codigo?: string | null;
+  tipo?: string | null;
   valor?: number | null;
   familia_hra?: string | null;
 };
@@ -453,7 +455,10 @@ function agregarContribExtraPorCompetencia(
     const soma = (itens ?? [])
       .filter(
         (item) =>
-          item.contracheque_id === contracheque.id && item.familia_hra === "contrib_extra",
+          item.contracheque_id === contracheque.id &&
+          item.familia_hra === "contrib_extra" &&
+          item.tipo === "desconto" &&
+          String(item.codigo ?? "").trim() !== "6050",
       )
       .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
     if (soma <= 0) return;
@@ -980,7 +985,7 @@ async function buscarItensContrachequePaginado(
   for (let inicio = 0; ; inicio += PAGINA_ITENS) {
     const { data, error } = await client
       .from("itens_contracheque")
-      .select("contracheque_id, valor, tipo, familia_hra")
+      .select("contracheque_id, codigo, valor, tipo, familia_hra")
       .in("contracheque_id", contrachequeIds)
       .order("id", { ascending: true })
       .range(inicio, inicio + PAGINA_ITENS - 1);
@@ -997,6 +1002,10 @@ function ehProventoHra(item: ItemContrachequeRelacional): boolean {
   return (item.tipo ?? "provento") === "provento";
 }
 
+function ehFamiliaAhra(item: ItemContrachequeRelacional): boolean {
+  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra";
+}
+
 function valorProvento(item: ItemContrachequeRelacional): number {
   return Math.abs(Number(item.valor) || 0);
 }
@@ -1010,10 +1019,10 @@ function montarContrasRelacionais(
       (item) => item.contracheque_id === contracheque.id,
     );
     const valorAhra = itensDoContra
-      .filter((item) => item.familia_hra === "ahra_dobra" && ehProventoHra(item))
+      .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itensDoContra
-      .filter((item) => item.familia_hra && item.familia_hra !== "ahra_dobra" && ehProventoHra(item))
+      .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
     return {
       competencia: contracheque.competencia || null,

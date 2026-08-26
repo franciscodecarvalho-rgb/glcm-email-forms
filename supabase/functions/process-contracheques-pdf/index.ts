@@ -43,7 +43,7 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
       const tipo=item.tipo;
       if(!descricao||!Number.isFinite(valor)||valor<0||!(tipo==="provento"||tipo==="desconto"||tipo==="informativo"))return [];
       const codigo=typeof item.codigo==="string"?item.codigo.trim().toUpperCase():"";
-      return [{codigo,descricao,referencia:Number.isFinite(Number(item.referencia))?Number(item.referencia):null,valor,tipo,familia_hra:familia(codigo,descricao,typeof contra.modelo_origem==="string"?contra.modelo_origem:"")} as Rubrica];
+      return [{codigo,descricao,referencia:Number.isFinite(Number(item.referencia))?Number(item.referencia):null,valor,tipo,familia_hra:familia(codigo,descricao,typeof contra.modelo_origem==="string"?contra.modelo_origem:"",tipo)} as Rubrica];
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
@@ -150,7 +150,7 @@ function competenciaBasf(ls: Linha[]): string | null {
   return null;
 }
 
-function familia(codigo: string, descricao: string, modeloOrigem: string) {
+function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: Tipo) {
   const codigoNormalizado=codigo.trim().toUpperCase();
   if(modeloOrigem==="basf"&&codigoNormalizado==="3A20")return "hra";
   const n=norm(descricao);
@@ -166,9 +166,9 @@ function familia(codigo: string, descricao: string, modeloOrigem: string) {
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Petrobras: contribuição extraordinária PPSP (aceita pontuação e sufixo PPSP-R).
   // Só vale para o par código + nomenclatura PPSP, e apenas no modelo petrobras.
-  if(modeloOrigem==="petrobras"){
+  if(modeloOrigem==="petrobras"&&tipo==="desconto"){
     if(codigoNormalizado==="1489"&&/contrib\W*extra\W*ppsp/.test(n))return "contrib_extra";
-    if(["6050","6060","6070"].includes(codigoNormalizado)&&/contrib\W*extraordinaria\W*ppsp/.test(n))return "contrib_extra";
+    if(["6060","6070"].includes(codigoNormalizado)&&/contrib\W*extraordinaria\W*ppsp/.test(n))return "contrib_extra";
   }
   if(!/hra/.test(n))return null;
 
@@ -210,7 +210,7 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
     const tipo:Tipo=info?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
     const codigo=cod?.str.trim().toUpperCase()??"";
-    rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem)});
+    rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
   if(!/\bcontinua\b/.test(norm(texto))){
     total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;

@@ -218,6 +218,8 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Ordenar as linhas por MM/AAAA em `montarArquivosPlanilhaXlsx`; rótulos fora do padrão (ex.: legado "Contracheque 1") vão ao fim, preservando a ordem relativa.
 **Evitar:** Reintroduzir a coluna SUBTOTAL ou depender da ordem de seleção/extração dos contracheques.
 
+**Regra complementar:** Rubricas da família `adicional_hra`, como `023 — Vlr Adicional HRA S Hextra`, compõem a coluna AHRA quando forem proventos; não entram na HRA.
+
 ### 2026-08 — Fontes canônicas testadas em src/lib
 
 **Regra confirmada:** As lógicas puras de `generate-documents` (seleção de peças e planilha xlsx) têm fonte canônica em `src/lib` com cobertura vitest; a Edge Function mantém cópias inline por exigência do deploy de arquivo único.
@@ -255,9 +257,9 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 
 ### 2026-08 — Contribuição Extraordinária Petrobras (PPSP)
 
-**Regra confirmada:** Nos contracheques Petrobras, somente os pares código e nomenclatura `1489 — Contrib Extra PPSP`, `6050`, `6060` ou `6070 — CONTRIB EXTRAORDINARIA PPSP` (incluindo sufixos como `PPSP-R 2021`) pertencem à família `contrib_extra`.
+**Regra confirmada:** Nos contracheques Petrobras, somente os pares código e nomenclatura `1489 — Contrib Extra PPSP`, `6060` ou `6070 — CONTRIB EXTRAORDINARIA PPSP` (incluindo sufixos como `PPSP-R 2021`) do tipo `desconto` pertencem à família `contrib_extra`. O código `6050` não integra essa família.
 **Aplicação:** A ação `contribuicao_extraordinaria` agrega essa família por competência, inclusive quando a rubrica vier como desconto, e gera `PLANILHA — {NOME_CLIENTE} — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA.xlsx` na estrutura `Plan1` do modelo, com as colunas P. A., contribuição extraordinária, alíquota e valor histórico.
-**Evitar:** Tratar apenas o código 6050 como suficiente, classificar rubricas de outra empresa ou usar essas rubricas no cálculo HRA/AHRA.
+**Evitar:** Classificar o código 6050 nessa família, classificar rubricas de outra empresa ou usar essas rubricas no cálculo HRA/AHRA.
 
 ### 2026-08 — PDF unificado de contracheques no pacote final
 

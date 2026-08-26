@@ -14,6 +14,7 @@ import {
   montarArquivosPlanilhaXlsx,
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
+import { contrachequesRelacionaisParaRevisao } from "./contracheques-relacionais";
 
 function carregarTrechoDaFuncao<T extends Record<string, unknown>>(
   inicioMarcador: string,
@@ -56,6 +57,13 @@ const edgePlanilha = carregarTrechoDaFuncao<{
   "agregarContribExtraPorCompetencia",
   "montarArquivosPlanilhaContribExtraXlsx",
 ]);
+
+const edgeCalculos = carregarTrechoDaFuncao<{
+  montarContrasRelacionais: (
+    contracheques: Array<{ id: string; competencia?: string | null; arquivo_origem?: string | null }>,
+    itens: Array<{ contracheque_id?: string | null; valor?: number | null; tipo?: string | null; familia_hra?: string | null }>,
+  ) => Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }>;
+}>("type ContrachequeRelacional = { id:", "// ---------------- função principal", ["montarContrasRelacionais"]);
 
 describe("guarda do espelho src/lib ↔ generate-documents", () => {
   it("selecionarPecas: saída idêntica para todos os tipos e escritórios", () => {
@@ -145,5 +153,18 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     expect(montarArquivosPlanilhaContribExtraXlsx("FULANO <&>", src)).toEqual(
       edgePlanilha.montarArquivosPlanilhaContribExtraXlsx("FULANO <&>", edge),
     );
+  });
+
+  it("cálculos: adicional HRA em provento compõe AHRA, inclusive a rubrica 023", () => {
+    const contracheques = [{ id: "a", competencia: "04/2026" }];
+    const itens = [
+      { contracheque_id: "a", valor: 100, tipo: "provento", familia_hra: "adicional_hra" },
+      { contracheque_id: "a", valor: 50, tipo: "provento", familia_hra: "hra" },
+    ];
+    const fonte = contrachequesRelacionaisParaRevisao([{
+      ...contracheques[0],
+      itens_contracheque: itens,
+    }]);
+    expect(edgeCalculos.montarContrasRelacionais(contracheques, itens)).toEqual(fonte);
   });
 });
