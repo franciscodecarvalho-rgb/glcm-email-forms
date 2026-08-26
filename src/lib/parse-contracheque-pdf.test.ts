@@ -155,6 +155,28 @@ describe("parsePaginaContracheque", () => {
 
     expect(resultado.competencia).toBe("11/2021");
   });
+
+  it("ignora dados cadastrais e preserva descrições completas no layout PROQUIGEL/Unigel", () => {
+    const resultado = parsePaginaContracheque([
+      item("PROQUIGEL", 20, 560), item("QUIMICA", 90, 560), item("Competência", 400, 560), item("4/2026", 480, 560),
+      // dados cadastrais acima do cabeçalho (não podem virar rubricas)
+      item("1234", 40, 530), item("JOSE", 100, 530), item("DA", 150, 530), item("SILVA", 180, 530),
+      item("CBO", 400, 530), item("8.401,00", 510, 530),
+      item("CÓD.", 40, 450), item("DESCRIÇÃO", 180, 450), item("QTDE.", 350, 450), item("VENCIMENTOS", 500, 450),
+      item("015", 40, 420), item("Hrs", 70, 420), item("Repouso", 100, 420), item("Alimentacao", 150, 420),
+      item("30,00", 350, 420), item("2.585,51", 510, 420),
+      item("023", 40, 400), item("Vlr", 70, 400), item("Adicional", 100, 400), item("HRA", 150, 400),
+      item("S", 175, 400), item("Hextra", 195, 400), item("463,36", 510, 400),
+      item("TOTAL", 350, 380), item("VENCIMENTOS", 400, 380), item("3.048,87", 510, 380),
+    ], 595);
+
+    expect(resultado.modeloOrigem).toBe("unigel");
+    expect(resultado.competencia).toBe("04/2026");
+    expect(resultado.itens).toEqual([
+      { codigo: "015", descricao: "Hrs Repouso Alimentacao", referencia: 30, valor: 2585.51, tipo: "provento" },
+      { codigo: "023", descricao: "Vlr Adicional HRA S Hextra", referencia: null, valor: 463.36, tipo: "provento" },
+    ]);
+  });
 });
 
 describe("consolidarPaginasContracheque", () => {
