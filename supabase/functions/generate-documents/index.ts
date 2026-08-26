@@ -263,12 +263,19 @@ function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]
   // Planilha não pode ser alimentada com linhas de valores zerados.
   const naoNulas = linhas.filter((l) => l.hra !== 0 || l.ahra !== 0);
   const ordenadas = ordenarPorCompetencia(naoNulas);
+  // Quando nenhuma competência possui AHRA, a coluna AHRA é omitida.
+  const comAhra = ordenadas.some((l) => l.ahra !== 0);
+  const colValor = comAhra ? "E" : "D";
+  const colAliq = comAhra ? "D" : "C";
   const rows: string[] = [];
   rows.push(
     `<row r="1" ht="30" customHeight="1"><c r="A1" t="inlineStr" s="4"><is><t xml:space="preserve">${escXml(`PLANILHA — ${nomeCliente} — TEMA 306 (HRA)`)}</t></is></c></row>`,
   );
+  const cabecalhos = comAhra
+    ? ["P. A.", "HRA", "AHRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
+    : ["P. A.", "HRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"];
   rows.push(
-    `<row r="2" ht="18" customHeight="1">${["P. A.", "HRA", "AHRA", "ALÍQ. IR", "VALOR (HISTÓRICO)"]
+    `<row r="2" ht="18" customHeight="1">${cabecalhos
       .map((t, i) => tx(`${"ABCDE"[i]}2`, t, 5))
       .join("")}</row>`,
   );
@@ -280,9 +287,14 @@ function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]
       `<row r="${r}">` +
         tx(`A${r}`, l.competencia, 6) +
         nm(`B${r}`, l.hra, 7) +
-        nm(`C${r}`, l.ahra, 7) +
-        `<c r="D${r}" s="8"><v>0.275</v></c>` +
-        fx(`E${r}`, `ROUND((B${r}+C${r})*0.275,2)`, Math.round(sub * 0.275 * 100) / 100, 7) +
+        (comAhra ? nm(`C${r}`, l.ahra, 7) : "") +
+        `<c r="${colAliq}${r}" s="8"><v>0.275</v></c>` +
+        fx(
+          `${colValor}${r}`,
+          comAhra ? `ROUND((B${r}+C${r})*0.275,2)` : `ROUND(B${r}*0.275,2)`,
+          Math.round(sub * 0.275 * 100) / 100,
+          7,
+        ) +
         `</row>`,
     );
     r++;
@@ -295,11 +307,11 @@ function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]
       `<row r="${r}">` +
         empty(`A${r}`, 9) +
         empty(`B${r}`, 9) +
-        empty(`C${r}`, 9) +
-        tx(`D${r}`, "VALOR (HISTÓRICO)", 9) +
+        (comAhra ? empty(`C${r}`, 9) : "") +
+        tx(`${colAliq}${r}`, "VALOR (HISTÓRICO)", 9) +
         fx(
-          `E${r}`,
-          `SUM(E${primeira}:E${ultima})`,
+          `${colValor}${r}`,
+          `SUM(${colValor}${primeira}:${colValor}${ultima})`,
           ordenadas.reduce((s, l) => s + Math.round((l.hra + l.ahra) * 0.275 * 100) / 100, 0),
           10,
         ) +
@@ -307,12 +319,17 @@ function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]
     );
   }
 
+  const cols = comAhra
+    ? `<cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>`
+    : `<cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="22" customWidth="1"/></cols>`;
+
   const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<cols><col min="1" max="1" width="15" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="18" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>
+${cols}
 <sheetData>${rows.join("")}</sheetData>
-<mergeCells count="1"><mergeCell ref="A1:E1"/></mergeCells>
+<mergeCells count="1"><mergeCell ref="A1:${comAhra ? "E" : "D"}1"/></mergeCells>
 </worksheet>`;
+
 
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
