@@ -5,7 +5,7 @@ import type { RubricaAlertada } from "@/lib/alertas-rubricas";
 const fmt = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-/** Sinaliza rubricas monitoradas (1059, 1513, 6050) encontradas nos contracheques. */
+/** Sinaliza rubricas monitoradas e a família Petrobras de Contribuição Extraordinária. */
 export function AlertaRubricas({ alertas }: { alertas: RubricaAlertada[] }) {
   if (alertas.length === 0) return null;
 

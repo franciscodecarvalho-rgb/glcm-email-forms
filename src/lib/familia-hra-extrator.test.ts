@@ -33,7 +33,6 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("1004", "HORA DE REPOUSO E ALIMENTACAO", "desconhecido")).toBe("hra");
     expect(familia("1004", "Dif Hora Repouso Alimentação", "braskem")).toBe("hra");
   });
-
   it("não torna o código 1004 global para descrições diferentes", () => {
     expect(familia("1004", "Salário Básico", "")).toBeNull();
     expect(familia("1004", "Adicional Noturno", "braskem")).toBeNull();
@@ -57,6 +56,7 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("0077", "HRA", "")).toBe("hra");
     expect(familia("0001", "Salário Básico", "")).toBeNull();
   });
+
 });
 
 describe("contribuição extraordinária PPSP (Petrobras)", () => {

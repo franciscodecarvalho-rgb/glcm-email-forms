@@ -241,7 +241,7 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 
 ### 2026-08 — Alerta de rubricas monitoradas
 
-**Regra confirmada:** A página do caso sinaliza quando os contracheques contêm rubricas com os códigos 1059, 1513 ou 6050, agrupando as competências por código.
+**Regra confirmada:** A página do caso sinaliza quando os contracheques contêm rubricas com os códigos 1059, 1513 ou da família Petrobras de Contribuição Extraordinária (1489, 6050, 6060 e 6070), agrupando as competências por código.
 **Origem:** Redefinição de Nodley sobre as solicitações de Ana: o relatório de totais 1513/6050 (item 1.1) e a sugestão de viabilidade pela média (item 1.2) foram removidos do escopo, restando somente o alerta unificado.
 **Aplicação:** `encontrarRubricasAlerta` em `src/lib/alertas-rubricas.ts` filtra `itens_contracheque` pelos códigos; o componente `AlertaRubricas` exibe o aviso na página do caso em todos os status.
 **Evitar:** Recriar o relatório de totais 1513/6050 ou a sugestão de viabilidade sem nova solicitação explícita.
@@ -252,6 +252,12 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Solicitação de Nodley reaproveitando o item 1.1 de Ana com a estrutura da planilha já validada.
 **Aplicação:** `agregarCodigosPorCompetencia` consolida `itens_contracheque` por competência; `montarArquivosPlanilhaCodigosXlsx` gera o arquivo; nada é gerado quando não há ocorrências.
 **Evitar:** Gerar a planilha vazia, usar o JSON legado de `casos.contracheques` como fonte ou criar estrutura diferente da planilha IR/HRA validada.
+
+### 2026-08 — Contribuição Extraordinária Petrobras (PPSP)
+
+**Regra confirmada:** Nos contracheques Petrobras, somente os pares código e nomenclatura `1489 — Contrib Extra PPSP`, `6050`, `6060` ou `6070 — CONTRIB EXTRAORDINARIA PPSP` (incluindo sufixos como `PPSP-R 2021`) pertencem à família `contrib_extra`.
+**Aplicação:** A ação `contribuicao_extraordinaria` agrega essa família por competência, inclusive quando a rubrica vier como desconto, e gera `PLANILHA — {NOME_CLIENTE} — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA.xlsx` na estrutura `Plan1` do modelo, com as colunas P. A., contribuição extraordinária, alíquota e valor histórico.
+**Evitar:** Tratar apenas o código 6050 como suficiente, classificar rubricas de outra empresa ou usar essas rubricas no cálculo HRA/AHRA.
 
 ### 2026-08 — PDF unificado de contracheques no pacote final
 
