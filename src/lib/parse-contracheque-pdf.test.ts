@@ -177,6 +177,41 @@ describe("parsePaginaContracheque", () => {
       { codigo: "023", descricao: "Vlr Adicional HRA S Hextra", referencia: null, valor: 463.36, tipo: "provento" },
     ]);
   });
+
+  it("reconhece o modelo ITF e extrai competência Mês/Ano", () => {
+    const resultado = parsePaginaContracheque([
+      item("ITF", 20, 500), item("CHEMICAL", 60, 500), item("LTDA", 110, 500),
+      item("CNPJ", 20, 470), item("03.928.294/0001-04", 80, 470),
+      item("Matrícula", 20, 450), item("Nome", 120, 450),
+      item("00473", 20, 430), item("TAUAN", 120, 430), item("DA", 150, 430), item("SILVA", 180, 430),
+      item("Competência", 20, 410), item("Junho/2024", 120, 410),
+      item("Código", 20, 380), item("Discrição", 120, 380), item("Ref", 250, 380), item("Provento", 350, 380), item("Desconto", 450, 380),
+      item("1002", 20, 360), item("HRA", 60, 360), item("-", 80, 360), item("Hora", 100, 360),
+      item("Repouso", 130, 360), item("Alimentação", 170, 360), item("256,67", 360, 360),
+      item("2095", 20, 340), item("I.N.S.S.", 100, 340), item("9,00", 260, 340), item("152,99", 460, 340),
+    ], 595);
+
+    expect(resultado.modeloOrigem).toBe("itf");
+    expect(resultado.competencia).toBe("06/2024");
+    expect(resultado.itens.some((i) => i.codigo === "1002" && i.valor === 256.67)).toBe(true);
+  });
+
+  it("reconhece o modelo Tronox e preserva descrições completas", () => {
+    const resultado = parsePaginaContracheque([
+      item("DEMONSTRATIVO", 20, 500), item("DE", 100, 500), item("PAGAMENTO", 120, 500), item("MENSAL", 180, 500),
+      item("TRONOX", 20, 470), item("PIGMENTOS", 60, 470), item("DO", 100, 470), item("BRASIL", 130, 470),
+      item("Matrícula", 20, 450), item("Nome", 120, 450),
+      item("04915", 20, 430), item("ANTONIO", 120, 430), item("CELESTINO", 150, 430),
+      item("Competência", 20, 410), item("Maio/2026", 120, 410),
+      item("Código", 20, 380), item("Descrição", 120, 380), item("Referência", 260, 380), item("Provento", 350, 380), item("Desconto", 440, 380),
+      item("0603", 20, 360), item("HORAS", 60, 360), item("REPOUSO", 90, 360), item("ALIMENTACAO", 130, 360), item("2.273,48", 360, 360),
+      item("0004", 20, 340), item("IRRF", 90, 340), item("27,50", 270, 340), item("3.027,80", 450, 340),
+    ], 595);
+
+    expect(resultado.modeloOrigem).toBe("tronox");
+    expect(resultado.competencia).toBe("05/2026");
+    expect(resultado.itens.some((i) => i.codigo === "0603" && i.descricao === "HORAS REPOUSO ALIMENTACAO" && i.valor === 2273.48)).toBe(true);
+  });
 });
 
 describe("consolidarPaginasContracheque", () => {

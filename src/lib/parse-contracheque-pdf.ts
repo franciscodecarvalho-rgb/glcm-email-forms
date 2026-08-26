@@ -72,6 +72,8 @@ function detectarModelo(texto: string): string {
   if (n.includes("braskem")) return "braskem";
   if (n.includes("basf")) return "basf";
   if (n.includes("refinaria de mataripe")) return "acelen";
+  if (n.includes("itf chemical")) return "itf";
+  if (n.includes("tronox")) return "tronox";
   return "generico";
 }
 
@@ -189,9 +191,9 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     const candidatos = valoresDaLinha(linha).filter((i) => i.x > larguraLeitura * 0.28);
     if (!candidatos.length) continue;
     const valorItem = candidatos[candidatos.length - 1];
-    // Unigel/Proquigel: o rótulo "DESCRIÇÃO" é centralizado sobre a coluna, então a
-    // descrição precisa começar logo após o código da rubrica para não ser truncada.
-    const inicioDescricao = modeloOrigem === "unigel" && codigoItem
+    // Unigel/Proquigel e Tronox: o rótulo "DESCRIÇÃO" é centralizado sobre a coluna,
+    // então a descrição precisa começar logo após o código da rubrica para não ser truncada.
+    const inicioDescricao = (modeloOrigem === "unigel" || modeloOrigem === "tronox") && codigoItem
       ? codigoItem.x + codigoItem.width
       : xDescricao ?? (codigoItem ? codigoItem.x + codigoItem.width : 0);
     const limiteDescricao = [xReferencia, xProvento, xDesconto, larguraLeitura * 0.82]
