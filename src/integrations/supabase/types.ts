@@ -291,6 +291,7 @@ export type Database = {
           caso_id: string
           erro: string | null
           estado_saida: Json | null
+          ia_status: string | null
           id: string
           ordem: number
           pagina_fim: number
@@ -303,6 +304,7 @@ export type Database = {
           caso_id: string
           erro?: string | null
           estado_saida?: Json | null
+          ia_status?: string | null
           id?: string
           ordem: number
           pagina_fim: number
@@ -315,6 +317,7 @@ export type Database = {
           caso_id?: string
           erro?: string | null
           estado_saida?: Json | null
+          ia_status?: string | null
           id?: string
           ordem?: number
           pagina_fim?: number
