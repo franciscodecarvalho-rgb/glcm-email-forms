@@ -264,7 +264,7 @@ function montarArquivosPlanilhaXlsx(nomeCliente: string, linhas: LinhaPlanilha[]
   const naoNulas = linhas.filter((l) => l.hra !== 0 || l.ahra !== 0);
   const ordenadas = ordenarPorCompetencia(naoNulas);
   // Quando nenhuma competência possui AHRA, a coluna AHRA é omitida.
-  const comAhra = ordenadas.some((l) => l.ahra !== 0);
+  const comAhra = ordenadas.length === 0 || ordenadas.some((l) => l.ahra !== 0);
   const colValor = comAhra ? "E" : "D";
   const colAliq = comAhra ? "D" : "C";
   const rows: string[] = [];
