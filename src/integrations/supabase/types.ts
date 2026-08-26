@@ -284,6 +284,60 @@ export type Database = {
           },
         ]
       }
+      lotes_contracheques: {
+        Row: {
+          arquivo_id: string
+          atualizado_em: string
+          caso_id: string
+          erro: string | null
+          estado_saida: Json | null
+          id: string
+          ordem: number
+          pagina_fim: number
+          pagina_inicio: number
+          status: string
+        }
+        Insert: {
+          arquivo_id: string
+          atualizado_em?: string
+          caso_id: string
+          erro?: string | null
+          estado_saida?: Json | null
+          id?: string
+          ordem: number
+          pagina_fim: number
+          pagina_inicio: number
+          status?: string
+        }
+        Update: {
+          arquivo_id?: string
+          atualizado_em?: string
+          caso_id?: string
+          erro?: string | null
+          estado_saida?: Json | null
+          id?: string
+          ordem?: number
+          pagina_fim?: number
+          pagina_inicio?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lotes_contracheques_arquivo_id_fkey"
+            columns: ["arquivo_id"]
+            isOneToOne: false
+            referencedRelation: "arquivos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lotes_contracheques_caso_id_fkey"
+            columns: ["caso_id"]
+            isOneToOne: false
+            referencedRelation: "casos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lotes_extracao: {
         Row: {
           arquivo_ids: string[]
