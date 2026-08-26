@@ -63,33 +63,41 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }]);
   });
 
-  it("não gera base negativa quando a competência só tem desconto HRA (caso 5522, 03/2021)", () => {
+  it("omite a competência que só tem desconto HRA (caso 5522, 03/2021)", () => {
     expect(contrachequesRelacionaisParaRevisao([{
       id: "contra-5522",
       competencia: "03/2021",
       itens_contracheque: [
         { codigo: "1004", familia_hra: "hra", valor: 949.02, tipo: "desconto" },
       ],
-    }])).toEqual([{
-      id: "contra-5522",
-      label: "03/2021",
-      valor_hra: 0,
-      valor_ahra: 0,
-    }]);
+    }])).toEqual([]);
   });
 
-  it("mantém o contracheque visível quando nenhuma rubrica HRA foi localizada", () => {
+  it("omite o contracheque quando nenhuma rubrica HRA foi localizada", () => {
     expect(contrachequesRelacionaisParaRevisao([{
       id: "contra-2",
       competencia: null,
       arquivo_origem: "modelo.pdf",
       itens_contracheque: [],
-    }])).toEqual([{
-      id: "contra-2",
-      label: "modelo.pdf",
-      valor_hra: 0,
-      valor_ahra: 0,
-    }]);
+    }])).toEqual([]);
+  });
+
+  it("mantém a competência com HRA ou AHRA positivo", () => {
+    expect(contrachequesRelacionaisParaRevisao([
+      {
+        id: "contra-so-hra",
+        competencia: "05/2026",
+        itens_contracheque: [{ familia_hra: "hra", valor: 10, tipo: "provento" }],
+      },
+      {
+        id: "contra-so-ahra",
+        competencia: "06/2026",
+        itens_contracheque: [{ familia_hra: "ahra_dobra", valor: 7, tipo: "provento" }],
+      },
+    ])).toEqual([
+      { id: "contra-so-hra", label: "05/2026", valor_hra: 10, valor_ahra: 0 },
+      { id: "contra-so-ahra", label: "06/2026", valor_hra: 0, valor_ahra: 7 },
+    ]);
   });
 });
 
