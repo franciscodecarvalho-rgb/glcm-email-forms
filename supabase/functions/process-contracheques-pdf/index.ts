@@ -188,7 +188,7 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length)liquido=moeda(vs[vs.length-1].str);
     const cod=modelo_origem==="elekeiroz"?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&modelo_origem!=="elekeiroz")continue;
     const candidatos=vs.filter((i)=>i.x>larguraLeitura*.28); if(!candidatos.length)continue;
-    const vi=candidatos[candidatos.length-1], inicio=xdesc??(cod?cod.x+cod.width:0);
+    const vi=candidatos[candidatos.length-1], inicio=modelo_origem==="unigel"&&cod?cod.x+cod.width:(xdesc??(cod?cod.x+cod.width:0));
     const limite=[xr,xp,xd,larguraLeitura*.82].filter((v):v is number=>v!=null&&v>inicio).sort((a,b)=>a-b)[0];
     const descricao=l.itens.filter((i)=>i.x>=inicio-larguraLeitura*.01&&i.x<limite&&i.str!=="|").map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
     if(!descricao)continue;
