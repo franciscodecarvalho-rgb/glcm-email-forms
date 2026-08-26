@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
+import { PDFDocument } from "npm:pdf-lib@1.17.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -273,6 +274,18 @@ async function persistirContra(supabase: any, casoId: string, contra: Contra, ar
   }
 }
 
+// Recorta só as páginas [inicio, fim] (1-based, inclusive) num PDF novo — é
+// isso que vai para a IA, nunca o arquivo inteiro numa única requisição.
+async function fatiarPaginas(bytesOriginal: Uint8Array, inicio: number, fim: number): Promise<Uint8Array> {
+  const origem = await PDFDocument.load(bytesOriginal, { ignoreEncryption: true });
+  const destino = await PDFDocument.create();
+  const indices: number[] = [];
+  for (let i = inicio; i <= fim; i++) indices.push(i - 1); // pdf-lib é 0-based
+  const paginas = await destino.copyPages(origem, indices);
+  paginas.forEach((p) => destino.addPage(p));
+  return await destino.save();
+}
+
 const TAMANHO_LOTE_PAGINAS = 15; // páginas por lote: mantém memória/CPU de cada chamada limitadas.
 
 // Garante o plano de lotes de páginas de um arquivo (idempotente — se já
@@ -379,6 +392,66 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
   return fechadosTotal;
 }
 
+// Fallback de IA quando o passo determinístico não achou nada no arquivo
+// (ex.: PDF é foto/scan sem camada de texto). Reaproveita os MESMOS lotes de
+// páginas já planejados (marcando ia_status neles) em vez de mandar o arquivo
+// inteiro numa única requisição — um PDF de dezenas de páginas em base64
+// estoura o limite do gateway/da IA e derruba a função antes de responder.
+// Uma chamada seguinte retoma só os lotes de IA que faltam.
+async function processarArquivoComIa(supabase: any, casoId: string, arq: { id: string; storage_path: string; nome: string }, apiKey: string): Promise<{ total: number; erro: string | null }> {
+  const { data: lotes, error: lErr } = await supabase.from("lotes_contracheques").select("*").eq("arquivo_id", arq.id).order("ordem");
+  if(lErr) throw lErr;
+  if(!lotes || !lotes.length) return { total: 0, erro: null };
+
+  const aMarcar = lotes.filter((l: any) => l.ia_status == null);
+  if(aMarcar.length){
+    await supabase.from("lotes_contracheques").update({ ia_status: "pendente" }).in("id", aMarcar.map((l: any) => l.id));
+    for(const l of aMarcar) l.ia_status = "pendente";
+  }
+
+  const pendentesIa = lotes.filter((l: any) => l.ia_status !== "concluido");
+  if(!pendentesIa.length) return { total: 0, erro: null };
+
+  // Mesma semente de dedup usada no passo determinístico: o que já está
+  // gravado (deste arquivo, de lotes de IA concluídos antes) nunca é reinserido.
+  const assinaturasVistas = new Set<string>();
+  {
+    const { data: existentes } = await supabase.from("contracheques")
+      .select("competencia, total_proventos, total_descontos, itens_contracheque(codigo, valor)")
+      .eq("caso_id", casoId).eq("arquivo_origem", arq.nome);
+    for(const c of existentes ?? []){
+      const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
+      assinaturasVistas.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, itens }));
+    }
+  }
+
+  const { data: blob, error: de } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
+  if(de || !blob) throw de ?? new Error(`Falha ao baixar ${arq.nome}`);
+  const bytesOriginal = new Uint8Array(await blob.arrayBuffer());
+
+  let total = 0;
+  let erroFatal: string | null = null;
+  for(const lote of pendentesIa){
+    try{
+      const bytesLote = await fatiarPaginas(bytesOriginal, lote.pagina_inicio, lote.pagina_fim);
+      const contrasIa = await extrairComIa(bytesLote, arq.nome, apiKey);
+      for(const c of contrasIa){
+        const assinatura = assinaturaContra(c);
+        if(assinaturasVistas.has(assinatura)) continue;
+        assinaturasVistas.add(assinatura);
+        await persistirContra(supabase, casoId, c, arq.nome);
+        total++;
+      }
+      await supabase.from("lotes_contracheques").update({ ia_status:"concluido", erro:null, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+    }catch(iaError){
+      const msg = iaError instanceof Error ? iaError.message : String(iaError);
+      await supabase.from("lotes_contracheques").update({ ia_status:"erro", erro:msg, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+      if(msg.includes("Créditos")){erroFatal=msg;break;} // esgotado: os demais lotes falhariam igual
+    }
+  }
+  return { total, erro: erroFatal };
+}
+
 Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});
@@ -408,14 +481,12 @@ Deno.serve(async(req)=>{
         if(fechadosArquivo===0){
           const apiKey=Deno.env.get("LOVABLE_API_KEY");
           if(!apiKey){revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});continue;}
-          const {data:blob,error:de}=await supabase.storage.from("casos-arquivos").download(arq.storage_path);
-          if(de||!blob)throw de??new Error(`Falha ao baixar ${arq.nome}`);
-          const bytes=new Uint8Array(await blob.arrayBuffer());
           try{
-            const contrasIa=await extrairComIa(bytes,arq.nome,apiKey);
-            if(!contrasIa.length){revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});continue;}
-            for(const c of contrasIa) await persistirContra(supabase,caso_id,c,arq.nome);
-            arquivosComIa++;totalFechados+=contrasIa.length;
+            const {total:totalIa,erro:erroIa}=await processarArquivoComIa(supabase,caso_id,arq,apiKey);
+            totalFechados+=totalIa;
+            if(totalIa>0)arquivosComIa++;
+            if(erroIa)revisao.push({arquivo:arq.nome,motivo:erroIa});
+            else if(totalIa===0)revisao.push({arquivo:arq.nome,motivo:"pdf_sem_texto_estruturado"});
           }catch(fallbackError){
             revisao.push({arquivo:arq.nome,motivo:fallbackError instanceof Error?fallbackError.message:"falha_na_ia"});
           }
