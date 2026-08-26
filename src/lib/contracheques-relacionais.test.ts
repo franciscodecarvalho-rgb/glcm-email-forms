@@ -45,7 +45,7 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }]);
   });
 
-  it("debita descontos e credita proventos da mesma família HRA", () => {
+  it("exclui descontos HRA/AHRA da base, sem reduzir o total", () => {
     expect(contrachequesRelacionaisParaRevisao([{
       id: "contra-3",
       competencia: "04/2026",
@@ -58,8 +58,23 @@ describe("contrachequesRelacionaisParaRevisao", () => {
     }])).toEqual([{
       id: "contra-3",
       label: "04/2026",
-      valor_hra: 380,
-      valor_ahra: 50,
+      valor_hra: 500,
+      valor_ahra: 80,
+    }]);
+  });
+
+  it("não gera base negativa quando a competência só tem desconto HRA (caso 5522, 03/2021)", () => {
+    expect(contrachequesRelacionaisParaRevisao([{
+      id: "contra-5522",
+      competencia: "03/2021",
+      itens_contracheque: [
+        { codigo: "1004", familia_hra: "hra", valor: 949.02, tipo: "desconto" },
+      ],
+    }])).toEqual([{
+      id: "contra-5522",
+      label: "03/2021",
+      valor_hra: 0,
+      valor_ahra: 0,
     }]);
   });
 
