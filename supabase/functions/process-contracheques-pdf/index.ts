@@ -177,7 +177,9 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   let secao:Tipo="provento", info=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
   const rubricas:Rubrica[]=[];
   const valores=(l:Linha)=>l.itens.filter((i)=>VALOR.test(i.str.trim()));
+  let antesHeader=header!=null;
   for(const l of ls){
+    if(antesHeader){ if(l===header)antesHeader=false; continue; }
     const n=norm(l.texto), vs=valores(l);
     if(/base\s*\/\s*outros|custo\s+empresa.*informativo/.test(n))info=true;
     if(/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)){total_proventos=vs[0]?moeda(vs[0].str):null;secao="desconto";continue;}
