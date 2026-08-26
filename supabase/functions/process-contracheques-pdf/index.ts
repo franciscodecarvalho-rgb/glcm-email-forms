@@ -150,8 +150,13 @@ function competenciaBasf(ls: Linha[]): string | null {
 
 function familia(codigo: string, descricao: string, modeloOrigem: string) {
   const codigoNormalizado=codigo.trim().toUpperCase();
-  if((modeloOrigem==="basf"&&codigoNormalizado==="3A20")||(modeloOrigem==="braskem"&&codigoNormalizado==="1004"))return "hra";
-  const n=norm(descricao); if(!/hra/.test(n))return null;
+  if(modeloOrigem==="basf"&&codigoNormalizado==="3A20")return "hra";
+  const n=norm(descricao);
+  // Braskem: "1004 — Hora Repouso Alimentação" (e suas diferenças) nem sempre tem o
+  // modelo identificado no texto da página; a regra vale pelo par código+descrição.
+  if(codigoNormalizado==="1004"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
+  if(!/hra/.test(n))return null;
+
   if(/\bdif/.test(n)||/\bdi\b/.test(n))return "dif_ahra";
   if(/dobra/.test(n))return "ahra_dobra";
   if(/adic/.test(n))return "adicional_hra";
