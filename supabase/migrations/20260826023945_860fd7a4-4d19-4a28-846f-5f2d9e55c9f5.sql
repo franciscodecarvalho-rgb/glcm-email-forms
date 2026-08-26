@@ -1,0 +1,2 @@
+ALTER TABLE public.lotes_contracheques ADD COLUMN IF NOT EXISTS storage_path text;
+CREATE INDEX IF NOT EXISTS lotes_contracheques_storage_path_idx ON public.lotes_contracheques (caso_id, ordem) WHERE storage_path IS NOT NULL;

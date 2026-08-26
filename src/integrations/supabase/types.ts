@@ -297,6 +297,7 @@ export type Database = {
           pagina_fim: number
           pagina_inicio: number
           status: string
+          storage_path: string | null
         }
         Insert: {
           arquivo_id: string
@@ -310,6 +311,7 @@ export type Database = {
           pagina_fim: number
           pagina_inicio: number
           status?: string
+          storage_path?: string | null
         }
         Update: {
           arquivo_id?: string
@@ -323,6 +325,7 @@ export type Database = {
           pagina_fim?: number
           pagina_inicio?: number
           status?: string
+          storage_path?: string | null
         }
         Relationships: [
           {
