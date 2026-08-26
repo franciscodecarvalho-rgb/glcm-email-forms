@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeStorageName } from "@/lib/storage";
-import { unificarPdfs } from "@/lib/unificar-pdfs";
+import { unificarPdfsEmLotes } from "@/lib/unificar-pdfs";
 import { mensagemErroFuncao } from "@/lib/edge-function-error";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
