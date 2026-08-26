@@ -58,3 +58,21 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("0001", "Salário Básico", "")).toBeNull();
   });
 });
+
+describe("contribuição extraordinária PPSP (Petrobras)", () => {
+  it("classifica 1489 e 6050/6060/6070 pelo par código + nomenclatura PPSP", () => {
+    expect(familia("1489", "Contrib Extra PPSP", "petrobras")).toBe("contrib_extra");
+    expect(familia("1489", "CONTRIB. EXTRA PPSP-R", "petrobras")).toBe("contrib_extra");
+    expect(familia("6050", "CONTRIB EXTRAORDINARIA PPSP", "petrobras")).toBe("contrib_extra");
+    expect(familia("6060", "Contrib. Extraordinária PPSP-R", "petrobras")).toBe("contrib_extra");
+    expect(familia("6070", "CONTRIB EXTRAORDINARIA PPSP", "petrobras")).toBe("contrib_extra");
+  });
+
+  it("não classifica fora do modelo petrobras nem para descrições diferentes", () => {
+    expect(familia("1489", "Contrib Extra PPSP", "braskem")).toBeNull();
+    expect(familia("6050", "CONTRIB EXTRAORDINARIA PPSP", "")).toBeNull();
+    expect(familia("6050", "Salário Básico", "petrobras")).toBeNull();
+    expect(familia("1489", "Contribuição Sindical", "petrobras")).toBeNull();
+    expect(familia("6060", "Contrib Extra PPSP", "petrobras")).toBeNull();
+  });
+});
