@@ -177,7 +177,9 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   let secao:Tipo="provento", info=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
   const rubricas:Rubrica[]=[];
   const valores=(l:Linha)=>l.itens.filter((i)=>VALOR.test(i.str.trim()));
+  let antesHeader=header!=null;
   for(const l of ls){
+    if(antesHeader){ if(l===header)antesHeader=false; continue; }
     const n=norm(l.texto), vs=valores(l);
     if(/base\s*\/\s*outros|custo\s+empresa.*informativo/.test(n))info=true;
     if(/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)){total_proventos=vs[0]?moeda(vs[0].str):null;secao="desconto";continue;}
@@ -186,7 +188,7 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length)liquido=moeda(vs[vs.length-1].str);
     const cod=modelo_origem==="elekeiroz"?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&modelo_origem!=="elekeiroz")continue;
     const candidatos=vs.filter((i)=>i.x>larguraLeitura*.28); if(!candidatos.length)continue;
-    const vi=candidatos[candidatos.length-1], inicio=xdesc??(cod?cod.x+cod.width:0);
+    const vi=candidatos[candidatos.length-1], inicio=modelo_origem==="unigel"&&cod?cod.x+cod.width:(xdesc??(cod?cod.x+cod.width:0));
     const limite=[xr,xp,xd,larguraLeitura*.82].filter((v):v is number=>v!=null&&v>inicio).sort((a,b)=>a-b)[0];
     const descricao=l.itens.filter((i)=>i.x>=inicio-larguraLeitura*.01&&i.x<limite&&i.str!=="|").map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
     if(!descricao)continue;
