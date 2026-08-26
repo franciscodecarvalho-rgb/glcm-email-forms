@@ -39,12 +39,13 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("1004", "Adicional Noturno", "braskem")).toBeNull();
   });
 
-  it("classifica 015 como hra somente no modelo unigel e com a descrição correta", () => {
+  it("classifica 015 como hra pelo par código + descrição, inclusive no modelo generico", () => {
     expect(familia("015", "Hrs Repouso e Alimentação", "unigel")).toBe("hra");
     expect(familia("015", "Horas de Repouso e Alimentacao", "unigel")).toBe("hra");
-    expect(familia("015", "Hrs Repouso e Alimentação", "braskem")).toBeNull();
-    expect(familia("015", "Hrs Repouso e Alimentação", "")).toBeNull();
-    expect(familia("015", "Salário Básico", "unigel")).toBeNull();
+    expect(familia("015", "Hrs Repouso Alimentacao", "generico")).toBe("hra");
+    expect(familia("015", "Hrs Repouso e Alimentação", "")).toBe("hra");
+    expect(familia("015", "Salário Básico", "generico")).toBeNull();
+    expect(familia("015", "Adicional Noturno", "unigel")).toBeNull();
   });
 
   it("preserva a regra BASF 3A20 e as regras por descrição", () => {
