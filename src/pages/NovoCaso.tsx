@@ -80,7 +80,7 @@ export default function NovoCaso() {
     setProgresso(5);
     setEtapa("Unificando contracheques");
     try {
-      const contrachequeUnificado = await unificarPdfs(contracheques);
+      const { unificado: contrachequeUnificado, lotes: lotesPdf } = await unificarPdfsEmLotes(contracheques);
       const arquivos = [
         { file: contrachequeUnificado, tipo: "contracheque" },
         ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
@@ -118,23 +118,49 @@ export default function NovoCaso() {
           storage_path: path,
           mime_type: f.type,
         });
-        setProgresso(20 + Math.round(((indice + 1) / arquivos.length) * 35));
+        setProgresso(20 + Math.round(((indice + 1) / arquivos.length) * 25));
       }
 
-      if (contracheques.length > 0) {
-        setEtapa("Extraindo contracheques");
-        setProgresso(65);
-        const { data: processamento, error: processamentoError } = await supabase.functions.invoke(
-          "process-contracheques-pdf",
-          { body: { caso_id: caso.id } },
-        );
-        if (processamentoError) {
-          throw new Error(await mensagemErroFuncao(processamentoError, "Falha ao extrair contracheques"));
-        }
-        if (processamento?.revisao?.length) {
-          toast.warning(`${processamento.revisao.length} contracheque(s) precisam de revisão manual`);
-        }
+      // Lotes físicos: um PDF por lote no Storage (sem registros em `arquivos`).
+      const lotesComPath = [];
+      for (let indice = 0; indice < lotesPdf.length; indice++) {
+        const lote = lotesPdf[indice];
+        setEtapa(`Enviando lotes de contracheques (${indice + 1}/${lotesPdf.length})`);
+        const path = `${caso.id}/contracheques-lotes/${lote.file.name}`;
+        const { error: upErr } = await supabase.storage
+          .from("casos-arquivos")
+          .upload(path, lote.file, { contentType: "application/pdf", upsert: true });
+        if (upErr) throw upErr;
+        lotesComPath.push({
+          ordem: lote.ordem,
+          pagina_inicio: lote.pagina_inicio,
+          pagina_fim: lote.pagina_fim,
+          storage_path: path,
+        });
+        setProgresso(45 + Math.round(((indice + 1) / lotesPdf.length) * 10));
       }
+
+      setEtapa("Planejando lotes de contracheques");
+      const { data: plano, error: planoError } = await supabase.functions.invoke(
+        "process-contracheques-pdf",
+        { body: { caso_id: caso.id, acao: "planejar_lotes", lotes: lotesComPath } },
+      );
+      if (planoError) {
+        throw new Error(await mensagemErroFuncao(planoError, "Falha ao planejar lotes de contracheques"));
+      }
+
+      const lotesPlanejados: Array<{ id: string }> = plano?.lotes ?? [];
+      for (let indice = 0; indice < lotesPlanejados.length; indice++) {
+        setEtapa(`Extraindo contracheques (lote ${indice + 1}/${lotesPlanejados.length})`);
+        const { error: loteError } = await supabase.functions.invoke("process-contracheques-pdf", {
+          body: { caso_id: caso.id, acao: "processar_lote", lote_id: lotesPlanejados[indice].id },
+        });
+        if (loteError) {
+          throw new Error(await mensagemErroFuncao(loteError, `Falha ao extrair o lote ${indice + 1}`));
+        }
+        setProgresso(55 + Math.round(((indice + 1) / lotesPlanejados.length) * 25));
+      }
+
 
       setEtapa("Extraindo dados pessoais");
       setProgresso(85);
