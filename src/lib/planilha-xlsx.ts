@@ -209,20 +209,46 @@ function normalizarDescricaoCE(descricao?: string | null): string {
     .toUpperCase();
 }
 
-// Fallback Petrobras: rubricas sinalizadas por codigo + descricao (Contribuicao
-// Extraordinaria PPSP) entram mesmo quando familia_hra nao foi classificada.
-// O codigo 6050 permanece fora da planilha.
-const CODIGOS_CE_FALLBACK = new Set(["1489", "6060", "6070"]);
-
+// Fallback Petrobras: rubricas de Contribuicao Extraordinaria PPSP entram pela
+// descricao mesmo quando familia_hra nao foi classificada (inclui as rubricas de
+// 13o, ex.: "13 CONT. EXTRAORDINARIA PPSP 2018"). O codigo 6050 fica de fora.
 function ehContribExtraItem(item: ItemParaContribExtra): boolean {
   const codigo = String(item.codigo ?? "").trim();
   if (codigo === "6050") return false;
   if (item.tipo !== "desconto") return false;
   if (item.familia_hra === "contrib_extra") return true;
-  if (!CODIGOS_CE_FALLBACK.has(codigo)) return false;
   if (!((Number(item.valor) || 0) > 0)) return false;
   const desc = normalizarDescricaoCE(item.descricao);
-  return /CONTRIB\w*\.?\s*EXTRA\w*/.test(desc) && /PPSP/.test(desc);
+  return /CONT\w*\.?\s*EXTRA\w*/.test(desc) && /PPSP/.test(desc);
+}
+
+const MESES_CE: Record<string, string> = {
+  JANEIRO: "01",
+  FEVEREIRO: "02",
+  MARCO: "03",
+  ABRIL: "04",
+  MAIO: "05",
+  JUNHO: "06",
+  JULHO: "07",
+  AGOSTO: "08",
+  SETEMBRO: "09",
+  OUTUBRO: "10",
+  NOVEMBRO: "11",
+  DEZEMBRO: "12",
+};
+
+// Normaliza rotulos de competencia para MM/AAAA antes de consolidar/ordenar.
+// Rotulos fora dos formatos conhecidos permanecem intactos.
+function normalizarCompetenciaCE(label: string): string {
+  const bruto = normalizarDescricaoCE(label).trim();
+  const mesValido = (n: number) => n >= 1 && n <= 12;
+  let m = bruto.match(/^(\d{1,2})\/(\d{4})$/);
+  if (m && mesValido(Number(m[1]))) return `${String(Number(m[1])).padStart(2, "0")}/${m[2]}`;
+  m = bruto.match(/^(\d{4})-(\d{1,2})$/);
+  if (m && mesValido(Number(m[2]))) return `${String(Number(m[2])).padStart(2, "0")}/${m[1]}`;
+  m = bruto.match(/^([A-Z]+)\/(\d{4})$/);
+  if (m && MESES_CE[m[1]]) return `${MESES_CE[m[1]]}/${m[2]}`;
+  return label;
 }
 
 export function agregarContribExtraPorCompetencia(
@@ -232,8 +258,9 @@ export function agregarContribExtraPorCompetencia(
   const totais = new Map<string, number>();
   const ordem: string[] = [];
   (contracheques ?? []).forEach((contracheque, indice) => {
-    const label =
-      contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${indice + 1}`;
+    const label = normalizarCompetenciaCE(
+      contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${indice + 1}`,
+    );
     const soma = (itens ?? [])
       .filter((item) => item.contracheque_id === contracheque.id && ehContribExtraItem(item))
       .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
