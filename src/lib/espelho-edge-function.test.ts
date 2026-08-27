@@ -141,6 +141,8 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     const contracheques = [
       { id: "a", competencia: "03/2024" },
       { id: "b", competencia: "01/2024" },
+      { id: "c", competencia: "2021-01" },
+      { id: "d", competencia: "JUNHO/2025" },
     ];
     const itens = [
       { contracheque_id: "a", valor: -100.5, familia_hra: "contrib_extra" },
