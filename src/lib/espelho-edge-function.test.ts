@@ -152,6 +152,8 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
       { contracheque_id: "b", codigo: "6060", tipo: "desconto", valor: 30, descricao: "CONTRIB EXTRAORDINARIA PPSP-R" },
       { contracheque_id: "b", codigo: "6070", tipo: "desconto", valor: 20, descricao: "Contribuição Extra PPSP" },
       { contracheque_id: "b", codigo: "6050", tipo: "desconto", valor: 500, descricao: "CONTRIB EXTRAORDINARIA PPSP" },
+      { contracheque_id: "c", codigo: "9999", tipo: "desconto", valor: 40, descricao: "13 CONT. EXTRAORDINARIA PPSP 2018" },
+      { contracheque_id: "d", tipo: "desconto", valor: 15, descricao: "CONTRIBUIÇÃO EXTRAORDINARIA PPSP-R 2021" },
     ];
     const src = agregarContribExtraPorCompetencia(contracheques, itens);
     const edge = edgePlanilha.agregarContribExtraPorCompetencia(contracheques, itens);
