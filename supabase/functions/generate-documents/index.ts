@@ -1230,6 +1230,30 @@ Deno.serve(async (req) => {
       generated.push({ tipo: "planilha", storage_path: pathPl, nome: nomePl });
     }
 
+    // Planilha complementar de Contribuição Extraordinária: apenas na ação
+    // "ir_sobre_hra" e somente quando existirem rubricas relacionais da
+    // família "contrib_extra". A ação exclusiva não duplica a planilha.
+    if (caso.tipo_acao === "ir_sobre_hra") {
+      const linhasCE = agregarContribExtraPorCompetencia(contrasRel, itensRel);
+      if (linhasCE.length > 0) {
+        const partesCE = montarArquivosPlanilhaContribExtraXlsx(caso.nome_cliente ?? "", linhasCE);
+        const zipCE = new PizZip();
+        for (const [caminho, conteudo] of Object.entries(partesCE)) zipCE.file(caminho, conteudo);
+        const outCE: Uint8Array = zipCE.generate({ type: "uint8array" });
+        const nomeCE = `PLANILHA — ${caso.nome_cliente ?? ""} — IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA.xlsx`;
+        const chaveCE = `planilha-contrib-extra-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
+        const pathCE = `${caso.id}/${chaveCE}`;
+        const { error: upCEErr } = await supabase.storage
+          .from("casos-documentos")
+          .upload(pathCE, outCE, {
+            upsert: true,
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          });
+        if (upCEErr) throw upCEErr;
+        generated.push({ tipo: "planilha_contrib_extra", storage_path: pathCE, nome: nomeCE });
+      }
+    }
+
     // Planilha Banco de Horas (1513): somente quando houver ocorrências do
     // código 1513 nas rubricas relacionais extraídas dos contracheques do caso.
     {
