@@ -22,6 +22,7 @@ function carregarFamilia() {
     codigo: string,
     descricao: string,
     modeloOrigem: string,
+    tipo?: string,
   ) => string | null;
 }
 
