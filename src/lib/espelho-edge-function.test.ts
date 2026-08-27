@@ -15,6 +15,7 @@ import {
   ordenarPorCompetencia,
 } from "./planilha-xlsx";
 import { contrachequesRelacionaisParaRevisao } from "./contracheques-relacionais";
+import { PECA_LABELS } from "./status";
 
 function carregarTrechoDaFuncao<T extends Record<string, unknown>>(
   inicioMarcador: string,
@@ -166,5 +167,18 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
       itens_contracheque: itens,
     }]);
     expect(edgeCalculos.montarContrasRelacionais(contracheques, itens)).toEqual(fonte);
+  });
+
+  it("ir_sobre_hra gera planilha complementar de contribuição extraordinária só quando há rubricas", () => {
+    const fonte = readFileSync(
+      resolve(process.cwd(), "supabase/functions/generate-documents/index.ts"),
+      "utf8",
+    );
+    expect(fonte).toContain('if (caso.tipo_acao === "ir_sobre_hra") {');
+    expect(fonte).toContain("if (linhasCE.length > 0) {");
+    expect(fonte).toContain('tipo: "planilha_contrib_extra"');
+    // a ação exclusiva continua gerando apenas a planilha principal
+    expect(fonte).toContain('const ehContribExtra = caso.tipo_acao === "contribuicao_extraordinaria";');
+    expect(PECA_LABELS.planilha_contrib_extra).toBe("Planilha — Contribuição Extraordinária (Excel)");
   });
 });
