@@ -198,8 +198,32 @@ export type ItemParaContribExtra = {
   codigo?: string | null;
   tipo?: string | null;
   valor?: number | null;
+  descricao?: string | null;
   familia_hra?: string | null;
 };
+
+function normalizarDescricaoCE(descricao?: string | null): string {
+  return String(descricao ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+}
+
+// Fallback Petrobras: rubricas sinalizadas por codigo + descricao (Contribuicao
+// Extraordinaria PPSP) entram mesmo quando familia_hra nao foi classificada.
+// O codigo 6050 permanece fora da planilha.
+const CODIGOS_CE_FALLBACK = new Set(["1489", "6060", "6070"]);
+
+function ehContribExtraItem(item: ItemParaContribExtra): boolean {
+  const codigo = String(item.codigo ?? "").trim();
+  if (codigo === "6050") return false;
+  if (item.tipo !== "desconto") return false;
+  if (item.familia_hra === "contrib_extra") return true;
+  if (!CODIGOS_CE_FALLBACK.has(codigo)) return false;
+  if (!((Number(item.valor) || 0) > 0)) return false;
+  const desc = normalizarDescricaoCE(item.descricao);
+  return /CONTRIB\w*\.?\s*EXTRA\w*/.test(desc) && /PPSP/.test(desc);
+}
 
 export function agregarContribExtraPorCompetencia(
   contracheques: ContrachequeParaContribExtra[] | null | undefined,
@@ -211,13 +235,7 @@ export function agregarContribExtraPorCompetencia(
     const label =
       contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${indice + 1}`;
     const soma = (itens ?? [])
-      .filter(
-        (item) =>
-          item.contracheque_id === contracheque.id &&
-          item.familia_hra === "contrib_extra" &&
-          item.tipo === "desconto" &&
-          String(item.codigo ?? "").trim() !== "6050",
-      )
+      .filter((item) => item.contracheque_id === contracheque.id && ehContribExtraItem(item))
       .reduce((total, item) => total + Math.abs(Number(item.valor) || 0), 0);
     if (soma <= 0) return;
     if (!totais.has(label)) ordem.push(label);
