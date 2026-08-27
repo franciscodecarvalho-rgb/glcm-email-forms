@@ -383,3 +383,78 @@ describe("fallback Petrobras sem familia_hra", () => {
     ).toEqual([]);
   });
 });
+
+describe("contribuição extraordinária: rubricas de 13º e normalização de competência", () => {
+  const descricoes = [
+    "13 CONT. EXTRAORDINARIA PPSP 2018",
+    "13 CONT. EXTRAORDINARIA PPSP 2021",
+    "13 CONT. EXTRAORDINARIA PPSP 2024",
+    "CONTRIBUIÇÃO EXTRAORDINARIA PPSP-R 2021",
+  ];
+
+  it.each(descricoes)("inclui '%s' como desconto mesmo sem familia_hra", (descricao) => {
+    expect(
+      agregarContribExtraPorCompetencia(
+        [{ id: "a", competencia: "05/2024" }],
+        [{ contracheque_id: "a", codigo: "9999", tipo: "desconto", valor: 100, descricao }],
+      ),
+    ).toEqual([{ competencia: "05/2024", valor: 100 }]);
+  });
+
+  it.each(descricoes)("ignora '%s' quando não for desconto", (descricao) => {
+    expect(
+      agregarContribExtraPorCompetencia(
+        [{ id: "a", competencia: "05/2024" }],
+        [{ contracheque_id: "a", codigo: "9999", tipo: "provento", valor: 100, descricao }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("mantém 6050 fora mesmo com descrição de 13º", () => {
+    expect(
+      agregarContribExtraPorCompetencia(
+        [{ id: "a", competencia: "05/2024" }],
+        [
+          {
+            contracheque_id: "a",
+            codigo: "6050",
+            tipo: "desconto",
+            valor: 300,
+            descricao: "13 CONT. EXTRAORDINARIA PPSP 2018",
+          },
+        ],
+      ),
+    ).toEqual([]);
+  });
+
+  it("normaliza competências, consolida repetidas e ordena cronologicamente", () => {
+    expect(
+      agregarContribExtraPorCompetencia(
+        [
+          { id: "a", competencia: "JUNHO/2025" },
+          { id: "b", competencia: "2021-01" },
+          { id: "c", competencia: "1/2021" },
+          { id: "d", competencia: "06/2025" },
+        ],
+        [
+          { contracheque_id: "a", tipo: "desconto", valor: 10, descricao: "CONTRIB EXTRAORDINARIA PPSP" },
+          { contracheque_id: "b", tipo: "desconto", valor: 20, descricao: "13 CONT. EXTRAORDINARIA PPSP 2021" },
+          { contracheque_id: "c", tipo: "desconto", valor: 5, descricao: "CONTRIBUIÇÃO EXTRAORDINARIA PPSP-R 2021" },
+          { contracheque_id: "d", tipo: "desconto", valor: 1.5, descricao: "CONTRIB EXTRAORDINARIA PPSP" },
+        ],
+      ),
+    ).toEqual([
+      { competencia: "01/2021", valor: 25 },
+      { competencia: "06/2025", valor: 11.5 },
+    ]);
+  });
+
+  it("não gera linhas quando não há rubricas qualificadas", () => {
+    expect(
+      agregarContribExtraPorCompetencia(
+        [{ id: "a", competencia: "2021-01" }],
+        [{ contracheque_id: "a", tipo: "desconto", valor: 10, descricao: "OUTRA RUBRICA" }],
+      ),
+    ).toEqual([]);
+  });
+});
