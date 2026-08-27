@@ -360,3 +360,26 @@ describe("planilha IR sobre Contribuição Extraordinária", () => {
     expect(sheet).toContain('<c r="B3" t="inlineStr" s="6"><is><t xml:space="preserve">01/2024');
   });
 });
+
+describe("fallback Petrobras sem familia_hra", () => {
+  const contracheques = [{ id: "a", competencia: "05/2024" }];
+
+  it("inclui 6060/6070 por codigo + descricao PPSP mesmo sem familia_hra", () => {
+    expect(
+      agregarContribExtraPorCompetencia(contracheques, [
+        { contracheque_id: "a", codigo: "6060", tipo: "desconto", valor: 100, descricao: "CONTRIB EXTRAORDINARIA PPSP-R" },
+        { contracheque_id: "a", codigo: "6070", tipo: "desconto", valor: 50.5, descricao: "Contribuição Extra PPSP" },
+      ]),
+    ).toEqual([{ competencia: "05/2024", valor: 150.5 }]);
+  });
+
+  it("mantém 6050 fora e ignora descrições/tipos que não se encaixam", () => {
+    expect(
+      agregarContribExtraPorCompetencia(contracheques, [
+        { contracheque_id: "a", codigo: "6050", tipo: "desconto", valor: 300, descricao: "CONTRIB EXTRAORDINARIA PPSP" },
+        { contracheque_id: "a", codigo: "6060", tipo: "provento", valor: 10, descricao: "CONTRIB EXTRAORDINARIA PPSP" },
+        { contracheque_id: "a", codigo: "6070", tipo: "desconto", valor: 10, descricao: "OUTRA RUBRICA" },
+      ]),
+    ).toEqual([]);
+  });
+});
