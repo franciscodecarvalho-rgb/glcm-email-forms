@@ -6,6 +6,7 @@ export type RevisaoCalculosState = {
   email: string;
   telefone: string;
   ufComarca: string;
+  enderecoUniao: string;
 };
 
 export type RevisaoCalculosErrors = Partial<Record<keyof RevisaoCalculosState, string>>;
@@ -43,6 +44,7 @@ export function RevisaoCalculosProvider({ children }: { children: ReactNode }) {
     email: "",
     telefone: "",
     ufComarca: "",
+    enderecoUniao: "",
   });
 
   const errors = validarRevisaoCalculos(state);
