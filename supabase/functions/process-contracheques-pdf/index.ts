@@ -170,6 +170,12 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
     if(codigoNormalizado==="1489"&&/contrib\W*extra\W*ppsp/.test(n))return "contrib_extra";
     if(["6060","6070"].includes(codigoNormalizado)&&/contrib\W*extraordinaria\W*ppsp/.test(n))return "contrib_extra";
   }
+  // Petrobras: "Dif AHRA"/"DI AHRA" integram AHRA; "Adicional HRA" (exato) é HRA;
+  // "Adic HRA Eventual" permanece em adicional_hra pela regra genérica abaixo.
+  if(modeloOrigem==="petrobras"){
+    if(/\b(?:dif|di)\b\s*\.?\s*ahra/.test(n))return "ahra";
+    if(n.replace(/\s+/g," ").trim()==="adicional hra")return "hra";
+  }
   if(!/hra/.test(n))return null;
 
   if(/\bdif/.test(n)||/\bdi\b/.test(n))return "dif_ahra";

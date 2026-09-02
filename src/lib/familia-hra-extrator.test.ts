@@ -61,6 +61,24 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
 
 });
 
+describe("Petrobras — HRA/AHRA", () => {
+  it("classifica Dif/DI AHRA como ahra", () => {
+    expect(familia("4208", "Dif AHRA", "petrobras")).toBe("ahra");
+    expect(familia("4208", "DI AHRA", "petrobras")).toBe("ahra");
+  });
+
+  it("classifica Adicional HRA (exato) como hra e mantém Adic HRA Eventual", () => {
+    expect(familia("1062", "Adicional HRA", "petrobras")).toBe("hra");
+    expect(familia("1063", "Adic HRA Eventual", "petrobras")).toBe("adicional_hra");
+  });
+
+  it("não altera outras empresas", () => {
+    expect(familia("4208", "Dif AHRA Dobra", "")).toBe("dif_ahra");
+    expect(familia("1062", "Adicional HRA", "")).toBe("adicional_hra");
+    expect(familia("3A20", "Verba 3A20", "basf")).toBe("hra");
+  });
+});
+
 describe("contribuição extraordinária PPSP (Petrobras)", () => {
   it("classifica 1489 e 6060/6070 pelo par código + nomenclatura PPSP somente como desconto", () => {
     expect(familia("1489", "Contrib Extra PPSP", "petrobras", "desconto")).toBe("contrib_extra");
