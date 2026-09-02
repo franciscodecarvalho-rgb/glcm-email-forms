@@ -99,6 +99,17 @@ describe("contrachequesRelacionaisParaRevisao", () => {
       { id: "contra-so-ahra", label: "06/2026", valor_hra: 0, valor_ahra: 7 },
     ]);
   });
+  it("soma a família \"ahra\" (Petrobras) na coluna AHRA", () => {
+    expect(contrachequesRelacionaisParaRevisao([{
+      id: "contra-pb",
+      competencia: "07/2024",
+      itens_contracheque: [
+        { familia_hra: "ahra", valor: 300, tipo: "provento" },
+        { familia_hra: "ahra", valor: 100, tipo: "desconto" },
+        { familia_hra: "hra", valor: 50, tipo: "provento" },
+      ],
+    }])).toEqual([{ id: "contra-pb", label: "07/2024", valor_hra: 50, valor_ahra: 300 }]);
+  });
 });
 
 describe("consolidação de competências duplicadas", () => {
