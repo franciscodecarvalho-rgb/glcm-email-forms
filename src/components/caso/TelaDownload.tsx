@@ -33,6 +33,7 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
         email_cliente: state.email.trim(),
         telefone_cliente: state.telefone.trim(),
         uf_comarca: state.ufComarca.trim(),
+        endereco_uniao: state.enderecoUniao.trim(),
       },
     });
     setRegerando(false);
@@ -123,6 +124,16 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
               placeholder="ex: Salvador/BA"
             />
             {errors.ufComarca && <p className="text-xs text-destructive mt-1">{errors.ufComarca}</p>}
+          </div>
+          <div className="md:col-span-2">
+            <Label htmlFor="rg-endereco-uniao" className="text-sm font-semibold">Endereço União</Label>
+            <Input
+              id="rg-endereco-uniao"
+              className="mt-2"
+              value={state.enderecoUniao}
+              onChange={(e) => setField("enderecoUniao", e.target.value)}
+              placeholder="Endereço da União (opcional)"
+            />
           </div>
         </div>
       </section>

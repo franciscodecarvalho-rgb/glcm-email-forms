@@ -223,6 +223,7 @@ function montarVariaveisCaso(caso: any, hoje: Date = new Date()): Record<string,
     CAPTADOR: caso.captador ?? "",
     OAB_CASO: caso.oab ?? "",
     UF_COMARCA: caso.uf_comarca ?? "",
+    "ENDEREÇO_UNIAO": caso.endereco_uniao ?? "",
   };
 }
 
@@ -1122,6 +1123,7 @@ Deno.serve(async (req) => {
       email_cliente,
       telefone_cliente,
       uf_comarca,
+      endereco_uniao,
     } = await req.json();
     if (!caso_id) throw new Error("caso_id obrigatório");
     if (!captador?.trim()) throw new Error("captador obrigatório");
@@ -1195,6 +1197,7 @@ Deno.serve(async (req) => {
       email_cliente: email_cliente.trim(),
       telefone_cliente: (telefone_cliente ?? "").trim(),
       uf_comarca: uf_comarca.trim(),
+      endereco_uniao: (endereco_uniao ?? "").trim(),
     };
     const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
 
