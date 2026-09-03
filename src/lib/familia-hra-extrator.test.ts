@@ -97,3 +97,17 @@ describe("contribuição extraordinária PPSP (Petrobras)", () => {
     expect(familia("6060", "Contrib Extra PPSP", "petrobras")).toBeNull();
   });
 });
+
+describe("Petrobras — 062A Dif Adicional HRA", () => {
+  it("classifica 062A / Dif Adicional HRA como ahra, com variações de caixa e pontuação", () => {
+    expect(familia("062A", "Dif Adicional HRA", "petrobras")).toBe("ahra");
+    expect(familia(" 062a ", "DIF. ADICIONAL  HRA", "petrobras")).toBe("ahra");
+    expect(familia("", "Dif. Adicional HRA", "petrobras")).toBe("ahra");
+  });
+
+  it("preserva as demais regras Petrobras", () => {
+    expect(familia("1062", "Adicional HRA", "petrobras")).toBe("hra");
+    expect(familia("1063", "Adic HRA Eventual", "petrobras")).toBe("adicional_hra");
+    expect(familia("062A", "Dif Adicional HRA", "")).toBe("dif_ahra");
+  });
+});
