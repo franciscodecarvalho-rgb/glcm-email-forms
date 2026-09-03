@@ -173,7 +173,7 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   // Petrobras: "Dif AHRA"/"DI AHRA" e "062A — Dif Adicional HRA" integram AHRA;
   // "Adicional HRA" (exato) é HRA; "Adic HRA Eventual" permanece em adicional_hra.
   if(modeloOrigem==="petrobras"){
-    if(codigoNormalizado.replace(/[^A-Z0-9]/g,"")==="062A")return "ahra";
+    if(codigoNormalizado.replace(/[^A-Z0-9]/g,"")==="062A"&&/hra/.test(n))return "ahra";
     if(/\bdif\w*\W*adicional\W*hra\b/.test(n))return "ahra";
     if(/\b(?:dif|di)\b\s*\.?\s*ahra/.test(n))return "ahra";
     if(n.replace(/\s+/g," ").trim()==="adicional hra")return "hra";
