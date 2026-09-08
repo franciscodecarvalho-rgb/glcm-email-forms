@@ -136,6 +136,41 @@ function totalNaLinha(linha: Linha, posicao = 0): number | null {
   return valores[posicao] ? moedaBrasileiraParaNumero(valores[posicao].str) : null;
 }
 
+// Layout de duas colunas lado a lado ("CÓD. RENDIMENTOS ... CÓD. DESCONTOS"),
+// usado no comprovante Tronox: cada metade da linha é uma rubrica própria,
+// com o tipo definido pela coluna (esquerda = provento, direita = desconto).
+type SegmentoColuna = { itens: TextItemPdf[]; inicio: number; fim: number; tipo: TipoRubrica };
+
+function apenasNumero(item: TextItemPdf): boolean {
+  return /^-?\d+(?:[.,]\d+)*$/.test(item.str.trim());
+}
+
+function rubricaDoSegmento(segmento: SegmentoColuna): RubricaPdf | null {
+  const largura = segmento.fim - segmento.inicio;
+  const codigoItem = segmento.itens.find(
+    (i) => i.x < segmento.inicio + largura * 0.25 && CODIGO.test(i.str.trim()),
+  );
+  if (!codigoItem) return null;
+  const candidatos = segmento.itens.filter(
+    (i) => itemMonetario(i) && i.x > segmento.inicio + largura * 0.28,
+  );
+  if (!candidatos.length) return null;
+  const valorItem = candidatos[candidatos.length - 1];
+  const inicioDescricao = codigoItem.x + codigoItem.width;
+  const naFaixa = segmento.itens.filter((i) => i.x >= inicioDescricao && i.x < valorItem.x && i.str !== "|");
+  const descricao = naFaixa.filter((i) => !apenasNumero(i)).map((i) => i.str).join(" ").replace(/\s+/g, " ").trim();
+  if (!descricao) return null;
+  const numericos = naFaixa.filter(apenasNumero);
+  const refItem = numericos[numericos.length - 1] ?? null;
+  return {
+    codigo: codigoItem.str.trim().toUpperCase(),
+    descricao,
+    referencia: refItem ? numeroReferencia(refItem) : null,
+    valor: Math.abs(moedaBrasileiraParaNumero(valorItem.str)),
+    tipo: segmento.tipo,
+  };
+}
+
 export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): ContrachequePdf {
   const modeloPagina = detectarModelo(itens.map((i) => i.str).join(" "));
   const larguraLeitura = modeloPagina === "termo_bahia" ? largura / 2 : largura;
@@ -151,13 +186,19 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       : extrairCompetencia(texto);
   const cabecalho = linhas.find((l) => {
     const n = normalizar(l.texto);
-    return (/descricao/.test(n) && /provent|venciment|valor/.test(n)) || (/venciment/.test(n) && /descont/.test(n));
+    return (/descricao/.test(n) && /provent|venciment|valor/.test(n))
+      || (/venciment/.test(n) && /descont/.test(n))
+      || (/rendiment/.test(n) && /descont/.test(n));
   });
   const acharX = (padrao: RegExp) => cabecalho?.itens.find((i) => padrao.test(normalizar(i.str)))?.x ?? null;
   const xDescricao = acharX(/descricao/);
   const xProvento = acharX(/provent|venciment|valor/);
   const xDesconto = acharX(/descont/);
   const xReferencia = acharX(/referencia|quant|qtde/);
+  // Duas colunas: dois rótulos "CÓD." no cabeçalho, com rendimentos à esquerda.
+  const colunasCodigo = (cabecalho?.itens ?? []).filter((i) => /^cod/.test(normalizar(i.str)));
+  const duasColunas = colunasCodigo.length >= 2 && /rendiment/.test(normalizar(cabecalho?.texto ?? ""));
+  const xCorte = duasColunas ? colunasCodigo[1].x : null;
   let secao: TipoRubrica = "provento";
   let informativo = false;
   const rubricas: RubricaPdf[] = [];
@@ -183,6 +224,19 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       const vals = valoresDaLinha(linha);
       if (vals.length) liquido = moedaBrasileiraParaNumero(vals[vals.length - 1].str);
     }
+
+    if (duasColunas && xCorte != null) {
+      const segmentos: SegmentoColuna[] = [
+        { itens: linha.itens.filter((i) => i.x < xCorte), inicio: 0, fim: xCorte, tipo: "provento" },
+        { itens: linha.itens.filter((i) => i.x >= xCorte), inicio: xCorte, fim: larguraLeitura, tipo: "desconto" },
+      ];
+      for (const segmento of segmentos) {
+        const rubrica = rubricaDoSegmento(segmento);
+        if (rubrica) rubricas.push(informativo ? { ...rubrica, tipo: "informativo" } : rubrica);
+      }
+      continue;
+    }
+
 
     const codigoItem = modeloOrigem === "elekeiroz"
       ? undefined

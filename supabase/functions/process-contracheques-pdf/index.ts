@@ -159,8 +159,8 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   if(codigoNormalizado==="1004"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // ITF: "1002 — HRA - Hora Repouso Alimentação".
   if(codigoNormalizado==="1002"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
-  // Tronox: "0603 — Horas Repouso Alimentação".
-  if(codigoNormalizado==="0603"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
+  // Tronox: "0603/0350 — Horas Repouso Alimentação" (dois layouts). Só provento vira HRA.
+  if(["0603","0350"].includes(codigoNormalizado)&&tipo!=="desconto"&&/\b(?:hrs?|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Unigel: "015 — Hrs/Horas de Repouso e Alimentação". O cabeçalho Unigel nem sempre é
   // detectado, então classificamos pelo par código + descrição, como na Braskem.
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
@@ -187,14 +187,38 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   return /ahra/.test(n)?"ahra":"hra";
 }
 
+// Layout de duas colunas (Tronox): cada metade da linha é uma rubrica, com o
+// tipo definido pela coluna (esquerda = rendimento, direita = desconto).
+type Segmento={itens:TextItem[];inicio:number;fim:number;tipo:Tipo};
+const soNumero=(i:TextItem)=>/^-?\d+(?:[.,]\d+)*$/.test(i.str.trim());
+function rubricaSegmento(s:Segmento, modelo_origem:string, info:boolean): Rubrica|null {
+  const w=s.fim-s.inicio;
+  const cod=s.itens.find((i)=>i.x<s.inicio+w*.25&&CODIGO.test(i.str.trim()));
+  if(!cod)return null;
+  const candidatos=s.itens.filter((i)=>VALOR.test(i.str.trim())&&i.x>s.inicio+w*.28);
+  if(!candidatos.length)return null;
+  const vi=candidatos[candidatos.length-1], inicio=cod.x+cod.width;
+  const faixa=s.itens.filter((i)=>i.x>=inicio&&i.x<vi.x&&i.str!=="|");
+  const descricao=faixa.filter((i)=>!soNumero(i)).map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
+  if(!descricao)return null;
+  const nums=faixa.filter(soNumero), rs=nums[nums.length-1]?.str.trim()??"";
+  const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
+  const codigo=cod.str.trim().toUpperCase(), tipo:Tipo=info?"informativo":s.tipo;
+  return{codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)};
+}
+
 function parsePagina(itens: TextItem[], largura: number): Contra {
   const modeloPagina=modelo(itens.map((i)=>i.str).join(" "));
   const larguraLeitura=modeloPagina==="termo_bahia"?largura/2:largura;
   const itensLeitura=modeloPagina==="termo_bahia"?itens.filter((i)=>i.x<larguraLeitura):itens;
   const ls=linhas(itensLeitura), texto=ls.map((l)=>l.texto).join("\n"), modelo_origem=modelo(texto);
-  const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n));});
+  const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n))||(/rendiment/.test(n)&&/descont/.test(n));});
   const x=(r:RegExp)=>header?.itens.find((i)=>r.test(norm(i.str)))?.x??null;
   const xdesc=x(/descricao/), xp=x(/provent|venciment|valor/), xd=x(/descont/), xr=x(/referencia|quant|qtde/);
+  // Tronox (comprovante): duas colunas lado a lado — "CÓD. RENDIMENTOS" | "CÓD. DESCONTOS".
+  const colsCod=(header?.itens??[]).filter((i)=>/^cod/.test(norm(i.str)));
+  const duasColunas=colsCod.length>=2&&/rendiment/.test(norm(header?.texto??""));
+  const xCorte=duasColunas?colsCod[1].x:null;
   let secao:Tipo="provento", info=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
   const rubricas:Rubrica[]=[];
   const valores=(l:Linha)=>l.itens.filter((i)=>VALOR.test(i.str.trim()));
@@ -207,6 +231,17 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     if(/total(?:\s+de)?\s+descontos/.test(n)){total_descontos=vs[0]?moeda(vs[0].str):null;continue;}
     if(/\btotais?\b/.test(n)&&vs.length>=2){total_proventos??=moeda(vs[0].str);total_descontos??=moeda(vs[1].str);liquido??=vs[2]?moeda(vs[2].str):null;}
     if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length)liquido=moeda(vs[vs.length-1].str);
+    if(duasColunas&&xCorte!=null){
+      const segmentos=[
+        {itens:l.itens.filter((i)=>i.x<xCorte), inicio:0, fim:xCorte, tipo:"provento" as Tipo},
+        {itens:l.itens.filter((i)=>i.x>=xCorte), inicio:xCorte, fim:larguraLeitura, tipo:"desconto" as Tipo},
+      ];
+      for(const s of segmentos){
+        const r=rubricaSegmento(s,modelo_origem,info);
+        if(r)rubricas.push(r);
+      }
+      continue;
+    }
     const cod=modelo_origem==="elekeiroz"?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&modelo_origem!=="elekeiroz")continue;
     const candidatos=vs.filter((i)=>i.x>larguraLeitura*.28); if(!candidatos.length)continue;
     const vi=candidatos[candidatos.length-1], inicio=(modelo_origem==="unigel"||modelo_origem==="tronox")&&cod?cod.x+cod.width:(xdesc??(cod?cod.x+cod.width:0));

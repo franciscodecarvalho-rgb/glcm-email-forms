@@ -111,3 +111,19 @@ describe("Petrobras — 062A Dif Adicional HRA", () => {
     expect(familia("062A", "Dif Adicional HRA", "")).toBe("dif_ahra");
   });
 });
+
+describe("Tronox — 0603 e 0350 Horas Repouso Alimentação", () => {
+  it("classifica os dois códigos como hra nos dois layouts", () => {
+    expect(familia("0603", "HORAS REPOUSO ALIMENTACAO", "tronox", "provento")).toBe("hra");
+    expect(familia("0350", "HORAS REPOUSO ALIMENTACAO", "tronox", "provento")).toBe("hra");
+    expect(familia("0350", "Horas de Repouso e Alimentação", "generico", "provento")).toBe("hra");
+    expect(familia(" 0603 ", "Hrs Repouso Aliment.", "", "provento")).toBe("hra");
+  });
+
+  it("não classifica desconto nem descrição diferente como HRA", () => {
+    expect(familia("0350", "HORAS REPOUSO ALIMENTACAO", "tronox", "desconto")).toBeNull();
+    expect(familia("0603", "HORAS REPOUSO ALIMENTACAO", "tronox", "desconto")).toBeNull();
+    expect(familia("0350", "HORAS REDUZIDA NOTURNA", "tronox", "provento")).toBeNull();
+    expect(familia("0003", "INSS", "tronox", "desconto")).toBeNull();
+  });
+});
