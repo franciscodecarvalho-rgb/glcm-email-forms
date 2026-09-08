@@ -192,9 +192,13 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   const larguraLeitura=modeloPagina==="termo_bahia"?largura/2:largura;
   const itensLeitura=modeloPagina==="termo_bahia"?itens.filter((i)=>i.x<larguraLeitura):itens;
   const ls=linhas(itensLeitura), texto=ls.map((l)=>l.texto).join("\n"), modelo_origem=modelo(texto);
-  const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n));});
+  const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n))||(/rendiment/.test(n)&&/descont/.test(n));});
   const x=(r:RegExp)=>header?.itens.find((i)=>r.test(norm(i.str)))?.x??null;
   const xdesc=x(/descricao/), xp=x(/provent|venciment|valor/), xd=x(/descont/), xr=x(/referencia|quant|qtde/);
+  // Tronox (comprovante): duas colunas lado a lado — "CÓD. RENDIMENTOS" | "CÓD. DESCONTOS".
+  const colsCod=(header?.itens??[]).filter((i)=>/^cod/.test(norm(i.str)));
+  const duasColunas=colsCod.length>=2&&/rendiment/.test(norm(header?.texto??""));
+  const xCorte=duasColunas?colsCod[1].x:null;
   let secao:Tipo="provento", info=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
   const rubricas:Rubrica[]=[];
   const valores=(l:Linha)=>l.itens.filter((i)=>VALOR.test(i.str.trim()));
