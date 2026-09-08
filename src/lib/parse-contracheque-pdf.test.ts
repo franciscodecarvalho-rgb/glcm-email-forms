@@ -212,6 +212,32 @@ describe("parsePaginaContracheque", () => {
     expect(resultado.competencia).toBe("05/2026");
     expect(resultado.itens.some((i) => i.codigo === "0603" && i.descricao === "HORAS REPOUSO ALIMENTACAO" && i.valor === 2273.48)).toBe(true);
   });
+
+  it("lê o comprovante Tronox de duas colunas (rendimentos x descontos)", () => {
+    const resultado = parsePaginaContracheque([
+      item("TRONOX", 20, 800), item("COMPROVANTE", 200, 800), item("DE", 300, 800), item("PAGAMENTO", 330, 800),
+      item("MÊS/ANO:", 430, 760), item("01/2021", 500, 760),
+      item("MATRÍCULA", 20, 730), item("NOME", 90, 730),
+      item("05227", 20, 710), item("JEFERSON", 90, 710), item("FERREIRA", 140, 710), item("MENEZES", 190, 710),
+      item("CÓD.", 20, 670), item("RENDIMENTOS", 55, 670), item("VALOR", 250, 670),
+      item("CÓD.", 305, 670), item("DESCONTOS", 340, 670), item("VALOR", 545, 670),
+      item("0350", 20, 650), item("HORAS", 55, 650), item("REPOUSO", 95, 650), item("ALIMENTACAO", 145, 650),
+      item("1.122,77", 250, 650),
+      item("0003", 305, 650), item("INSS", 340, 650), item("14", 500, 650), item("751,97", 545, 650),
+      item("0002", 20, 630), item("SALARIO", 55, 630), item("BASE", 100, 630), item("30", 220, 630),
+      item("3.454,67", 250, 630),
+      item("0323", 305, 630), item("PGBL", 340, 630), item("130,24", 545, 630),
+    ], 595);
+
+    const hra = resultado.itens.find((i) => i.codigo === "0350");
+    expect(hra).toMatchObject({ descricao: "HORAS REPOUSO ALIMENTACAO", valor: 1122.77, tipo: "provento" });
+    const salario = resultado.itens.find((i) => i.codigo === "0002");
+    expect(salario).toMatchObject({ descricao: "SALARIO BASE", valor: 3454.67, tipo: "provento", referencia: 30 });
+    const inss = resultado.itens.find((i) => i.codigo === "0003");
+    expect(inss).toMatchObject({ descricao: "INSS", valor: 751.97, tipo: "desconto", referencia: 14 });
+    expect(resultado.itens.find((i) => i.codigo === "0323")?.tipo).toBe("desconto");
+    expect(resultado.competencia).toBe("01/2021");
+  });
 });
 
 describe("consolidarPaginasContracheque", () => {
