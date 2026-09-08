@@ -159,8 +159,8 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   if(codigoNormalizado==="1004"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // ITF: "1002 — HRA - Hora Repouso Alimentação".
   if(codigoNormalizado==="1002"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
-  // Tronox: "0603 — Horas Repouso Alimentação".
-  if(codigoNormalizado==="0603"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
+  // Tronox: "0603/0350 — Horas Repouso Alimentação" (dois layouts). Só provento vira HRA.
+  if(["0603","0350"].includes(codigoNormalizado)&&tipo!=="desconto"&&/\b(?:hrs?|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Unigel: "015 — Hrs/Horas de Repouso e Alimentação". O cabeçalho Unigel nem sempre é
   // detectado, então classificamos pelo par código + descrição, como na Braskem.
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
