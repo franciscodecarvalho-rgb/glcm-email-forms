@@ -211,6 +211,17 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     if(/total(?:\s+de)?\s+descontos/.test(n)){total_descontos=vs[0]?moeda(vs[0].str):null;continue;}
     if(/\btotais?\b/.test(n)&&vs.length>=2){total_proventos??=moeda(vs[0].str);total_descontos??=moeda(vs[1].str);liquido??=vs[2]?moeda(vs[2].str):null;}
     if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length)liquido=moeda(vs[vs.length-1].str);
+    if(duasColunas&&xCorte!=null){
+      const segmentos=[
+        {itens:l.itens.filter((i)=>i.x<xCorte), inicio:0, fim:xCorte, tipo:"provento" as Tipo},
+        {itens:l.itens.filter((i)=>i.x>=xCorte), inicio:xCorte, fim:larguraLeitura, tipo:"desconto" as Tipo},
+      ];
+      for(const s of segmentos){
+        const r=rubricaSegmento(s,modelo_origem,info);
+        if(r)rubricas.push(r);
+      }
+      continue;
+    }
     const cod=modelo_origem==="elekeiroz"?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&modelo_origem!=="elekeiroz")continue;
     const candidatos=vs.filter((i)=>i.x>larguraLeitura*.28); if(!candidatos.length)continue;
     const vi=candidatos[candidatos.length-1], inicio=(modelo_origem==="unigel"||modelo_origem==="tronox")&&cod?cod.x+cod.width:(xdesc??(cod?cod.x+cod.width:0));
