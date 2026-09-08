@@ -187,6 +187,26 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   return /ahra/.test(n)?"ahra":"hra";
 }
 
+// Layout de duas colunas (Tronox): cada metade da linha é uma rubrica, com o
+// tipo definido pela coluna (esquerda = rendimento, direita = desconto).
+type Segmento={itens:TextItem[];inicio:number;fim:number;tipo:Tipo};
+const soNumero=(i:TextItem)=>/^-?\d+(?:[.,]\d+)*$/.test(i.str.trim());
+function rubricaSegmento(s:Segmento, modelo_origem:string, info:boolean): Rubrica|null {
+  const w=s.fim-s.inicio;
+  const cod=s.itens.find((i)=>i.x<s.inicio+w*.25&&CODIGO.test(i.str.trim()));
+  if(!cod)return null;
+  const candidatos=s.itens.filter((i)=>VALOR.test(i.str.trim())&&i.x>s.inicio+w*.28);
+  if(!candidatos.length)return null;
+  const vi=candidatos[candidatos.length-1], inicio=cod.x+cod.width;
+  const faixa=s.itens.filter((i)=>i.x>=inicio&&i.x<vi.x&&i.str!=="|");
+  const descricao=faixa.filter((i)=>!soNumero(i)).map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
+  if(!descricao)return null;
+  const nums=faixa.filter(soNumero), rs=nums[nums.length-1]?.str.trim()??"";
+  const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
+  const codigo=cod.str.trim().toUpperCase(), tipo:Tipo=info?"informativo":s.tipo;
+  return{codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)};
+}
+
 function parsePagina(itens: TextItem[], largura: number): Contra {
   const modeloPagina=modelo(itens.map((i)=>i.str).join(" "));
   const larguraLeitura=modeloPagina==="termo_bahia"?largura/2:largura;
