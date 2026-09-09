@@ -350,7 +350,9 @@ function continuaMesmoContra(atual: Contra, p: Contra): boolean {
 }
 
 function mesclarContra(atual: Contra, p: Contra): Contra {
-  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens] };
+  // `continua` passa a ser o da ÚLTIMA folha anexada: o encadeamento só segue
+  // enquanto cada folha anterior mantiver o marcador "CONTINUA...".
+  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens], continua: p.continua===true };
   if(p.total_proventos!=null) mesclado.total_proventos=p.total_proventos;
   if(p.total_descontos!=null) mesclado.total_descontos=p.total_descontos;
   if(p.liquido!=null) mesclado.liquido=p.liquido;
