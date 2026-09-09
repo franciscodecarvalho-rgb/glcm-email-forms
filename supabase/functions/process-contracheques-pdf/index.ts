@@ -295,6 +295,11 @@ function competenciaDoCabecalho(ls: Linha[], y: number, acima = 20, abaixo = 40)
 
 function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
   const ls = linhas(itens);
+  const texto = ls.map((l) => l.texto).join("\n");
+  // Regra EXCLUSIVA da Companhia Brasileira de Estireno (modelo "unigel"):
+  // qualquer outro modelo, mesmo com dois títulos "Recibo de Pagamento",
+  // não é fatiado.
+  if (modelo(texto) !== "unigel") return [parsePagina(itens, largura)];
   const marcadores = ls.filter((l) => /recibo\s+de\s+pagamento/.test(norm(l.texto)));
   if (marcadores.length < 2) return [parsePagina(itens, largura)];
   const cortes = marcadores.map((l) => l.y);
