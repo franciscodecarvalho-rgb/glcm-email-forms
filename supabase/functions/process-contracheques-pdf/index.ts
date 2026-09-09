@@ -268,12 +268,13 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const codigo=cod?.str.trim().toUpperCase()??"";
     rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
-  if(!/\bcontinua\b/.test(norm(texto))){
+  const continua=/\bcontinua\b/.test(norm(texto));
+  if(!continua){
     total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;
     total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;
     liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
   }
-  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
+  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas,continua};
 }
 
 // Uma MESMA página física pode conter DOIS recibos (Companhia Brasileira de
