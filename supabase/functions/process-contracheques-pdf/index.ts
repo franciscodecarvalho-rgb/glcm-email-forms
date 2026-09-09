@@ -669,7 +669,7 @@ async function processarLoteFisico(supabase: any, casoId: string, loteId: string
     const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
 
     const itensPaginas = await extrairItensDoIntervalo(pdf, 1, pdf.numPages);
-    const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+    const paginasContra = itensPaginas.flatMap((itens) => parseRecibosDaPagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
 
     const assinaturasVistas = await assinaturasExistentes(supabase, casoId, arquivoNome);
     const estadoEntrada = (anterior?.estado_saida as Contra | null) ?? null;
