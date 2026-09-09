@@ -261,9 +261,16 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       .filter((valor): valor is number => valor != null && xReferencia != null && valor > xReferencia)
       .sort((a, b) => a - b)[0] ?? larguraLeitura;
     const refItem = xReferencia == null ? null : linha.itens.find((i) => i.x >= xReferencia - larguraLeitura * 0.025 && i.x < fimReferencia);
+    // Unigel/Estireno: com as duas colunas no cabeçalho, a posição x do valor é
+    // mais confiável que a seção corrente (que vira "desconto" após os totais).
+    const porColuna: TipoRubrica | null =
+      xDesconto != null && xProvento != null
+        ? valorItem.x >= xDesconto - larguraLeitura * 0.05 ? "desconto" : "provento"
+        : null;
     let tipo: TipoRubrica;
     if (informativo) tipo = "informativo";
-    else if (modeloOrigem === "petrobras" || modeloOrigem === "unigel") tipo = secao;
+    else if (modeloOrigem === "unigel") tipo = porColuna ?? secao;
+    else if (modeloOrigem === "petrobras") tipo = secao;
     else if (modeloOrigem === "elekeiroz") tipo = valorItem.x >= larguraLeitura * 0.78 ? "desconto" : "provento";
     else if (xDesconto != null && Math.abs(valorItem.x - xDesconto) < Math.abs(valorItem.x - (xProvento ?? 0))) tipo = "desconto";
     else tipo = "provento";

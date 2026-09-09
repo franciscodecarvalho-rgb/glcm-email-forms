@@ -163,6 +163,8 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   if(["0603","0350"].includes(codigoNormalizado)&&tipo!=="desconto"&&/\b(?:hrs?|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Unigel: "015 — Hrs/Horas de Repouso e Alimentação". O cabeçalho Unigel nem sempre é
   // detectado, então classificamos pelo par código + descrição, como na Braskem.
+  // 015 (HRA) e 023 (adicional HRA) só valem como HRA/AHRA em linhas de provento.
+  if(["015","023"].includes(codigoNormalizado)&&tipo==="desconto")return null;
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Petrobras: contribuição extraordinária PPSP (aceita pontuação e sufixo PPSP-R).
   // Só vale para o par código + nomenclatura PPSP, e apenas no modelo petrobras.
@@ -252,7 +254,17 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const ri=xr==null?null:l.itens.find((i)=>i.x>=xr-larguraLeitura*.025&&i.x<fimRef);
     const rs=ri?.str.trim()??"";
     const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
-    const tipo:Tipo=info?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
+    // Unigel/Estireno: quando o cabeçalho traz as duas colunas (Vencimentos e
+    // Descontos), a posição x do valor é mais confiável que a seção corrente —
+    // a seção vira "desconto" após "Total Vencimentos" e contaminava o recibo.
+    const porColuna=xd!=null&&xp!=null
+      ? (vi.x>=xd-larguraLeitura*.05?"desconto":"provento") as Tipo
+      : null;
+    const tipo:Tipo=info?"informativo"
+      :modelo_origem==="unigel"?(porColuna??secao)
+      :modelo_origem==="petrobras"?secao
+      :modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento")
+      :(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
     const codigo=cod?.str.trim().toUpperCase()??"";
     rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
