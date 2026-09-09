@@ -254,7 +254,17 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const ri=xr==null?null:l.itens.find((i)=>i.x>=xr-larguraLeitura*.025&&i.x<fimRef);
     const rs=ri?.str.trim()??"";
     const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
-    const tipo:Tipo=info?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
+    // Unigel/Estireno: quando o cabeçalho traz as duas colunas (Vencimentos e
+    // Descontos), a posição x do valor é mais confiável que a seção corrente —
+    // a seção vira "desconto" após "Total Vencimentos" e contaminava o recibo.
+    const porColuna=xd!=null&&xp!=null
+      ? (vi.x>=xd-larguraLeitura*.05?"desconto":"provento") as Tipo
+      : null;
+    const tipo:Tipo=info?"informativo"
+      :modelo_origem==="unigel"?(porColuna??secao)
+      :modelo_origem==="petrobras"?secao
+      :modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento")
+      :(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
     const codigo=cod?.str.trim().toUpperCase()??"";
     rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
