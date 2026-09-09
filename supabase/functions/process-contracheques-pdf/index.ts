@@ -293,17 +293,6 @@ function competenciaDoCabecalho(ls: Linha[], y: number, acima = 20, abaixo = 40)
   return competencia(texto);
 }
 
-// Deriva a competência seguinte (MM/AAAA) quando o recibo de baixo é o início da
-// competência posterior e o cabeçalho não pôde ser lido — evita que ele seja
-// mesclado silenciosamente ao recibo anterior.
-function proximaCompetencia(anterior: string | null): string | null {
-  if (!anterior) return null;
-  const m = anterior.match(/^(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const mes = Number(m[1]), ano = Number(m[2]);
-  return mes === 12 ? `01/${ano + 1}` : `${String(mes + 1).padStart(2, "0")}/${ano}`;
-}
-
 function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
   const ls = linhas(itens);
   const marcadores = ls.filter((l) => /recibo\s+de\s+pagamento/.test(norm(l.texto)));
@@ -316,8 +305,12 @@ function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
     const fatia = itens.filter((i) => i.y <= topo && i.y > base);
     if (!fatia.length) continue;
     const recibo = parsePagina(fatia, largura);
+    // Competência nunca é inferida: se o cabeçalho não for legível, permanece null
+    // e a regra de continuação impede mesclagem silenciosa.
     if (recibo.competencia == null) recibo.competencia = competenciaDoCabecalho(ls, cortes[k]);
-    if (recibo.competencia == null && k > 0) recibo.competencia = proximaCompetencia(recibos[k - 1]?.competencia ?? null);
+    recibos.push(recibo);
+  }
+
     recibos.push(recibo);
   }
   return recibos.length ? recibos : [parsePagina(itens, largura)];
