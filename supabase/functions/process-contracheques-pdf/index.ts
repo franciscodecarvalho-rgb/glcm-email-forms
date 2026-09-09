@@ -264,6 +264,28 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
 }
 
+// Uma MESMA página física pode conter DOIS recibos (Companhia Brasileira de
+// Estireno / Unigel: fim de uma competência no topo e início da seguinte
+// embaixo). Cada recibo repete o título "Recibo de Pagamento de"; quando há
+// mais de um título, a página é fatiada verticalmente por coordenada (y) e
+// cada recibo é parseado separadamente, preservando a competência de cada um.
+// Com um único título (Petrobras, Braskem, Tronox, BASF...) nada muda.
+function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
+  const ls = linhas(itens);
+  const marcadores = ls.filter((l) => /recibo\s+de\s+pagamento/.test(norm(l.texto)));
+  if (marcadores.length < 2) return [parsePagina(itens, largura)];
+  const cortes = marcadores.map((l) => l.y);
+  const recibos: Contra[] = [];
+  for (let k = 0; k < cortes.length; k++) {
+    const topo = k === 0 ? Infinity : cortes[k] + 0.5;
+    const base = k === cortes.length - 1 ? -Infinity : cortes[k + 1] + 0.5;
+    const fatia = itens.filter((i) => i.y <= topo && i.y > base);
+    if (!fatia.length) continue;
+    recibos.push(parsePagina(fatia, largura));
+  }
+  return recibos.length ? recibos : [parsePagina(itens, largura)];
+}
+
 // ---------------- consolidação incremental (por lote, com estado entre lotes) ----------------
 // Mesmo critério que decidia, no consolidador original de arquivo inteiro,
 // quando uma página nova é a CONTINUAÇÃO do contracheque atual (mesma
