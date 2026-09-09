@@ -178,3 +178,55 @@ describe("parseRecibosDaPagina — tipo pela coluna (Estireno/Unigel)", () => {
     expect(depois?.familia_hra).toBe("hra");
   });
 });
+
+// Regressão: na página real da Companhia Brasileira de Estireno a linha de
+// mês/ano do segundo recibo fica ACIMA do título "Recibo de Pagamento de",
+// caindo fora da fatia — a competência voltava null e fevereiro era mesclado
+// em janeiro (023: 349,86 + 272,78 = 622,64).
+describe("parseRecibosDaPagina — competência do segundo recibo fora da fatia", () => {
+  function paginaMesAcimaDoTitulo(): TextItem[] {
+    y = 800;
+    return [
+      ...linha([["COMPANHIA BRASILEIRA DE ESTIRENO", 40, 180], ["Janeiro/2023 Mensal", 360, 90]]),
+      ...linha([["Recibo de Pagamento de", 360, 110]]),
+      ...linha([["Cód.", 30, 20], ["Descrição", 80, 45], ["Referência", 300, 48], ["Vencimentos", 400, 55], ["Descontos", 500, 48]]),
+      ...rubrica("015", "Hrs Repouso Alimentacao", "1.009,30"),
+      ...rubrica("023", "Vlr Adicional HRA S Hextra", "349,86"),
+      ...linha([["Total Vencimentos", 380, 80], ["7.560,43", 470, 40]]),
+      ...linha([["Total Descontos", 380, 70], ["4.358,68", 470, 40]]),
+      // Segundo recibo: mês/ano numa linha acima do título.
+      ...linha([["COMPANHIA BRASILEIRA DE ESTIRENO", 40, 180], ["Fevereiro/2023 Mensal", 360, 90]]),
+      ...linha([["Recibo de Pagamento de", 360, 110]]),
+      ...linha([["Cód.", 30, 20], ["Descrição", 80, 45], ["Referência", 300, 48], ["Vencimentos", 400, 55], ["Descontos", 500, 48]]),
+      ...rubrica("015", "Hrs Repouso Alimentacao", "1.111,11"),
+      ...rubrica("023", "Vlr Adicional HRA S Hextra", "272,78"),
+      ...rubrica("423", "Seguro de Vida", "5,30", 500),
+    ];
+  }
+
+  const recibos = parseRecibosDaPagina(paginaMesAcimaDoTitulo(), LARGURA);
+
+  it("gera dois recibos com competências separadas", () => {
+    expect(recibos).toHaveLength(2);
+    expect(recibos.map((r) => r.competencia)).toEqual(["01/2023", "02/2023"]);
+  });
+
+  it("não soma o 023 de fevereiro em janeiro", () => {
+    const jan = recibos[0].itens.filter((i) => i.codigo === "023");
+    const fev = recibos[1].itens.filter((i) => i.codigo === "023");
+    expect(jan.map((i) => i.valor)).toEqual([349.86]);
+    expect(fev.map((i) => i.valor)).toEqual([272.78]);
+    expect(jan.reduce((s, i) => s + i.valor, 0)).not.toBe(622.64);
+  });
+
+  it("mantém 015 como HRA e 023 como adicional_hra em proventos, descontos fora", () => {
+    for (const recibo of recibos) {
+      expect(recibo.itens.find((i) => i.codigo === "015")?.familia_hra).toBe("hra");
+      expect(recibo.itens.find((i) => i.codigo === "023")?.familia_hra).toBe("adicional_hra");
+      expect(recibo.itens.find((i) => i.codigo === "023")?.tipo).toBe("provento");
+    }
+    const desconto = recibos[1].itens.find((i) => i.codigo === "423");
+    expect(desconto?.tipo).toBe("desconto");
+    expect(desconto?.familia_hra).toBeNull();
+  });
+});
