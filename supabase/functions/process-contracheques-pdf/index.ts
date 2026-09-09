@@ -285,8 +285,8 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
 // A competência do recibo pode estar numa linha do cabeçalho ligeiramente ACIMA
 // do título "Recibo de Pagamento de" (y diferente), caindo fora da fatia. Por
 // isso ela também é procurada numa janela vertical ao redor do título.
-function competenciaDoCabecalho(ls: Linha[], y: number, janela = 40): string | null {
-  const texto = ls.filter((l) => l.y <= y + janela && l.y >= y - janela).map((l) => l.texto).join("\n");
+function competenciaDoCabecalho(ls: Linha[], y: number, acima = 20, abaixo = 40): string | null {
+  const texto = ls.filter((l) => l.y <= y + acima && l.y >= y - abaixo).map((l) => l.texto).join("\n");
   return competencia(texto);
 }
 
