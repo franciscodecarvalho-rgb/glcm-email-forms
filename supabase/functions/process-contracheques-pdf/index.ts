@@ -163,6 +163,8 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   if(["0603","0350"].includes(codigoNormalizado)&&tipo!=="desconto"&&/\b(?:hrs?|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Unigel: "015 — Hrs/Horas de Repouso e Alimentação". O cabeçalho Unigel nem sempre é
   // detectado, então classificamos pelo par código + descrição, como na Braskem.
+  // 015 (HRA) e 023 (adicional HRA) só valem como HRA/AHRA em linhas de provento.
+  if(["015","023"].includes(codigoNormalizado)&&tipo==="desconto")return null;
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Petrobras: contribuição extraordinária PPSP (aceita pontuação e sufixo PPSP-R).
   // Só vale para o par código + nomenclatura PPSP, e apenas no modelo petrobras.
