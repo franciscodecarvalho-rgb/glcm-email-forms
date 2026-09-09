@@ -9,7 +9,9 @@ const corsHeaders = {
 type TextItem = { str: string; x: number; y: number; width: number; height: number };
 type Tipo = "provento" | "desconto" | "informativo";
 type Rubrica = { codigo: string; descricao: string; referencia: number | null; valor: number; tipo: Tipo; familia_hra: string | null };
-type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[] };
+// `continua`: a folha traz o marcador "CONTINUA..." — só SINALIZA que o recibo
+// PODE ter complemento na folha seguinte (ver regra de consolidação Unigel).
+type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
 type Linha = { y: number; itens: TextItem[]; texto: string };
 const MODELO_IA = "google/gemini-2.5-pro";
 const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas.`;
