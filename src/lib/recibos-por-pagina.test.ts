@@ -63,11 +63,11 @@ function paginaComDoisRecibos(): TextItem[] {
     ...rubrica("023", "Vlr Adicional HRA S Hextra", "240,92"),
     ...linha([["Total Vencimentos", 380, 80], ["7.560,43", 470, 40]]),
     ...linha([["Total Descontos", 380, 70], ["4.358,68", 470, 40]]),
+    ...rubrica("423", "Seguro de Vida", "5,30", 500),
     // Recibo 2 — início de Fevereiro/2023 na mesma página física.
     ...cabecalhoRecibo("Fevereiro/2023"),
     ...rubrica("015", "Hrs Repouso Alimentacao", "1.111,11"),
     ...rubrica("023", "Vlr Adicional HRA S Hextra", "222,22"),
-    ...rubrica("423", "Seguro de Vida", "5,30", 500),
     ...linha([["CONTINUA...", 30, 60]]),
   ];
 }
@@ -96,9 +96,10 @@ describe("parseRecibosDaPagina — dois recibos na mesma página (Estireno/Unige
   });
 
   it("não classifica desconto como HRA e não mistura rubricas entre os recibos", () => {
-    const desconto = recibos[1].itens.find((i) => i.codigo === "423");
+    const desconto = recibos[0].itens.find((i) => i.codigo === "423");
     expect(desconto?.familia_hra).toBeNull();
     expect(desconto?.tipo).toBe("desconto");
+    expect(recibos[1].itens.some((i) => i.codigo === "423")).toBe(false);
     expect(recibos[0].itens.every((i) => i.valor !== 1111.11)).toBe(true);
   });
 
