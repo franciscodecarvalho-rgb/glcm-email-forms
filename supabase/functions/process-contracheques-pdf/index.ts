@@ -293,6 +293,16 @@ function competenciaDoCabecalho(ls: Linha[], y: number, acima = 20, abaixo = 40)
   return competencia(texto);
 }
 
+/**
+ * Regra de negócio confirmada:
+ * O processamento deve ler todo o conteúdo do PDF, identificar cada contracheque
+ * e sua competência, unir somente folhas que sejam complemento do mesmo
+ * contracheque, extrair e classificar as rubricas, salvar os dados estruturados
+ * no banco e exibir exatamente o que foi coletado.
+ *
+ * Página física é apenas uma unidade técnica de leitura; ela não define um
+ * contracheque nem pode determinar o resultado da extração.
+ */
 function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
   const ls = linhas(itens);
   const texto = ls.map((l) => l.texto).join("\n");
