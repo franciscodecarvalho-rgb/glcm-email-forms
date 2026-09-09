@@ -293,17 +293,6 @@ function competenciaDoCabecalho(ls: Linha[], y: number, acima = 20, abaixo = 40)
   return competencia(texto);
 }
 
-// Deriva a competência seguinte (MM/AAAA) quando o recibo de baixo é o início da
-// competência posterior e o cabeçalho não pôde ser lido — evita que ele seja
-// mesclado silenciosamente ao recibo anterior.
-function proximaCompetencia(anterior: string | null): string | null {
-  if (!anterior) return null;
-  const m = anterior.match(/^(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const mes = Number(m[1]), ano = Number(m[2]);
-  return mes === 12 ? `01/${ano + 1}` : `${String(mes + 1).padStart(2, "0")}/${ano}`;
-}
-
 function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
   const ls = linhas(itens);
   const marcadores = ls.filter((l) => /recibo\s+de\s+pagamento/.test(norm(l.texto)));
@@ -316,8 +305,9 @@ function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
     const fatia = itens.filter((i) => i.y <= topo && i.y > base);
     if (!fatia.length) continue;
     const recibo = parsePagina(fatia, largura);
+    // Competência nunca é inferida: se o cabeçalho não for legível, permanece null
+    // e a regra de continuação impede mesclagem silenciosa.
     if (recibo.competencia == null) recibo.competencia = competenciaDoCabecalho(ls, cortes[k]);
-    if (recibo.competencia == null && k > 0) recibo.competencia = proximaCompetencia(recibos[k - 1]?.competencia ?? null);
     recibos.push(recibo);
   }
   return recibos.length ? recibos : [parsePagina(itens, largura)];
@@ -507,7 +497,7 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
 
       const itensPaginas = await extrairItensDoIntervalo(pdf, lote.pagina_inicio, lote.pagina_fim);
       // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
-      const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+      const paginasContra = itensPaginas.flatMap((itens) => parseRecibosDaPagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
 
       const { fechados, aberto } = consolidarLote(paginasContra, estado);
       const ehUltimoLote = lote.id === idUltimoLote;
@@ -679,7 +669,7 @@ async function processarLoteFisico(supabase: any, casoId: string, loteId: string
     const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
 
     const itensPaginas = await extrairItensDoIntervalo(pdf, 1, pdf.numPages);
-    const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+    const paginasContra = itensPaginas.flatMap((itens) => parseRecibosDaPagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
 
     const assinaturasVistas = await assinaturasExistentes(supabase, casoId, arquivoNome);
     const estadoEntrada = (anterior?.estado_saida as Contra | null) ?? null;
