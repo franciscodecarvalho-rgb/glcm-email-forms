@@ -230,3 +230,23 @@ describe("parseRecibosDaPagina — competência do segundo recibo fora da fatia"
     expect(desconto?.familia_hra).toBeNull();
   });
 });
+
+describe("parseRecibosDaPagina — regra exclusiva Unigel", () => {
+  function paginaOutroModeloComDoisTitulos(): TextItem[] {
+    y = 800;
+    return [
+      ...linha([["PETROLEO BRASILEIRO S A PETROBRAS", 40, 200], ["Recibo de Pagamento de", 360, 110]]),
+      ...linha([["Agosto/2023 Mensal", 360, 90]]),
+      ...rubrica("1062", "Adicional HRA", "100,00"),
+      ...linha([["Recibo de Pagamento de", 360, 110]]),
+      ...linha([["Setembro/2023 Mensal", 360, 90]]),
+      ...rubrica("1062", "Adicional HRA", "200,00"),
+    ];
+  }
+
+  it("não fatia página de outro modelo mesmo com dois títulos 'Recibo de Pagamento'", () => {
+    const recibos = parseRecibosDaPagina(paginaOutroModeloComDoisTitulos(), LARGURA);
+    expect(recibos).toHaveLength(1);
+    expect(recibos[0].modelo_origem).toBe("petrobras");
+  });
+});
