@@ -328,7 +328,19 @@ function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
 // Mesmo critério que decidia, no consolidador original de arquivo inteiro,
 // quando uma página nova é a CONTINUAÇÃO do contracheque atual (mesma
 // competência/modelo, ainda sem os dois totais) em vez de iniciar um novo.
+// Companhia Brasileira de Estireno / Unigel — regra canônica e geral (sem meses
+// específicos): o recibo atual só recebe a folha seguinte quando ELE traz o
+// marcador "CONTINUA..." E a competência da folha seguinte é exatamente igual.
+// Competência diferente (ou ausente/nula) fecha o recibo atual e inicia outro,
+// mesmo com "CONTINUA..."; sem o marcador, o recibo fecha ao fim da folha.
+// A continuação encadeia quantas folhas forem necessárias, pois cada folha
+// intermediária precisa trazer o próprio "CONTINUA..." (ver `mesclarContra`).
+function continuaUnigel(atual: Contra, p: Contra): boolean {
+  return atual.continua===true && atual.competencia!=null && p.competencia===atual.competencia;
+}
+
 function continuaMesmoContra(atual: Contra, p: Contra): boolean {
+  if(atual.modelo_origem==="unigel"||p.modelo_origem==="unigel")return continuaUnigel(atual,p);
   const continuaElekeiroz = atual.modelo_origem==="elekeiroz" && p.modelo_origem==="elekeiroz" && atual.competencia===p.competencia;
   const novaCompetencia = atual.competencia!=null && p.competencia!=null && atual.competencia!==p.competencia;
   const novoModelo = atual.modelo_origem!=="generico" && p.modelo_origem!=="generico" && atual.modelo_origem!==p.modelo_origem;
