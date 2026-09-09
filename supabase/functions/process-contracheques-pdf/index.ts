@@ -9,7 +9,9 @@ const corsHeaders = {
 type TextItem = { str: string; x: number; y: number; width: number; height: number };
 type Tipo = "provento" | "desconto" | "informativo";
 type Rubrica = { codigo: string; descricao: string; referencia: number | null; valor: number; tipo: Tipo; familia_hra: string | null };
-type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[] };
+// `continua`: a folha traz o marcador "CONTINUA..." — só SINALIZA que o recibo
+// PODE ter complemento na folha seguinte (ver regra de consolidação Unigel).
+type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
 type Linha = { y: number; itens: TextItem[]; texto: string };
 const MODELO_IA = "google/gemini-2.5-pro";
 const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas.`;
@@ -268,12 +270,13 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const codigo=cod?.str.trim().toUpperCase()??"";
     rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
-  if(!/\bcontinua\b/.test(norm(texto))){
+  const continua=/\bcontinua\b/.test(norm(texto));
+  if(!continua){
     total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;
     total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;
     liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
   }
-  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
+  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas,continua};
 }
 
 // Uma MESMA página física pode conter DOIS recibos (Companhia Brasileira de
@@ -325,7 +328,19 @@ function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
 // Mesmo critério que decidia, no consolidador original de arquivo inteiro,
 // quando uma página nova é a CONTINUAÇÃO do contracheque atual (mesma
 // competência/modelo, ainda sem os dois totais) em vez de iniciar um novo.
+// Companhia Brasileira de Estireno / Unigel — regra canônica e geral (sem meses
+// específicos): o recibo atual só recebe a folha seguinte quando ELE traz o
+// marcador "CONTINUA..." E a competência da folha seguinte é exatamente igual.
+// Competência diferente (ou ausente/nula) fecha o recibo atual e inicia outro,
+// mesmo com "CONTINUA..."; sem o marcador, o recibo fecha ao fim da folha.
+// A continuação encadeia quantas folhas forem necessárias, pois cada folha
+// intermediária precisa trazer o próprio "CONTINUA..." (ver `mesclarContra`).
+function continuaUnigel(atual: Contra, p: Contra): boolean {
+  return atual.continua===true && atual.competencia!=null && p.competencia===atual.competencia;
+}
+
 function continuaMesmoContra(atual: Contra, p: Contra): boolean {
+  if(atual.modelo_origem==="unigel"||p.modelo_origem==="unigel")return continuaUnigel(atual,p);
   const continuaElekeiroz = atual.modelo_origem==="elekeiroz" && p.modelo_origem==="elekeiroz" && atual.competencia===p.competencia;
   const novaCompetencia = atual.competencia!=null && p.competencia!=null && atual.competencia!==p.competencia;
   const novoModelo = atual.modelo_origem!=="generico" && p.modelo_origem!=="generico" && atual.modelo_origem!==p.modelo_origem;
@@ -335,7 +350,9 @@ function continuaMesmoContra(atual: Contra, p: Contra): boolean {
 }
 
 function mesclarContra(atual: Contra, p: Contra): Contra {
-  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens] };
+  // `continua` passa a ser o da ÚLTIMA folha anexada: o encadeamento só segue
+  // enquanto cada folha anterior mantiver o marcador "CONTINUA...".
+  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens], continua: p.continua===true };
   if(p.total_proventos!=null) mesclado.total_proventos=p.total_proventos;
   if(p.total_descontos!=null) mesclado.total_descontos=p.total_descontos;
   if(p.liquido!=null) mesclado.liquido=p.liquido;
