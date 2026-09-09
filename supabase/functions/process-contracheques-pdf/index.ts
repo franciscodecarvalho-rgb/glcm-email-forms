@@ -310,9 +310,6 @@ function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
     if (recibo.competencia == null) recibo.competencia = competenciaDoCabecalho(ls, cortes[k]);
     recibos.push(recibo);
   }
-
-    recibos.push(recibo);
-  }
   return recibos.length ? recibos : [parsePagina(itens, largura)];
 }
 
