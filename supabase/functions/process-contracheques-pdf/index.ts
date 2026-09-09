@@ -497,7 +497,7 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
 
       const itensPaginas = await extrairItensDoIntervalo(pdf, lote.pagina_inicio, lote.pagina_fim);
       // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
-      const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+      const paginasContra = itensPaginas.flatMap((itens) => parseRecibosDaPagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
 
       const { fechados, aberto } = consolidarLote(paginasContra, estado);
       const ehUltimoLote = lote.id === idUltimoLote;
