@@ -134,3 +134,47 @@ describe("parseRecibosDaPagina — páginas com um único recibo não regridem",
     }
   });
 });
+
+// Companhia Brasileira de Estireno (unigel): rubricas depois de "Total Vencimentos"
+// não podem herdar o tipo "desconto" da seção — vale a coluna onde o valor está.
+describe("parseRecibosDaPagina — tipo pela coluna (Estireno/Unigel)", () => {
+  function paginaProventosEDescontos(): TextItem[] {
+    y = 800;
+    return [
+      ...cabecalhoRecibo("Junho/2023"),
+      ...rubrica("015", "Hrs Repouso Alimentacao", "1.009,30", 400),
+      ...rubrica("023", "Vlr Adicional HRA S Hextra", "240,92", 400),
+      ...rubrica("423", "Seguro de Vida", "5,30", 500),
+      ...rubrica("998", "INSS", "812,45", 500),
+      ...linha([["Total Vencimentos", 380, 80], ["7.560,43", 470, 40]]),
+      ...linha([["Total Descontos", 380, 70], ["4.358,68", 470, 40]]),
+      ...rubrica("015", "Hrs Repouso Alimentacao", "111,11", 400),
+    ];
+  }
+
+  const recibos = parseRecibosDaPagina(paginaProventosEDescontos(), LARGURA);
+  const itens = recibos[0].itens;
+
+  it("classifica 015 e 023 como provento com família HRA/AHRA", () => {
+    const hra = itens.find((i) => i.codigo === "015" && i.valor === 1009.3);
+    const ahra = itens.find((i) => i.codigo === "023");
+    expect(hra?.tipo).toBe("provento");
+    expect(hra?.familia_hra).toBe("hra");
+    expect(ahra?.tipo).toBe("provento");
+    expect(ahra?.familia_hra).toBe("adicional_hra");
+  });
+
+  it("mantém descontos como desconto e fora das famílias HRA", () => {
+    for (const codigo of ["423", "998"]) {
+      const item = itens.find((i) => i.codigo === codigo);
+      expect(item?.tipo).toBe("desconto");
+      expect(item?.familia_hra).toBeNull();
+    }
+  });
+
+  it("linha na coluna Vencimentos após os totais continua provento", () => {
+    const depois = itens.find((i) => i.valor === 111.11);
+    expect(depois?.tipo).toBe("provento");
+    expect(depois?.familia_hra).toBe("hra");
+  });
+});
