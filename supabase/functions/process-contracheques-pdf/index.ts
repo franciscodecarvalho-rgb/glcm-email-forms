@@ -282,6 +282,25 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
 // mais de um título, a página é fatiada verticalmente por coordenada (y) e
 // cada recibo é parseado separadamente, preservando a competência de cada um.
 // Com um único título (Petrobras, Braskem, Tronox, BASF...) nada muda.
+// A competência do recibo pode estar numa linha do cabeçalho ligeiramente ACIMA
+// do título "Recibo de Pagamento de" (y diferente), caindo fora da fatia. Por
+// isso ela também é procurada numa janela vertical ao redor do título.
+function competenciaDoCabecalho(ls: Linha[], y: number, janela = 40): string | null {
+  const texto = ls.filter((l) => l.y <= y + janela && l.y >= y - janela).map((l) => l.texto).join("\n");
+  return competencia(texto);
+}
+
+// Deriva a competência seguinte (MM/AAAA) quando o recibo de baixo é o início da
+// competência posterior e o cabeçalho não pôde ser lido — evita que ele seja
+// mesclado silenciosamente ao recibo anterior.
+function proximaCompetencia(anterior: string | null): string | null {
+  if (!anterior) return null;
+  const m = anterior.match(/^(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const mes = Number(m[1]), ano = Number(m[2]);
+  return mes === 12 ? `01/${ano + 1}` : `${String(mes + 1).padStart(2, "0")}/${ano}`;
+}
+
 function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
   const ls = linhas(itens);
   const marcadores = ls.filter((l) => /recibo\s+de\s+pagamento/.test(norm(l.texto)));
@@ -293,10 +312,14 @@ function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
     const base = k === cortes.length - 1 ? -Infinity : cortes[k + 1] + 0.5;
     const fatia = itens.filter((i) => i.y <= topo && i.y > base);
     if (!fatia.length) continue;
-    recibos.push(parsePagina(fatia, largura));
+    const recibo = parsePagina(fatia, largura);
+    if (recibo.competencia == null) recibo.competencia = competenciaDoCabecalho(ls, cortes[k]);
+    if (recibo.competencia == null && k > 0) recibo.competencia = proximaCompetencia(recibos[k - 1]?.competencia ?? null);
+    recibos.push(recibo);
   }
   return recibos.length ? recibos : [parsePagina(itens, largura)];
 }
+
 
 // ---------------- consolidação incremental (por lote, com estado entre lotes) ----------------
 // Mesmo critério que decidia, no consolidador original de arquivo inteiro,
