@@ -1,3 +1,5 @@
+import { ehCompetenciaCanonica, normalizarCompetenciaAcelen } from "./competencia-acelen";
+
 export type ItemContrachequeRelacional = {
   id?: string;
   contracheque_id?: string;
@@ -53,10 +55,47 @@ function valorProvento(item: ItemContrachequeRelacional): number {
   return Math.abs(Number(item.valor) || 0);
 }
 
+// Acelen (Refinaria de Mataripe): a competência precisa ser canônica MM/AAAA.
+// Se vier bruta (31/03/2023, 2023-03-31...) é normalizada; se continuar
+// inválida/nula, a linha NÃO entra na revisão nem no Excel com o nome do
+// arquivo como rótulo — vira pendência de revisão técnica.
+function competenciaCanonica(contracheque: ContrachequeRelacional): string | null {
+  const bruta = contracheque.competencia || null;
+  if (contracheque.modelo_origem !== "acelen") return bruta;
+  const normalizada = ehCompetenciaCanonica(bruta) ? bruta : normalizarCompetenciaAcelen(bruta);
+  return ehCompetenciaCanonica(normalizada) ? normalizada : null;
+}
+
+function temRubricaHraCalculavel(contracheque: ContrachequeRelacional): boolean {
+  return (contracheque.itens_contracheque ?? []).some(
+    (item) => item.familia_hra && ehProventoHra(item) && valorProvento(item) > 0,
+  );
+}
+
+// Rubricas HRA/AHRA da Acelen sem competência válida: preservadas como motivo
+// explícito de revisão técnica, nunca descartadas em silêncio nem exibidas com
+// o nome do arquivo no lugar da competência.
+export function pendenciasCompetenciaAcelen(
+  contracheques: ContrachequeRelacional[] | null | undefined,
+): Array<{ id: string; arquivo_origem: string | null; motivo: string }> {
+  return (contracheques ?? [])
+    .filter(
+      (contracheque) =>
+        contracheque.modelo_origem === "acelen" &&
+        competenciaCanonica(contracheque) === null &&
+        temRubricaHraCalculavel(contracheque),
+    )
+    .map((contracheque) => ({
+      id: contracheque.id,
+      arquivo_origem: contracheque.arquivo_origem ?? null,
+      motivo: "Contracheque Acelen com rubrica HRA/AHRA e competência ilegível: revisão técnica necessária.",
+    }));
+}
+
 export function contrachequesRelacionaisParaRevisao(
   contracheques: ContrachequeRelacional[] | null | undefined,
 ): ContrachequeRevisao[] {
-  const linhas = (contracheques ?? []).map((contracheque, index) => {
+  const linhas = (contracheques ?? []).flatMap((contracheque, index) => {
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
       .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))
@@ -65,15 +104,18 @@ export function contrachequesRelacionaisParaRevisao(
       .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
 
-    return {
-      competencia: contracheque.competencia || null,
+    const competencia = competenciaCanonica(contracheque);
+    if (contracheque.modelo_origem === "acelen" && competencia === null) return [];
+
+    return [{
+      competencia,
       linha: {
         id: contracheque.id,
-        label: contracheque.competencia || contracheque.arquivo_origem || `Contracheque ${index + 1}`,
+        label: competencia || contracheque.arquivo_origem || `Contracheque ${index + 1}`,
         valor_hra: valorHra,
         valor_ahra: valorAhra,
       },
-    };
+    }];
   });
 
   // Consolida linhas da mesma competência (uma linha por competência),

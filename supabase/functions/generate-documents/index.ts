@@ -1010,7 +1010,40 @@ ${resumoMerges}
 // (contracheques + itens_contracheque), mesmo cálculo do frontend
 // (src/lib/contracheques-relacionais.ts). Independe do JSON legado casos.contracheques,
 // que o fluxo de upload (process-contracheques-pdf) não atualiza.
-type ContrachequeRelacional = { id: string; competencia?: string | null; arquivo_origem?: string | null };
+type ContrachequeRelacional = { id: string; competencia?: string | null; arquivo_origem?: string | null; modelo_origem?: string | null };
+
+// Espelho da normalização Acelen (Refinaria de Mataripe) usada na revisão:
+// competência bruta vira MM/AAAA; se continuar inválida, a linha nao entra na
+// planilha com o nome do arquivo como rotulo.
+const MESES_ACELEN: Record<string, string> = {
+  janeiro:"01",fevereiro:"02",marco:"03",abril:"04",maio:"05",junho:"06",julho:"07",agosto:"08",setembro:"09",outubro:"10",novembro:"11",dezembro:"12",
+  jan:"01",fev:"02",mar:"03",abr:"04",mai:"05",jun:"06",jul:"07",ago:"08",set:"09",out:"10",nov:"11",dez:"12",
+};
+const semAcentoAcelen = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+function ehCompetenciaCanonica(valor: unknown): valor is string {
+  return typeof valor === "string" && /^(0[1-9]|1[0-2])\/20\d{2}$/.test(valor);
+}
+function normalizarCompetenciaAcelen(bruta: unknown): string | null {
+  if (typeof bruta !== "string" || !bruta.trim()) return null;
+  const n = semAcentoAcelen(bruta);
+  for (const [nome, numero] of Object.entries(MESES_ACELEN)) {
+    const m = n.match(new RegExp(`(?:\\b\\d{1,2}\\s*[/.\\- ]\\s*)?\\b${nome}\\b\\s*(?:de\\s*)?[/.\\- ]\\s*(20\\d{2})\\b`));
+    if (m) return `${numero}/${m[1]}`;
+  }
+  const iso = n.match(/\b(20\d{2})-(0?[1-9]|1[0-2])-(\d{1,2})\b/);
+  if (iso) return `${iso[2].padStart(2, "0")}/${iso[1]}`;
+  const completa = n.match(/\b(\d{1,2})[/.-](0?[1-9]|1[0-2])[/.-](20\d{2})\b/);
+  if (completa) return `${completa[2].padStart(2, "0")}/${completa[3]}`;
+  const curta = n.match(/(?<![\d/.-])(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})(?!\d)/);
+  if (curta) return `${curta[1].padStart(2, "0")}/${curta[2]}`;
+  return null;
+}
+function competenciaCanonicaContra(contracheque: ContrachequeRelacional): string | null {
+  const bruta = contracheque.competencia || null;
+  if (contracheque.modelo_origem !== "acelen") return bruta;
+  const normalizada = ehCompetenciaCanonica(bruta) ? bruta : normalizarCompetenciaAcelen(bruta);
+  return ehCompetenciaCanonica(normalizada) ? normalizada : null;
+}
 type ItemContrachequeRelacional = {
   contracheque_id?: string | null;
   valor?: number | null;
@@ -1060,7 +1093,7 @@ function montarContrasRelacionais(
   contracheques: ContrachequeRelacional[] | null | undefined,
   itens: ItemContrachequeRelacional[] | null | undefined,
 ): Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> {
-  const linhas = (contracheques ?? []).map((contracheque, index) => {
+  const linhas = (contracheques ?? []).flatMap((contracheque, index) => {
     const itensDoContra = (itens ?? []).filter(
       (item) => item.contracheque_id === contracheque.id,
     );
@@ -1070,18 +1103,27 @@ function montarContrasRelacionais(
     const valorHra = itensDoContra
       .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
-    return {
-      competencia: contracheque.competencia || null,
+    const competencia = competenciaCanonicaContra(contracheque);
+    // Acelen sem competência canônica: pendência de revisão técnica, nunca
+    // rotulada com o nome do arquivo na planilha.
+    if (contracheque.modelo_origem === "acelen" && competencia === null) {
+      if (valorHra > 0 || valorAhra > 0) {
+        console.warn(`[acelen] contracheque ${contracheque.id} com rubrica HRA/AHRA e competência ilegível: revisão técnica necessária`);
+      }
+      return [];
+    }
+    return [{
+      competencia,
       linha: {
         id: contracheque.id,
         label:
-          contracheque.competencia ||
+          competencia ||
           contracheque.arquivo_origem ||
           `Contracheque ${index + 1}`,
         valor_hra: valorHra,
         valor_ahra: valorAhra,
       },
-    };
+    }];
   });
 
   // Uma linha por competência (soma HRA/AHRA); sem competência permanece individual.
@@ -1161,7 +1203,7 @@ Deno.serve(async (req) => {
     // planilha/petição saírem vazias. O JSON legado é apenas fallback.
     const { data: contrasRel, error: ccRelErr } = await supabase
       .from("contracheques")
-      .select("id, competencia, arquivo_origem")
+      .select("id, competencia, arquivo_origem, modelo_origem")
       .eq("caso_id", caso_id)
       .order("competencia");
     if (ccRelErr) throw ccRelErr;

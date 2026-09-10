@@ -14,7 +14,7 @@ type Rubrica = { codigo: string; descricao: string; referencia: number | null; v
 type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
 type Linha = { y: number; itens: TextItem[]; texto: string };
 const MODELO_IA = "google/gemini-2.5-pro";
-const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas.`;
+const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas. Quando o documento for da Refinaria de Mataripe S.A. (Acelen), use obrigatoriamente modelo_origem "acelen" e informe a competência de cada contracheque no formato MM/AAAA (por exemplo 03/2023), convertendo datas completas como 31/03/2023, 2023-03-31 ou "Recibo de Pagamento de Março/2023"; se a competência não estiver legível, use null e nunca deduza o mês.`;
 const TOOL_IA = { type:"function", function:{ name:"registrar_contracheques", parameters:{ type:"object", properties:{ contracheques:{ type:"array", items:{ type:"object", properties:{
   competencia:{ type:["string","null"] }, modelo_origem:{ type:"string" }, total_proventos:{ type:["number","null"] }, total_descontos:{ type:["number","null"] }, liquido:{ type:["number","null"] },
   itens:{ type:"array", items:{ type:"object", properties:{ codigo:{ type:"string" }, descricao:{ type:"string" }, referencia:{ type:["number","null"] }, valor:{ type:"number" }, tipo:{ type:"string", enum:["provento","desconto","informativo"] } }, required:["codigo","descricao","referencia","valor","tipo"], additionalProperties:false } },
@@ -49,7 +49,12 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
-    return [{competencia:typeof contra.competencia==="string"?contra.competencia:null,modelo_origem:typeof contra.modelo_origem==="string"&&contra.modelo_origem?contra.modelo_origem:"ia_fallback",total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
+    const modeloIa=typeof contra.modelo_origem==="string"&&contra.modelo_origem?contra.modelo_origem:"ia_fallback";
+    const competenciaBruta=typeof contra.competencia==="string"?contra.competencia:null;
+    // Acelen: a competência devolvida pela IA é normalizada para MM/AAAA ANTES
+    // de persistir; formato irreconhecível permanece null (nunca é inventado).
+    const competenciaIa=modeloIa==="acelen"?normalizarCompetenciaAcelen(competenciaBruta):competenciaBruta;
+    return [{competencia:competenciaIa,modelo_origem:modeloIa,total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
   });
 }
 
@@ -149,6 +154,31 @@ function competenciaBasf(ls: Linha[]): string | null {
     const m=valor.match(/\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b/);
     if(m)return `${m[2].padStart(2,"0")}/${m[3]}`;
   }
+  return null;
+}
+
+// Normalização de competência EXCLUSIVA do modelo "acelen" (Refinaria de
+// Mataripe S.A.). Converte formatos brutos vindos da leitura determinística ou
+// da IA (DD/MM/AAAA, AAAA-MM-DD, DD/MÊS/AAAA, "Recibo de Pagamento de MÊS/AAAA")
+// em MM/AAAA. Devolve null quando não há competência legível — nunca infere
+// mês anterior/seguinte. Não afeta nenhum outro modelo.
+function ehCompetenciaCanonica(valor: unknown): valor is string {
+  return typeof valor==="string" && /^(0[1-9]|1[0-2])\/20\d{2}$/.test(valor);
+}
+
+function normalizarCompetenciaAcelen(bruta: unknown): string | null {
+  if(typeof bruta!=="string"||!bruta.trim())return null;
+  const n=norm(bruta);
+  for(const [nome,numero] of Object.entries(MESES)){
+    const m=n.match(new RegExp(`(?:\\b\\d{1,2}\\s*[/.\\- ]\\s*)?\\b${nome}\\b\\s*(?:de\\s*)?[/.\\- ]\\s*(20\\d{2})\\b`));
+    if(m)return `${numero}/${m[1]}`;
+  }
+  const iso=n.match(/\b(20\d{2})-(0?[1-9]|1[0-2])-(\d{1,2})\b/);
+  if(iso)return `${iso[2].padStart(2,"0")}/${iso[1]}`;
+  const completa=n.match(/\b(\d{1,2})[/.-](0?[1-9]|1[0-2])[/.-](20\d{2})\b/);
+  if(completa)return `${completa[2].padStart(2,"0")}/${completa[3]}`;
+  const curta=n.match(/(?<![\d/.-])(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})(?!\d)/);
+  if(curta)return `${curta[1].padStart(2,"0")}/${curta[2]}`;
   return null;
 }
 
@@ -276,7 +306,10 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;
     liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
   }
-  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas,continua};
+  const competenciaLida=modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto))
+    :modelo_origem==="acelen"?(normalizarCompetenciaAcelen(texto)??competencia(texto))
+    :competencia(texto);
+  return{competencia:modelo_origem==="acelen"?(ehCompetenciaCanonica(competenciaLida)?competenciaLida:normalizarCompetenciaAcelen(competenciaLida)):competenciaLida,modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas,continua};
 }
 
 // Uma MESMA página física pode conter DOIS recibos (Companhia Brasileira de
