@@ -1203,7 +1203,7 @@ Deno.serve(async (req) => {
     // planilha/petição saírem vazias. O JSON legado é apenas fallback.
     const { data: contrasRel, error: ccRelErr } = await supabase
       .from("contracheques")
-      .select("id, competencia, arquivo_origem")
+      .select("id, competencia, arquivo_origem, modelo_origem")
       .eq("caso_id", caso_id)
       .order("competencia");
     if (ccRelErr) throw ccRelErr;
