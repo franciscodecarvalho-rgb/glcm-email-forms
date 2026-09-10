@@ -49,7 +49,12 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
-    return [{competencia:typeof contra.competencia==="string"?contra.competencia:null,modelo_origem:typeof contra.modelo_origem==="string"&&contra.modelo_origem?contra.modelo_origem:"ia_fallback",total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
+    const modeloIa=typeof contra.modelo_origem==="string"&&contra.modelo_origem?contra.modelo_origem:"ia_fallback";
+    const competenciaBruta=typeof contra.competencia==="string"?contra.competencia:null;
+    // Acelen: a competência devolvida pela IA é normalizada para MM/AAAA ANTES
+    // de persistir; formato irreconhecível permanece null (nunca é inventado).
+    const competenciaIa=modeloIa==="acelen"?normalizarCompetenciaAcelen(competenciaBruta):competenciaBruta;
+    return [{competencia:competenciaIa,modelo_origem:modeloIa,total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
   });
 }
 
