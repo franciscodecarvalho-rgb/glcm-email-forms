@@ -1,3 +1,5 @@
+import { ehCompetenciaCanonica, normalizarCompetenciaAcelen } from "./competencia-acelen";
+
 export type ItemContrachequeRelacional = {
   id?: string;
   contracheque_id?: string;
