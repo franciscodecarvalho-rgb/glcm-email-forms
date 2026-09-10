@@ -152,6 +152,31 @@ function competenciaBasf(ls: Linha[]): string | null {
   return null;
 }
 
+// Normalização de competência EXCLUSIVA do modelo "acelen" (Refinaria de
+// Mataripe S.A.). Converte formatos brutos vindos da leitura determinística ou
+// da IA (DD/MM/AAAA, AAAA-MM-DD, DD/MÊS/AAAA, "Recibo de Pagamento de MÊS/AAAA")
+// em MM/AAAA. Devolve null quando não há competência legível — nunca infere
+// mês anterior/seguinte. Não afeta nenhum outro modelo.
+function ehCompetenciaCanonica(valor: unknown): valor is string {
+  return typeof valor==="string" && /^(0[1-9]|1[0-2])\/20\d{2}$/.test(valor);
+}
+
+function normalizarCompetenciaAcelen(bruta: unknown): string | null {
+  if(typeof bruta!=="string"||!bruta.trim())return null;
+  const n=norm(bruta);
+  for(const [nome,numero] of Object.entries(MESES)){
+    const m=n.match(new RegExp(`(?:\\b\\d{1,2}\\s*[/.\\- ]\\s*)?\\b${nome}\\b\\s*(?:de\\s*)?[/.\\- ]\\s*(20\\d{2})\\b`));
+    if(m)return `${numero}/${m[1]}`;
+  }
+  const iso=n.match(/\b(20\d{2})-(0?[1-9]|1[0-2])-(\d{1,2})\b/);
+  if(iso)return `${iso[2].padStart(2,"0")}/${iso[1]}`;
+  const completa=n.match(/\b(\d{1,2})[/.-](0?[1-9]|1[0-2])[/.-](20\d{2})\b/);
+  if(completa)return `${completa[2].padStart(2,"0")}/${completa[3]}`;
+  const curta=n.match(/(?<![\d/.-])(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})(?!\d)/);
+  if(curta)return `${curta[1].padStart(2,"0")}/${curta[2]}`;
+  return null;
+}
+
 function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: Tipo) {
   const codigoNormalizado=codigo.trim().toUpperCase();
   if(modeloOrigem==="basf"&&codigoNormalizado==="3A20")return "hra";
