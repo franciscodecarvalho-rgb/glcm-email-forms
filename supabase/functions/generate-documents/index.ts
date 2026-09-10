@@ -1093,7 +1093,7 @@ function montarContrasRelacionais(
   contracheques: ContrachequeRelacional[] | null | undefined,
   itens: ItemContrachequeRelacional[] | null | undefined,
 ): Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> {
-  const linhas = (contracheques ?? []).map((contracheque, index) => {
+  const linhas = (contracheques ?? []).flatMap((contracheque, index) => {
     const itensDoContra = (itens ?? []).filter(
       (item) => item.contracheque_id === contracheque.id,
     );
@@ -1103,18 +1103,27 @@ function montarContrasRelacionais(
     const valorHra = itensDoContra
       .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
-    return {
-      competencia: contracheque.competencia || null,
+    const competencia = competenciaCanonicaContra(contracheque);
+    // Acelen sem competência canônica: pendência de revisão técnica, nunca
+    // rotulada com o nome do arquivo na planilha.
+    if (contracheque.modelo_origem === "acelen" && competencia === null) {
+      if (valorHra > 0 || valorAhra > 0) {
+        console.warn(`[acelen] contracheque ${contracheque.id} com rubrica HRA/AHRA e competência ilegível: revisão técnica necessária`);
+      }
+      return [];
+    }
+    return [{
+      competencia,
       linha: {
         id: contracheque.id,
         label:
-          contracheque.competencia ||
+          competencia ||
           contracheque.arquivo_origem ||
           `Contracheque ${index + 1}`,
         valor_hra: valorHra,
         valor_ahra: valorAhra,
       },
-    };
+    }];
   });
 
   // Uma linha por competência (soma HRA/AHRA); sem competência permanece individual.
