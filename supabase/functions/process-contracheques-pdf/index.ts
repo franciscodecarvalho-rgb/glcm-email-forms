@@ -49,7 +49,10 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
-    const modeloIa=typeof contra.modelo_origem==="string"&&contra.modelo_origem?contra.modelo_origem:"ia_fallback";
+    // modelo_origem vindo da IA é normalizado (trim + caixa baixa) antes da
+    // comparação: "Acelen", "ACELEN" ou espaços não escapam da regra Acelen.
+    // Modelos diferentes de "acelen" seguem exatamente o fluxo anterior.
+    const modeloIa=typeof contra.modelo_origem==="string"&&contra.modelo_origem.trim()?contra.modelo_origem.trim().toLowerCase():"ia_fallback";
     const competenciaBruta=typeof contra.competencia==="string"?contra.competencia:null;
     // Acelen: a competência devolvida pela IA é normalizada para MM/AAAA ANTES
     // de persistir; formato irreconhecível permanece null (nunca é inventado).
