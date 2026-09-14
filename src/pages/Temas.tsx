@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { deduplicarTermos, montarFiltroDescricao, normalizarTermo } from "@/lib/temas";
+import { deduplicarTermos, normalizarTermo } from "@/lib/temas";
 
 type Termo = { id: string; termo: string };
 type Tema = {
