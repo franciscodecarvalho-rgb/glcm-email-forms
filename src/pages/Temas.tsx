@@ -50,7 +50,7 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 export default function Temas() {
-  const { user } = useAuth();
+  
   const { isAdmin } = useIsAdmin();
   const [temas, setTemas] = useState<Tema[]>([]);
   const [carregando, setCarregando] = useState(true);
