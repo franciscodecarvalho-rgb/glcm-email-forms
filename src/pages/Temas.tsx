@@ -36,8 +36,12 @@ type Rubrica = {
   codigo: string | null;
   descricao: string | null;
   tipo: string | null;
-  contracheques: { modelo_origem: string | null; arquivo_origem: string | null } | null;
+  empresa: string | null;
+  ocorrencias: number | null;
+  total_linhas: number | null;
 };
+
+export const RUBRICAS_POR_PAGINA = 50;
 
 const TIPO_LABEL: Record<string, string> = {
   provento: "Provento",
