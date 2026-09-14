@@ -164,8 +164,9 @@ export default function Temas() {
       toast.success(emEdicao ? "Tema atualizado" : "Tema criado");
       setEditorAberto(false);
       await carregar();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Não foi possível salvar o tema");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Não foi possível salvar o tema";
+      toast.error(msg);
     } finally {
       setSalvando(false);
     }
