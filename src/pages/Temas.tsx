@@ -129,45 +129,15 @@ export default function Temas() {
 
     setSalvando(true);
     try {
-      let temaId = emEdicao?.id;
-      const campos = {
-        nome: nomeLimpo,
-        descricao: descricao.trim() || null,
-        ativo,
-      };
-
-      if (temaId) {
-        const { error } = await supabase.from("temas").update(campos).eq("id", temaId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from("temas")
-          .insert({ ...campos, created_by: user?.id ?? null })
-          .select("id")
-          .single();
-        if (error) throw error;
-        temaId = data.id;
-      }
-
-      const atuais = emEdicao?.tema_termos ?? [];
-      const manter = new Set(listaTermos.map((t) => normalizarTermo(t)));
-      const remover = atuais.filter((t) => !manter.has(normalizarTermo(t.termo)));
-      if (remover.length > 0) {
-        const { error } = await supabase
-          .from("tema_termos")
-          .delete()
-          .in("id", remover.map((t) => t.id));
-        if (error) throw error;
-      }
-
-      const existentes = new Set(atuais.map((t) => normalizarTermo(t.termo)));
-      const inserir = listaTermos
-        .filter((t) => !existentes.has(normalizarTermo(t)))
-        .map((termo) => ({ tema_id: temaId!, termo, created_by: user?.id ?? null }));
-      if (inserir.length > 0) {
-        const { error } = await supabase.from("tema_termos").insert(inserir);
-        if (error) throw error;
-      }
+      // Gravação atômica no servidor: tema + termos em uma única transação.
+      const { error } = await supabase.rpc("salvar_tema", {
+        p_nome: nomeLimpo,
+        p_termos: listaTermos,
+        p_descricao: descricao.trim() || null,
+        p_ativo: ativo,
+        p_tema_id: emEdicao?.id ?? null,
+      });
+      if (error) throw error;
 
       toast.success(emEdicao ? "Tema atualizado" : "Tema criado");
       setEditorAberto(false);
