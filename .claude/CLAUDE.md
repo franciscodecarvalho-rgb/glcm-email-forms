@@ -310,6 +310,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Persistir em `public.temas` e `public.tema_termos`; um tema tem vários termos de inclusão combinados por OU literal sobre a descrição da rubrica, ignorando caixa e espaços repetidos, com curingas escapados. Leitura liberada a usuários autenticados; criação, edição e exclusão somente para perfil `admin`. Temas iniciais: Banco de Horas, Confinamento e PPSP, com os termos `banco de horas`, `confinamento` e `ppsp`.
 **Evitar:** Expor expressões regulares na interface, abrir acesso anônimo, usar `service_role` no navegador, apresentar as rubricas correspondentes como oriundas de base histórica ou gerar relatório sobre fonte de dados ainda não decidida.
 
+### 2026-09 — Relatórios por tema (duas fontes)
+
+**Regra confirmada:** A tela protegida `/Relatorios` consulta as duas fontes: os casos do aplicativo e a base histórica. O cadastro de Temas do banco do aplicativo é a fonte única dos termos para ambas.
+**Origem:** Decisão de Nodley na etapa de MVP de Relatórios.
+**Aplicação:** Somar e paginar sempre no servidor (funções de agregação), nunca no navegador. Valores vêm dos itens filtrados, com proventos e descontos separados e informativos fora dos valores. Pessoa é identificada pelo registro, empresa pelo registro, nunca só pelo nome; ausência de empresa é a categoria explícita "(sem empresa)". Cada fonte tem subtotal próprio; a adição das duas é apresentada como soma simples com alerta de sobreposição não conferida. Fonte indisponível gera estado parcial explícito. A base histórica é acessada somente por função de servidor autenticada, com credencial em secret.
+**Evitar:** Copiar ou migrar casos/documentos entre bases, deduplicar pessoas ou contracheques entre bases por heurística, chamar a adição de "total consolidado", exibir zero quando uma fonte falhar, expor chave de serviço no navegador ou aplicar SQL do histórico no banco do aplicativo.
+
 ```markdown
 ### AAAA-MM — Título
 

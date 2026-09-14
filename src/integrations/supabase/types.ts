@@ -511,6 +511,143 @@ export type Database = {
         Returns: boolean
       }
       normalizar_termo_tema: { Args: { _termo: string }; Returns: string }
+      relatorio_itens_filtrados: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_temas?: Json
+        }
+        Returns: {
+          caso_id: string
+          codigo: string
+          competencia: string
+          contracheque_id: string
+          descricao: string
+          empresa: string
+          item_id: string
+          pessoa_cpf: string
+          pessoa_nome: string
+          temas: string[]
+          tipo: string
+          valor: number
+        }[]
+      }
+      relatorio_lancamentos_pessoa: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_limit?: number
+          p_offset?: number
+          p_pessoa_id: string
+          p_temas?: Json
+        }
+        Returns: {
+          caso_id: string
+          codigo: string
+          competencia: string
+          descricao: string
+          empresa: string
+          tipo: string
+          total_linhas: number
+          valor: number
+        }[]
+      }
+      relatorio_por_empresa: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_limit?: number
+          p_offset?: number
+          p_temas?: Json
+        }
+        Returns: {
+          descontos: number
+          empresa_id: string
+          empresa_nome: string
+          itens: number
+          pessoas: number
+          proventos: number
+          total_linhas: number
+        }[]
+      }
+      relatorio_por_pessoa: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_limit?: number
+          p_offset?: number
+          p_temas?: Json
+        }
+        Returns: {
+          descontos: number
+          itens: number
+          pessoa_cpf: string
+          pessoa_id: string
+          pessoa_nome: string
+          proventos: number
+          total_linhas: number
+        }[]
+      }
+      relatorio_rubricas: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_limit?: number
+          p_offset?: number
+          p_temas?: Json
+        }
+        Returns: {
+          codigo: string
+          descontos: number
+          descricao: string
+          empresa: string
+          itens: number
+          proventos: number
+          tipo: string
+          total_linhas: number
+        }[]
+      }
+      relatorio_totais_tema: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_temas?: Json
+        }
+        Returns: {
+          descontos: number
+          itens: number
+          proventos: number
+          tema: string
+        }[]
+      }
+      relatorio_total_geral: {
+        Args: {
+          p_ate?: string
+          p_codigos?: string[]
+          p_de?: string
+          p_empresas?: string[]
+          p_temas?: Json
+        }
+        Returns: {
+          descontos: number
+          empresas: number
+          itens: number
+          pessoas: number
+          proventos: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "user"
