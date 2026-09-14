@@ -11,6 +11,7 @@ import NovoCaso from "./pages/NovoCaso";
 import Caso from "./pages/Caso";
 import Templates from "./pages/Templates";
 import Temas from "./pages/Temas";
+import Relatorios from "./pages/Relatorios";
 import Usuarios from "./pages/Usuarios";
 import TesteExtracaoPdfs from "./pages/TesteExtracaoPdfs";
 import NotFound from "./pages/NotFound";
