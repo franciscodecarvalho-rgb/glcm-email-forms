@@ -324,6 +324,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `temas_rubricas_correspondentes` compara descrição e termo já normalizados (caixa e espaços repetidos), usa busca literal por posição (curingas valem como texto), devolve lista sem repetição por código+descrição+tipo+empresa com contagem de ocorrências, ordem estável, paginação e total de linhas; a mesma regra vale nos relatórios. `salvar_tema` grava tema e termos em transação única, exige perfil admin, valida nome e ao menos um termo e registra autoria pelo servidor. Seed dos temas iniciais fica em migration repetível. Na tela, erro é estado distinto de vazio e respostas antigas são descartadas ao trocar de tema.
 **Evitar:** Usar `.or(ilike)` sobre descrição original, cortar resultados em 500 linhas sem aviso, gravar tema e termos em escritas separadas, remover termos antes de confirmar a gravação e abrir sessão de outra pessoa para testar.
 
+### 2026-09 — Relatórios: identidade, rubrica, competência e ordenação
+
+**Regra confirmada:** Nos relatórios, pessoa é identificada pelo CPF válido (módulo 11) normalizado dentro da própria origem; sem CPF validado, a identidade é o registro/caso, marcada explicitamente como "sem CPF validado". Dois casos do mesmo CPF são uma pessoa só; origens diferentes nunca são unificadas.
+**Origem:** Revisão SQL de Nodley dos relatórios (14/09/2026).
+**Aplicação:** O filtro de rubrica usa a combinação exata código + descrição + tipo + empresa/modelo (código original preservado; código nulo é combinação válida), nunca o código isolado. A competência aceita MM/AAAA e AAAA-MM com mês válido, sem conversão forçada: valor irreconhecível não derruba a consulta e fica fora de qualquer intervalo. Toda listagem paginada tem desempate estável por identificador. Nos casos do aplicativo, o valor de empresa vem do modelo de leitura e é rotulado "empresa/modelo"; ausência é "(sem empresa/modelo)".
+**Evitar:** Agrupar pessoas por caso, contar casos como pessoas, filtrar rubrica só pelo código, usar `to_date` em texto não validado, ordenar sem desempate e apresentar modelo de parser como nome de empresa comprovada.
+
 ```markdown
 ### AAAA-MM — Título
 
