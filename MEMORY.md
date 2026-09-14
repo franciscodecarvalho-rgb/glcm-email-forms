@@ -296,6 +296,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `src/lib/unificar-pdfs.ts` calcula a competência de cada página (`competenciasPorPagina`), agrupa páginas consecutivas da mesma competência em blocos (`agruparPaginasPorCompetencia`, página sem competência reconhecida vira continuação do bloco anterior) e ordena os blocos com `ordenarPorCompetencia` (`ordenarUnidades`), não mais os arquivos inteiros — `prepararArquivos`/`montarUnificado`/`unificarPdfsEmLotes` usam esse fluxo. Só confia no agrupamento por página quando a extração via pdf.js enxerga o mesmo número de páginas que o pdf-lib real; senão mantém o arquivo inteiro como um bloco único (fallback de segurança para não perder páginas).
 **Evitar:** Voltar a tratar o arquivo inteiro como uma única unidade de ordenação, ou confiar no agrupamento por página quando a contagem de páginas da extração não bate com a do PDF real.
 
+### 2026-09 — Extração pessoal determinística antes de IA
+
+**Regra confirmada:** Documentos pessoais em PDF devem tentar extração determinística validada antes de qualquer chamada ao Gemini; a IA é fallback individual apenas para o arquivo insuficiente ou escaneado.
+**Origem:** Especificação `Extracao_Pdf - V2` aprovada por Nodley.
+**Aplicação:** Pré-extração aceita CPF pelo módulo 11 associado a nome do titular; documentos pessoais aceitam somente campos suficientes para seu tipo; dados determinísticos válidos não são sobrescritos por respostas vazias ou menos confiáveis. Logs não registram PII nem Base64.
+**Evitar:** Reenviar todo lote para IA, aceitar CPF mascarado ou inválido, usar ausência de HRA/AHRA como falha de contracheque, ou alterar regras específicas por empresa.
+
 ```markdown
 ### AAAA-MM — Título
 

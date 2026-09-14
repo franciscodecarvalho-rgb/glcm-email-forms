@@ -1,6 +1,7 @@
 // Pré-extração leve: detecta apenas CPF + nome do titular para matching de duplicatas.
 // Usa Gemini 2.5 Flash Lite (barato e rápido). Depois roda lógica de matching e seta flags.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { getDocumentProxy } from "npm:unpdf@1.4.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +43,22 @@ function normalizarCpf(s: string | null | undefined): string | null {
   if (calc(d.slice(0, 9), 10) !== parseInt(d[9])) return null;
   if (calc(d.slice(0, 10), 11) !== parseInt(d[10])) return null;
   return d;
+}
+
+function nomeTitularDoTexto(texto: string): string | null {
+  return texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
+}
+async function cpfNomeDoPdf(blob: Blob): Promise<{ cpf: string; nome: string } | null> {
+  const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
+  const paginas = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => {
+    const pagina = await pdf.getPage(i + 1);
+    const conteudo = await pagina.getTextContent();
+    return (conteudo.items as Array<{ str?: string }>).map((item) => item.str ?? " ").join(" ");
+  }));
+  const texto = paginas.join("\n");
+  const cpf = normalizarCpf(texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0]);
+  const nome = nomeTitularDoTexto(texto);
+  return cpf && nome ? { cpf, nome } : null;
 }
 
 function normalizarNome(s: string | null | undefined): string {
@@ -117,9 +134,6 @@ Deno.serve(async (req) => {
     const { caso_id } = await req.json();
     if (!caso_id) return json({ error: "caso_id obrigatório" }, 400);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
-
     console.log(`[pre-extract-cpf] iniciando caso=${caso_id}`);
 
     const { data: arquivos, error: aErr } = await supabase
@@ -130,7 +144,20 @@ Deno.serve(async (req) => {
       return json({ acao: "isolado", motivo: "sem_arquivos" });
     }
 
-    // Monta conteúdo multimodal (download + encode em paralelo)
+    const resultadosDeterministicos = await Promise.all(arquivos.map(async (arq: any) => {
+      if (arq.mime_type !== "application/pdf") return null;
+      const { data: blob } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
+      if (!blob) return null;
+      try { return await cpfNomeDoPdf(blob); } catch { return null; }
+    }));
+    const primeiroDeterministico = resultadosDeterministicos.find(Boolean);
+    let cpf = primeiroDeterministico?.cpf ?? null;
+    let nome = primeiroDeterministico?.nome ?? null;
+
+    // Só monta conteúdo multimodal para arquivos que não produziram CPF + nome.
+    if (!cpf || !nome) {
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
     const content: any[] = [
       { type: "text", text: "Identifique CPF e nome do titular nos documentos a seguir." },
     ];
@@ -138,8 +165,6 @@ Deno.serve(async (req) => {
     const parts = await Promise.all(
       arquivos.map(async (arq: any) => {
         const mime = arq.mime_type || "image/jpeg";
-        // PDFs não são suportados como image_url pelo Gemini Flash Lite; pula
-        if (mime === "application/pdf") return null;
         const { data: blob, error: dlErr } = await supabase.storage
           .from("casos-arquivos").download(arq.storage_path);
         if (dlErr || !blob) { console.warn(`[pre-extract-cpf] falha download ${arq.storage_path}`); return null; }
@@ -205,10 +230,11 @@ Deno.serve(async (req) => {
     const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) throw new Error("AI não retornou tool_call");
     const args = JSON.parse(toolCall.function.arguments);
-    const cpf = normalizarCpf(args.cpf);
-    const nome = (args.nome ?? "").toString().trim() || null;
+    cpf = normalizarCpf(args.cpf);
+    nome = (args.nome ?? "").toString().trim() || null;
+    }
 
-    console.log(`[pre-extract-cpf] extraído cpf=${cpf ? cpf.slice(0, 3) + "***" : "null"} nome=${nome ? "ok" : "null"}`);
+    console.log(`[pre-extract-cpf] concluído metodo=${primeiroDeterministico ? "deterministico" : "ia_fallback"} cpf=${cpf ? "ok" : "ausente"} nome=${nome ? "ok" : "ausente"}`);
 
     // Persiste pré-extração
     await supabase.from("casos").update({

@@ -17,6 +17,7 @@
 // - Worker morto deixa o lote 'processando' órfão: o retry o reivindica por
 //   idade (atualizado_em > 10 min).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { getDocumentProxy } from "npm:unpdf@1.4.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,6 +31,36 @@ const STALE_MS = 10 * 60 * 1000; // 'processando' sem update há 10 min = worker
 
 // Pro (não Flash): no teste A/B o Flash subcontou rubricas HRA (-22%).
 const MODELO = "google/gemini-2.5-pro";
+
+function cpfValido(valor: unknown): string | null {
+  const cpf = String(valor ?? "").replace(/\D/g, "");
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return null;
+  const digito = (base: string, peso: number) => {
+    const soma = [...base].reduce((total, n, indice) => total + Number(n) * (peso - indice), 0);
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  return digito(cpf.slice(0, 9), 10) === Number(cpf[9]) && digito(cpf.slice(0, 10), 11) === Number(cpf[10]) ? cpf : null;
+}
+async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
+  const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
+  const paginas = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => {
+    const pagina = await pdf.getPage(i + 1);
+    const conteudo = await pagina.getTextContent();
+    return (conteudo.items as Array<{ str?: string }>).map((item) => item.str ?? " ").join(" ");
+  }));
+  const texto = paginas.join("\n");
+  const cpf = cpfValido(texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0]);
+  const nome = texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
+  const rg = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i)?.[1] ?? null;
+  const comprovante = /COMPROVANTE DE RESIDENCIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/i.test(texto.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+  const cep = texto.match(/\b\d{5}-?\d{3}\b/)?.[0];
+  // Sem preservar coordenadas do texto, só o CEP explícito é seguro para a
+  // extração determinística; endereço completo permanece para o fallback.
+  const endereco = comprovante && cep ? { cep } : null;
+  if (comprovante ? !endereco : !(cpf && (nome || rg))) return null;
+  return { nome_cliente: nome, cpf, rg, endereco, qualificacao: null, empregadores: [], contracheques: [] };
+}
 
 const SYSTEM_PROMPT = `Você é um assistente jurídico que extrai dados de documentos brasileiros (RG, CNH, CPF, comprovante de residência e contracheques) para uma ação de restituição de IR sobre HRA.
 
@@ -155,7 +186,6 @@ Deno.serve(async (req) => {
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada");
 
     // Modo worker: processa UM lote em background e devolve 202 já.
     if (body.lote_id) {
@@ -304,7 +334,7 @@ async function despachar(supabase: any, casoId: string) {
 }
 
 // ---------------- worker (1 lote por invocação) ----------------
-async function trabalharLote(supabase: any, casoId: string, loteId: string, LOVABLE_API_KEY: string) {
+async function trabalharLote(supabase: any, casoId: string, loteId: string, LOVABLE_API_KEY?: string) {
   const { data: lote, error: lErr } = await supabase
     .from("lotes_extracao")
     .select("*")
@@ -457,7 +487,25 @@ async function baixarParte(supabase: any, arq: any): Promise<any | null> {
 
 // Processa um lote numa chamada à IA, com até 3 tentativas. LANÇA erro em falha
 // persistente (nunca retorna vazio em silêncio).
-async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string): Promise<any> {
+async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY?: string): Promise<any> {
+  // Cada PDF é avaliado antes do fan-out. Só os pendentes seguem ao gateway;
+  // isso preserva os resultados determinísticos e evita reenviar o lote inteiro.
+  const resultadosDeterministicos: any[] = [];
+  const pendentes: any[] = [];
+  for (const arq of lote) {
+    if (arq.mime_type !== "application/pdf") { pendentes.push(arq); continue; }
+    try {
+      const { data: blob, error } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
+      if (error || !blob) { pendentes.push(arq); continue; }
+      const dados = await dadosPessoaisDoPdf(blob);
+      if (dados) resultadosDeterministicos.push(dados);
+      else pendentes.push(arq);
+    } catch { pendentes.push(arq); }
+  }
+  if (pendentes.length === 0) return mesclarResultados(resultadosDeterministicos);
+  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada para os arquivos pendentes");
+  lote = pendentes;
+
   let ultimoErro = "desconhecido";
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     try {
@@ -498,7 +546,7 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY: string
       const aiJson = await aiResp.json();
       const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
       if (!call) throw new Error("IA não retornou tool call");
-      return JSON.parse(call.function.arguments);
+      return mesclarResultados([...resultadosDeterministicos, JSON.parse(call.function.arguments)]);
     } catch (e) {
       ultimoErro = e instanceof Error ? e.message : String(e);
       console.error(`processarLote tentativa ${tentativa}:`, ultimoErro);
