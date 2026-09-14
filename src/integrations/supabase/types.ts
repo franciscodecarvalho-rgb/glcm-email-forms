@@ -563,6 +563,14 @@ export type Database = {
           valor: number
         }[]
       }
+      relatorio_opcoes_empresa: {
+        Args: { p_busca?: string; p_limit?: number; p_offset?: number }
+        Returns: {
+          empresa_id: string
+          empresa_rotulo: string
+          total_linhas: number
+        }[]
+      }
       relatorio_por_empresa: {
         Args: {
           p_ate?: string
