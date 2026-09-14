@@ -14,21 +14,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
+  chaveRubrica,
   consolidarTotais,
   competenciaValida,
   FILTROS_INICIAIS,
   formatarMoeda,
+  montarRubricasPayload,
   montarTemasPayload,
   normalizarCompetenciaFiltro,
   periodoCoerente,
-  rotuloEmpresa,
+  rotuloEmpresaModelo,
+  rotuloIdentificacao,
   rotuloPessoa,
+  rotuloRubrica,
   ROTULO_ORIGEM,
   TOTAIS_ZERADOS,
   type EscopoOrigem,
   type EstadoFonte,
   type FiltrosRelatorio,
   type OrigemRelatorio,
+  type RubricaSelecionada,
   type TemaComTermos,
   type TotaisFonte,
 } from "@/lib/relatorios";
@@ -114,7 +119,7 @@ export default function Relatorios() {
     const temasPayload = montarTemasPayload(temas, filtros.temas);
     return {
       p_temas: temasPayload,
-      p_codigos: filtros.codigos.length > 0 ? filtros.codigos : null,
+      p_rubricas: montarRubricasPayload(filtros.rubricas),
       p_empresas: filtros.empresas.length > 0 ? filtros.empresas : null,
       p_de: filtros.de,
       p_ate: filtros.ate,
@@ -124,7 +129,7 @@ export default function Relatorios() {
   const corpoHistorico = useMemo(
     () => ({
       temas: payload.p_temas,
-      codigos: payload.p_codigos,
+      rubricas: payload.p_rubricas,
       empresas: payload.p_empresas,
       de: payload.p_de,
       ate: payload.p_ate,
@@ -219,18 +224,27 @@ export default function Relatorios() {
     if (rascunho.de && !competenciaValida(rascunho.de)) return toast.error("Período inicial deve estar no formato MM/AAAA");
     if (rascunho.ate && !competenciaValida(rascunho.ate)) return toast.error("Período final deve estar no formato MM/AAAA");
     if (!periodoCoerente(de, ate)) return toast.error("O período inicial não pode ser posterior ao final");
-    const codigos = codigoTexto.split(",").map((x) => x.trim()).filter(Boolean);
     const empresas = empresaTexto.split(",").map((x) => x.trim()).filter(Boolean);
     setPagina(0);
-    setFiltros({ ...rascunho, de, ate, codigos, empresas });
+    setFiltros({ ...rascunho, de, ate, empresas });
   };
 
   const limpar = () => {
     setRascunho({ ...FILTROS_INICIAIS });
-    setCodigoTexto("");
     setEmpresaTexto("");
     setPagina(0);
     setFiltros({ ...FILTROS_INICIAIS });
+  };
+
+  /** Seleção de rubrica sempre pela combinação exata exibida na visão "Por rubrica". */
+  const alternarRubrica = (r: RubricaSelecionada) => {
+    const k = chaveRubrica(r);
+    setRascunho((p) => ({
+      ...p,
+      rubricas: p.rubricas.some((x) => chaveRubrica(x) === k)
+        ? p.rubricas.filter((x) => chaveRubrica(x) !== k)
+        : [...p.rubricas, r],
+    }));
   };
 
   const abrirPessoa = async (id: string, nome: string, origem: OrigemRelatorio) => {
@@ -291,14 +305,29 @@ export default function Relatorios() {
               </p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <div>
+              <Label className="mb-2 block">Rubricas selecionadas</Label>
+              {rascunho.rubricas.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma rubrica selecionada. Na aba “Por rubrica”, clique em “Filtrar” na linha desejada: a seleção usa
+                  a combinação exata de código, descrição, tipo e empresa/modelo, porque o mesmo código aparece em
+                  rubricas diferentes.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {rascunho.rubricas.map((r) => (
+                    <Button key={chaveRubrica(r)} type="button" size="sm" variant="secondary" onClick={() => alternarRubrica(r)}>
+                      {rotuloRubrica(r)} ✕
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
-                <Label htmlFor="rel-codigos">Rubricas (códigos)</Label>
-                <Input id="rel-codigos" placeholder="Ex.: 015, 023" value={codigoTexto} onChange={(e) => setCodigoTexto(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="rel-empresas">Empresas</Label>
-                <Input id="rel-empresas" placeholder="Ex.: unigel, (sem empresa)" value={empresaTexto} onChange={(e) => setEmpresaTexto(e.target.value)} />
+                <Label htmlFor="rel-empresas">Empresa/modelo</Label>
+                <Input id="rel-empresas" placeholder="Ex.: unigel, (sem empresa/modelo)" value={empresaTexto} onChange={(e) => setEmpresaTexto(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="rel-de">Período inicial</Label>
@@ -386,10 +415,12 @@ export default function Relatorios() {
                   <TableRow>
                     <TableHead>Origem</TableHead>
                     {visao === "tema" && <TableHead>Tema</TableHead>}
-                    {visao === "pessoa" && <><TableHead>Pessoa</TableHead><TableHead>CPF</TableHead></>}
-                    {visao === "empresa" && <><TableHead>Empresa</TableHead><TableHead>Pessoas</TableHead></>}
+                    {visao === "pessoa" && (
+                      <><TableHead>Pessoa</TableHead><TableHead>CPF</TableHead><TableHead>Identificação</TableHead><TableHead className="text-right">Casos</TableHead></>
+                    )}
+                    {visao === "empresa" && <><TableHead>Empresa/modelo</TableHead><TableHead>Pessoas</TableHead></>}
                     {visao === "rubrica" && (
-                      <><TableHead>Código</TableHead><TableHead>Descrição</TableHead><TableHead>Tipo</TableHead><TableHead>Empresa</TableHead></>
+                      <><TableHead>Código</TableHead><TableHead>Descrição</TableHead><TableHead>Tipo</TableHead><TableHead>Empresa/modelo</TableHead><TableHead>Filtro</TableHead></>
                     )}
                     <TableHead className="text-right">Itens</TableHead>
                     <TableHead className="text-right">Proventos</TableHead>
@@ -398,10 +429,10 @@ export default function Relatorios() {
                 </TableHeader>
                 <TableBody>
                   {carregando && (
-                    <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">Carregando…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="py-10 text-center text-muted-foreground">Carregando…</TableCell></TableRow>
                   )}
                   {!carregando && linhasVisiveis.length === 0 && (
-                    <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">Nenhum resultado para os filtros aplicados.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="py-10 text-center text-muted-foreground">Nenhum resultado para os filtros aplicados.</TableCell></TableRow>
                   )}
                   {!carregando && linhasVisiveis.map((l, i) => (
                     <TableRow
@@ -419,11 +450,15 @@ export default function Relatorios() {
                         <>
                           <TableCell className="font-medium">{rotuloPessoa(txt(l.pessoa_nome))}</TableCell>
                           <TableCell>{txt(l.pessoa_cpf) ?? "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {rotuloIdentificacao(txt(l.pessoa_identificacao))}
+                          </TableCell>
+                          <TableCell className="text-right">{num(l.casos)}</TableCell>
                         </>
                       )}
                       {visao === "empresa" && (
                         <>
-                          <TableCell>{rotuloEmpresa(txt(l.empresa_nome))}</TableCell>
+                          <TableCell>{rotuloEmpresaModelo(txt(l.empresa_nome))}</TableCell>
                           <TableCell>{num(l.pessoas)}</TableCell>
                         </>
                       )}
@@ -432,7 +467,24 @@ export default function Relatorios() {
                           <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
                           <TableCell>{txt(l.descricao) ?? "—"}</TableCell>
                           <TableCell>{txt(l.tipo) ?? "—"}</TableCell>
-                          <TableCell>{rotuloEmpresa(txt(l.empresa))}</TableCell>
+                          <TableCell>{rotuloEmpresaModelo(txt(l.empresa))}</TableCell>
+                          <TableCell>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                alternarRubrica({
+                                  codigo: txt(l.codigo),
+                                  descricao: txt(l.descricao),
+                                  tipo: txt(l.tipo),
+                                  empresa: txt(l.empresa),
+                                })
+                              }
+                            >
+                              Filtrar
+                            </Button>
+                          </TableCell>
                         </>
                       )}
                       <TableCell className="text-right">{num(l.itens)}</TableCell>

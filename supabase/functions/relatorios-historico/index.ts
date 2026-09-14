@@ -42,6 +42,22 @@ function sanitizarTemas(valor: unknown): { tema: string; termos: string[] }[] {
     .filter((t) => t.tema !== "" && t.termos.length > 0);
 }
 
+function sanitizarRubricas(valor: unknown): { codigo: string | null; descricao: string | null; tipo: string | null; empresa: string | null }[] {
+  if (!Array.isArray(valor)) return [];
+  const txt = (v: unknown) => (typeof v === "string" ? v : null);
+  const vistas = new Set<string>();
+  const saida: { codigo: string | null; descricao: string | null; tipo: string | null; empresa: string | null }[] = [];
+  for (const r of valor) {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const item = { codigo: txt(o.codigo), descricao: txt(o.descricao), tipo: txt(o.tipo), empresa: txt(o.empresa) };
+    const k = JSON.stringify(item);
+    if (vistas.has(k)) continue;
+    vistas.add(k);
+    saida.push(item);
+  }
+  return saida;
+}
+
 function sanitizarLista(valor: unknown): string[] | null {
   if (!Array.isArray(valor)) return null;
   const lista = valor.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean);
@@ -51,9 +67,12 @@ function sanitizarLista(valor: unknown): string[] | null {
 function sanitizarCompetencia(valor: unknown): string | null {
   if (typeof valor !== "string") return null;
   const v = valor.trim();
-  if (!/^\d{2}\/\d{4}$/.test(v)) return null;
-  const mes = Number(v.slice(0, 2));
-  return mes >= 1 && mes <= 12 ? v : null;
+  const br = /^(\d{2})\/(\d{4})$/.exec(v);
+  const iso = /^(\d{4})-(\d{2})$/.exec(v);
+  const mes = br ? Number(br[1]) : iso ? Number(iso[2]) : Number.NaN;
+  const ano = br ? br[2] : iso ? iso[1] : "";
+  if (!Number.isFinite(mes) || mes < 1 || mes > 12) return null;
+  return `${String(mes).padStart(2, "0")}/${ano}`;
 }
 
 function inteiro(valor: unknown, padrao: number, maximo: number): number {
@@ -78,6 +97,30 @@ Deno.serve(async (req) => {
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData.user) return json({ error: "Unauthorized" }, 401);
 
+    // Modo preferencial: ponte instalada no próprio projeto histórico
+    // (supabase/historico/edge-function-relatorios-ponte.ts). Nenhuma chave de
+    // serviço histórica precisa existir aqui; o token do usuário é repassado e
+    // validado lá contra o Auth do aplicativo.
+    const PONTE_URL = Deno.env.get("HISTORICO_PONTE_URL");
+    const PONTE_KEY = Deno.env.get("HISTORICO_PONTE_ANON_KEY");
+    if (PONTE_URL && PONTE_KEY) {
+      const corpo = await req.text();
+      const resp = await fetch(PONTE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authHeader,
+          apikey: PONTE_KEY,
+        },
+        body: corpo || "{}",
+      });
+      const texto = await resp.text();
+      if (!resp.ok) {
+        return json({ disponivel: false, motivo: `A ponte histórica respondeu ${resp.status}.` }, 200);
+      }
+      return new Response(texto, { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const HIST_URL = Deno.env.get("HISTORICO_SUPABASE_URL");
     const HIST_KEY = Deno.env.get("HISTORICO_SUPABASE_SERVICE_ROLE_KEY");
     if (!HIST_URL || !HIST_KEY) {
@@ -98,7 +141,7 @@ Deno.serve(async (req) => {
 
     const params: Record<string, unknown> = {
       p_temas: sanitizarTemas(body?.temas),
-      p_codigos: sanitizarLista(body?.codigos),
+      p_rubricas: sanitizarRubricas(body?.rubricas),
       p_empresas: sanitizarLista(body?.empresas),
       p_de: sanitizarCompetencia(body?.de),
       p_ate: sanitizarCompetencia(body?.ate),

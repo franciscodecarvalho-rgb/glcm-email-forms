@@ -503,6 +503,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      competencia_para_data: { Args: { _valor: string }; Returns: string }
+      cpf_valido: { Args: { _cpf: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -510,24 +512,28 @@ export type Database = {
         }
         Returns: boolean
       }
+      normalizar_cpf_digitos: { Args: { _cpf: string }; Returns: string }
       normalizar_termo_tema: { Args: { _termo: string }; Returns: string }
       relatorio_itens_filtrados: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
           caso_id: string
           codigo: string
+          comp_data: string
           competencia: string
           contracheque_id: string
           descricao: string
           empresa: string
           item_id: string
           pessoa_cpf: string
+          pessoa_id: string
+          pessoa_identificacao: string
           pessoa_nome: string
           temas: string[]
           tipo: string
@@ -537,12 +543,12 @@ export type Database = {
       relatorio_lancamentos_pessoa: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
           p_limit?: number
           p_offset?: number
           p_pessoa_id: string
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
@@ -551,6 +557,7 @@ export type Database = {
           competencia: string
           descricao: string
           empresa: string
+          item_id: string
           tipo: string
           total_linhas: number
           valor: number
@@ -559,11 +566,11 @@ export type Database = {
       relatorio_por_empresa: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
           p_limit?: number
           p_offset?: number
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
@@ -579,18 +586,20 @@ export type Database = {
       relatorio_por_pessoa: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
           p_limit?: number
           p_offset?: number
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
+          casos: number
           descontos: number
           itens: number
           pessoa_cpf: string
           pessoa_id: string
+          pessoa_identificacao: string
           pessoa_nome: string
           proventos: number
           total_linhas: number
@@ -599,11 +608,11 @@ export type Database = {
       relatorio_rubricas: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
           p_limit?: number
           p_offset?: number
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
@@ -620,9 +629,9 @@ export type Database = {
       relatorio_totais_tema: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
@@ -635,16 +644,18 @@ export type Database = {
       relatorio_total_geral: {
         Args: {
           p_ate?: string
-          p_codigos?: string[]
           p_de?: string
           p_empresas?: string[]
+          p_rubricas?: Json
           p_temas?: Json
         }
         Returns: {
+          casos: number
           descontos: number
           empresas: number
           itens: number
           pessoas: number
+          pessoas_sem_cpf: number
           proventos: number
         }[]
       }
