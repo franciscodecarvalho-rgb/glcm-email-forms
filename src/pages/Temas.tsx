@@ -382,34 +382,77 @@ export default function Temas() {
           </DialogHeader>
           {buscandoRubricas ? (
             <p className="py-8 text-center text-muted-foreground">Buscando…</p>
+          ) : erroRubricas ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-destructive">{erroRubricas}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => temaRubricas && buscarRubricas(temaRubricas, rubricasPagina)}
+              >
+                Tentar novamente
+              </Button>
+            </div>
           ) : rubricas.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">Nenhuma rubrica correspondente.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">Código</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead className="w-[120px]">Tipo</TableHead>
-                    <TableHead className="w-[160px]">Empresa/modelo</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rubricas.map((r, i) => (
-                    <TableRow key={`${r.codigo ?? ""}-${r.descricao ?? ""}-${i}`}>
-                      <TableCell className="font-mono text-xs">{r.codigo || "—"}</TableCell>
-                      <TableCell>{r.descricao || "—"}</TableCell>
-                      <TableCell className="text-sm">
-                        {r.tipo ? TIPO_LABEL[r.tipo] ?? r.tipo : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {r.contracheques?.modelo_origem || "—"}
-                      </TableCell>
+            <div className="space-y-3">
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[100px]">Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="w-[120px]">Tipo</TableHead>
+                      <TableHead className="w-[160px]">Empresa/modelo</TableHead>
+                      <TableHead className="w-[110px] text-right">Lançamentos</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {rubricas.map((r, i) => (
+                      <TableRow key={`${r.codigo ?? ""}-${r.descricao ?? ""}-${r.tipo ?? ""}-${r.empresa ?? ""}-${i}`}>
+                        <TableCell className="font-mono text-xs">{r.codigo || "—"}</TableCell>
+                        <TableCell>{r.descricao || "—"}</TableCell>
+                        <TableCell className="text-sm">
+                          {r.tipo ? TIPO_LABEL[r.tipo] ?? r.tipo : "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {r.empresa || "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground">
+                          {Number(r.ocorrencias ?? 0)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                <span>
+                  {`Mostrando ${rubricasPagina * RUBRICAS_POR_PAGINA + 1}–${
+                    rubricasPagina * RUBRICAS_POR_PAGINA + rubricas.length
+                  } de ${rubricasTotal} rubricas distintas`}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={rubricasPagina === 0}
+                    onClick={() => irParaPagina(rubricasPagina - 1)}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={(rubricasPagina + 1) * RUBRICAS_POR_PAGINA >= rubricasTotal}
+                    onClick={() => irParaPagina(rubricasPagina + 1)}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>
