@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Search, Tag, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { deduplicarTermos, montarFiltroDescricao, normalizarTermo } from "@/lib/temas";
+import { deduplicarTermos, normalizarTermo } from "@/lib/temas";
 
 type Termo = { id: string; termo: string };
 type Tema = {
@@ -36,8 +36,12 @@ type Rubrica = {
   codigo: string | null;
   descricao: string | null;
   tipo: string | null;
-  contracheques: { modelo_origem: string | null; arquivo_origem: string | null } | null;
+  empresa: string | null;
+  ocorrencias: number | null;
+  total_linhas: number | null;
 };
+
+export const RUBRICAS_POR_PAGINA = 50;
 
 const TIPO_LABEL: Record<string, string> = {
   provento: "Provento",
@@ -46,7 +50,7 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 export default function Temas() {
-  const { user } = useAuth();
+  
   const { isAdmin } = useIsAdmin();
   const [temas, setTemas] = useState<Tema[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -62,7 +66,11 @@ export default function Temas() {
 
   const [temaRubricas, setTemaRubricas] = useState<Tema | null>(null);
   const [rubricas, setRubricas] = useState<Rubrica[]>([]);
+  const [rubricasTotal, setRubricasTotal] = useState(0);
+  const [rubricasPagina, setRubricasPagina] = useState(0);
   const [buscandoRubricas, setBuscandoRubricas] = useState(false);
+  const [erroRubricas, setErroRubricas] = useState<string | null>(null);
+  const requisicaoRubricas = useRef(0);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -121,45 +129,15 @@ export default function Temas() {
 
     setSalvando(true);
     try {
-      let temaId = emEdicao?.id;
-      const campos = {
-        nome: nomeLimpo,
-        descricao: descricao.trim() || null,
-        ativo,
-      };
-
-      if (temaId) {
-        const { error } = await supabase.from("temas").update(campos).eq("id", temaId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from("temas")
-          .insert({ ...campos, created_by: user?.id ?? null })
-          .select("id")
-          .single();
-        if (error) throw error;
-        temaId = data.id;
-      }
-
-      const atuais = emEdicao?.tema_termos ?? [];
-      const manter = new Set(listaTermos.map((t) => normalizarTermo(t)));
-      const remover = atuais.filter((t) => !manter.has(normalizarTermo(t.termo)));
-      if (remover.length > 0) {
-        const { error } = await supabase
-          .from("tema_termos")
-          .delete()
-          .in("id", remover.map((t) => t.id));
-        if (error) throw error;
-      }
-
-      const existentes = new Set(atuais.map((t) => normalizarTermo(t.termo)));
-      const inserir = listaTermos
-        .filter((t) => !existentes.has(normalizarTermo(t)))
-        .map((termo) => ({ tema_id: temaId!, termo, created_by: user?.id ?? null }));
-      if (inserir.length > 0) {
-        const { error } = await supabase.from("tema_termos").insert(inserir);
-        if (error) throw error;
-      }
+      // Gravação atômica no servidor: tema + termos em uma única transação.
+      const { error } = await supabase.rpc("salvar_tema", {
+        p_nome: nomeLimpo,
+        p_termos: listaTermos,
+        p_descricao: descricao.trim() || null,
+        p_ativo: ativo,
+        p_tema_id: emEdicao?.id ?? null,
+      });
+      if (error) throw error;
 
       toast.success(emEdicao ? "Tema atualizado" : "Tema criado");
       setEditorAberto(false);
@@ -182,23 +160,50 @@ export default function Temas() {
     toast.success(valor ? "Tema ativado" : "Tema inativado");
   };
 
-  const verRubricas = async (tema: Tema) => {
-    setTemaRubricas(tema);
-    setRubricas([]);
-    const filtro = montarFiltroDescricao(tema.tema_termos.map((t) => t.termo));
-    if (!filtro) return;
+  // Busca no servidor: comparação normalizada e literal, sem repetições,
+  // com paginação estável. Respostas antigas são descartadas.
+  const buscarRubricas = useCallback(async (tema: Tema, pagina: number) => {
+    const requisicao = ++requisicaoRubricas.current;
     setBuscandoRubricas(true);
-    const { data, error } = await supabase
-      .from("itens_contracheque")
-      .select("codigo, descricao, tipo, contracheques(modelo_origem, arquivo_origem)")
-      .or(filtro)
-      .limit(500);
-    setBuscandoRubricas(false);
-    if (error) {
-      toast.error("Erro ao buscar rubricas correspondentes");
+    setErroRubricas(null);
+    const termosTema = deduplicarTermos(tema.tema_termos.map((t) => t.termo));
+    if (termosTema.length === 0) {
+      if (requisicao !== requisicaoRubricas.current) return;
+      setRubricas([]);
+      setRubricasTotal(0);
+      setBuscandoRubricas(false);
       return;
     }
-    setRubricas((data ?? []) as unknown as Rubrica[]);
+    const { data, error } = await supabase.rpc("temas_rubricas_correspondentes", {
+      p_termos: termosTema,
+      p_limit: RUBRICAS_POR_PAGINA,
+      p_offset: pagina * RUBRICAS_POR_PAGINA,
+    });
+    if (requisicao !== requisicaoRubricas.current) return;
+    setBuscandoRubricas(false);
+    if (error) {
+      setRubricas([]);
+      setRubricasTotal(0);
+      setErroRubricas("Não foi possível consultar as rubricas correspondentes.");
+      return;
+    }
+    const linhas = (data ?? []) as Rubrica[];
+    setRubricas(linhas);
+    setRubricasTotal(Number(linhas[0]?.total_linhas ?? 0));
+  }, []);
+
+  const verRubricas = (tema: Tema) => {
+    setTemaRubricas(tema);
+    setRubricas([]);
+    setRubricasTotal(0);
+    setRubricasPagina(0);
+    void buscarRubricas(tema, 0);
+  };
+
+  const irParaPagina = (pagina: number) => {
+    if (!temaRubricas) return;
+    setRubricasPagina(pagina);
+    void buscarRubricas(temaRubricas, pagina);
   };
 
   return (
@@ -377,34 +382,77 @@ export default function Temas() {
           </DialogHeader>
           {buscandoRubricas ? (
             <p className="py-8 text-center text-muted-foreground">Buscando…</p>
+          ) : erroRubricas ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-destructive">{erroRubricas}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => temaRubricas && buscarRubricas(temaRubricas, rubricasPagina)}
+              >
+                Tentar novamente
+              </Button>
+            </div>
           ) : rubricas.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">Nenhuma rubrica correspondente.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[100px]">Código</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead className="w-[120px]">Tipo</TableHead>
-                    <TableHead className="w-[160px]">Empresa/modelo</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rubricas.map((r, i) => (
-                    <TableRow key={`${r.codigo ?? ""}-${r.descricao ?? ""}-${i}`}>
-                      <TableCell className="font-mono text-xs">{r.codigo || "—"}</TableCell>
-                      <TableCell>{r.descricao || "—"}</TableCell>
-                      <TableCell className="text-sm">
-                        {r.tipo ? TIPO_LABEL[r.tipo] ?? r.tipo : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {r.contracheques?.modelo_origem || "—"}
-                      </TableCell>
+            <div className="space-y-3">
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[100px]">Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="w-[120px]">Tipo</TableHead>
+                      <TableHead className="w-[160px]">Empresa/modelo</TableHead>
+                      <TableHead className="w-[110px] text-right">Lançamentos</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {rubricas.map((r, i) => (
+                      <TableRow key={`${r.codigo ?? ""}-${r.descricao ?? ""}-${r.tipo ?? ""}-${r.empresa ?? ""}-${i}`}>
+                        <TableCell className="font-mono text-xs">{r.codigo || "—"}</TableCell>
+                        <TableCell>{r.descricao || "—"}</TableCell>
+                        <TableCell className="text-sm">
+                          {r.tipo ? TIPO_LABEL[r.tipo] ?? r.tipo : "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {r.empresa || "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-sm text-muted-foreground">
+                          {Number(r.ocorrencias ?? 0)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                <span>
+                  {`Mostrando ${rubricasPagina * RUBRICAS_POR_PAGINA + 1}–${
+                    rubricasPagina * RUBRICAS_POR_PAGINA + rubricas.length
+                  } de ${rubricasTotal} rubricas distintas`}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={rubricasPagina === 0}
+                    onClick={() => irParaPagina(rubricasPagina - 1)}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={(rubricasPagina + 1) * RUBRICAS_POR_PAGINA >= rubricasTotal}
+                    onClick={() => irParaPagina(rubricasPagina + 1)}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>

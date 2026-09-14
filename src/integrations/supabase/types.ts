@@ -648,6 +648,27 @@ export type Database = {
           proventos: number
         }[]
       }
+      salvar_tema: {
+        Args: {
+          p_ativo?: boolean
+          p_descricao?: string
+          p_nome: string
+          p_tema_id?: string
+          p_termos: string[]
+        }
+        Returns: string
+      }
+      temas_rubricas_correspondentes: {
+        Args: { p_limit?: number; p_offset?: number; p_termos: string[] }
+        Returns: {
+          codigo: string
+          descricao: string
+          empresa: string
+          ocorrencias: number
+          tipo: string
+          total_linhas: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "user"
