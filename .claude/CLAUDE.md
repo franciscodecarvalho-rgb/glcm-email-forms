@@ -317,6 +317,13 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Somar e paginar sempre no servidor (funções de agregação), nunca no navegador. Valores vêm dos itens filtrados, com proventos e descontos separados e informativos fora dos valores. Pessoa é identificada pelo registro, empresa pelo registro, nunca só pelo nome; ausência de empresa é a categoria explícita "(sem empresa)". Cada fonte tem subtotal próprio; a adição das duas é apresentada como soma simples com alerta de sobreposição não conferida. Fonte indisponível gera estado parcial explícito. A base histórica é acessada somente por função de servidor autenticada, com credencial em secret.
 **Evitar:** Copiar ou migrar casos/documentos entre bases, deduplicar pessoas ou contracheques entre bases por heurística, chamar a adição de "total consolidado", exibir zero quando uma fonte falhar, expor chave de serviço no navegador ou aplicar SQL do histórico no banco do aplicativo.
 
+### 2026-09 — Temas: correspondência e gravação no servidor
+
+**Regra confirmada:** A correspondência de rubricas de um tema e a gravação do tema com seus termos são feitas por funções do banco, não por consultas montadas no navegador.
+**Origem:** Revisão de Nodley da etapa Temas (14/09/2026).
+**Aplicação:** `temas_rubricas_correspondentes` compara descrição e termo já normalizados (caixa e espaços repetidos), usa busca literal por posição (curingas valem como texto), devolve lista sem repetição por código+descrição+tipo+empresa com contagem de ocorrências, ordem estável, paginação e total de linhas; a mesma regra vale nos relatórios. `salvar_tema` grava tema e termos em transação única, exige perfil admin, valida nome e ao menos um termo e registra autoria pelo servidor. Seed dos temas iniciais fica em migration repetível. Na tela, erro é estado distinto de vazio e respostas antigas são descartadas ao trocar de tema.
+**Evitar:** Usar `.or(ilike)` sobre descrição original, cortar resultados em 500 linhas sem aviso, gravar tema e termos em escritas separadas, remover termos antes de confirmar a gravação e abrir sessão de outra pessoa para testar.
+
 ```markdown
 ### AAAA-MM — Título
 
