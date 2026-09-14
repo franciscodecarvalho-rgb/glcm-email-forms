@@ -385,6 +385,71 @@ export type Database = {
           },
         ]
       }
+      tema_termos: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          tema_id: string
+          termo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          tema_id: string
+          termo: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          tema_id?: string
+          termo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tema_termos_tema_id_fkey"
+            columns: ["tema_id"]
+            isOneToOne: false
+            referencedRelation: "temas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      temas: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       templates: {
         Row: {
           created_at: string
@@ -445,6 +510,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      normalizar_termo_tema: { Args: { _termo: string }; Returns: string }
     }
     Enums: {
       app_role: "admin" | "user"
