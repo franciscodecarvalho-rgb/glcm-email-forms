@@ -21,7 +21,7 @@ import {
   empresasPorOrigem,
   FILTROS_INICIAIS,
   formatarMoeda,
-  há: undefined,
+  
   montarRubricasPayload,
   montarTemasPayload,
   normalizarCompetenciaFiltro,
