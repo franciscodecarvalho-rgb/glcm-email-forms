@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Search, Tag, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
