@@ -33,6 +33,8 @@ const App = () => (
             <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
             <Route path="/Temas" element={<ProtectedRoute><Temas /></ProtectedRoute>} />
             <Route path="/temas" element={<Navigate to="/Temas" replace />} />
+            <Route path="/Relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
+            <Route path="/relatorios" element={<Navigate to="/Relatorios" replace />} />
             <Route path="/usuarios" element={<ProtectedRoute><Usuarios /></ProtectedRoute>} />
             <Route path="/teste-extracao-pdfs" element={<ProtectedRoute><TesteExtracaoPdfs /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
