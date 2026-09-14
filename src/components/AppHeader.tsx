@@ -27,6 +27,9 @@ export function AppHeader() {
           <Button variant="ghost" size="sm" asChild>
             <Link to="/Temas"><Tag className="mr-2 h-4 w-4" />Temas</Link>
           </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/Relatorios"><BarChart3 className="mr-2 h-4 w-4" />Relatórios</Link>
+          </Button>
           {isAdmin && (
             <Button variant="ghost" size="sm" asChild>
               <Link to="/usuarios"><Users className="mr-2 h-4 w-4" />Usuários</Link>
