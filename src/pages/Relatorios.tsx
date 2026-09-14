@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Filter, Loader2, RotateCcw, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,21 +14,28 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
+  chaveEmpresa,
   chaveRubrica,
   consolidarTotais,
   competenciaValida,
+  empresasPorOrigem,
   FILTROS_INICIAIS,
   formatarMoeda,
+  
   montarRubricasPayload,
   montarTemasPayload,
   normalizarCompetenciaFiltro,
   periodoCoerente,
   rotuloEmpresaModelo,
+  rotuloEmpresaSelecionada,
   rotuloIdentificacao,
   rotuloPessoa,
   rotuloRubrica,
   ROTULO_ORIGEM,
+  temProximaPagina,
+  totalLinhas,
   TOTAIS_ZERADOS,
+  type EmpresaSelecionada,
   type EscopoOrigem,
   type EstadoFonte,
   type FiltrosRelatorio,
@@ -44,7 +51,8 @@ type Linha = Record<string, unknown> & { origem?: OrigemRelatorio };
 
 type Fonte<T> = { estado: EstadoFonte; motivo?: string; dados: T[] };
 
-const PAGINA = 25;
+export const PAGINA = 25;
+export const LANCAMENTOS_POR_PAGINA = 50;
 
 const rpc = supabase as unknown as {
   rpc: (
@@ -74,13 +82,16 @@ async function consultarHistorico<T>(acao: string, body: Record<string, unknown>
 
 export default function Relatorios() {
   const [temas, setTemas] = useState<TemaComTermos[]>([]);
+  const [temasEstado, setTemasEstado] = useState<"carregando" | "ok" | "erro">("carregando");
   const [rascunho, setRascunho] = useState<FiltrosRelatorio>({ ...FILTROS_INICIAIS });
   const [filtros, setFiltros] = useState<FiltrosRelatorio>({ ...FILTROS_INICIAIS });
-  const [codigoTexto, setCodigoTexto] = useState("");
-  const [empresaTexto, setEmpresaTexto] = useState("");
   const [visao, setVisao] = useState<Visao>("tema");
   const [pagina, setPagina] = useState(0);
   const [carregando, setCarregando] = useState(false);
+
+  const [buscaEmpresa, setBuscaEmpresa] = useState("");
+  const [opcoesEmpresa, setOpcoesEmpresa] = useState<Fonte<EmpresaSelecionada>>({ estado: "ok", dados: [] });
+  const [buscandoEmpresas, setBuscandoEmpresas] = useState(false);
 
   const [totais, setTotais] = useState<Record<OrigemRelatorio, Fonte<Record<string, unknown>>>>({
     casos: { estado: "ok", dados: [] },
@@ -92,8 +103,17 @@ export default function Relatorios() {
   });
 
   const [pessoaAberta, setPessoaAberta] = useState<{ id: string; nome: string; origem: OrigemRelatorio } | null>(null);
-  const [lancamentos, setLancamentos] = useState<Linha[]>([]);
+  const [lancamentos, setLancamentos] = useState<Fonte<Linha>>({ estado: "ok", dados: [] });
+  const [paginaLancamentos, setPaginaLancamentos] = useState(0);
   const [carregandoLancamentos, setCarregandoLancamentos] = useState(false);
+
+  /**
+   * Descarte de respostas antigas: cada consulta recebe um número de série e
+   * só grava o resultado se ainda for a consulta mais recente. Sem isso, trocar
+   * de aba, de página ou de pessoa rapidamente pode exibir o resultado anterior.
+   */
+  const serieLista = useRef(0);
+  const serieLancamentos = useRef(0);
 
   useEffect(() => {
     supabase
@@ -103,9 +123,11 @@ export default function Relatorios() {
       .order("nome")
       .then(({ data, error }) => {
         if (error) {
+          setTemasEstado("erro");
           toast.error("Não foi possível carregar os temas");
           return;
         }
+        setTemasEstado("ok");
         setTemas(
           (data ?? []).map((t) => ({
             nome: t.nome as string,
@@ -120,7 +142,7 @@ export default function Relatorios() {
     return {
       p_temas: temasPayload,
       p_rubricas: montarRubricasPayload(filtros.rubricas),
-      p_empresas: filtros.empresas.length > 0 ? filtros.empresas : null,
+      p_empresas: empresasPorOrigem(filtros.empresas, "casos"),
       p_de: filtros.de,
       p_ate: filtros.ate,
     };
@@ -130,18 +152,19 @@ export default function Relatorios() {
     () => ({
       temas: payload.p_temas,
       rubricas: payload.p_rubricas,
-      empresas: payload.p_empresas,
+      empresas: empresasPorOrigem(filtros.empresas, "historico"),
       de: payload.p_de,
       ate: payload.p_ate,
     }),
-    [payload],
+    [payload, filtros.empresas],
   );
 
   const usaCasos = filtros.origem !== "historico";
   const usaHistorico = filtros.origem !== "casos";
 
   const carregar = useCallback(async () => {
-    if (temas.length === 0) return;
+    if (temasEstado !== "ok") return;
+    const serie = ++serieLista.current;
     setCarregando(true);
 
     const vazio: Fonte<never> = { estado: "ok", dados: [] };
@@ -165,14 +188,51 @@ export default function Relatorios() {
       usaHistorico ? consultarHistorico<Linha>(acaoVisao, { ...corpoHistorico, ...paginacaoHist }) : Promise.resolve(vazio),
     ]);
 
+    if (serie !== serieLista.current) return;
     setTotais({ casos: tc, historico: th });
     setLinhas({ casos: lc, historico: lh });
     setCarregando(false);
-  }, [temas, payload, corpoHistorico, visao, pagina, usaCasos, usaHistorico]);
+  }, [temasEstado, payload, corpoHistorico, visao, pagina, usaCasos, usaHistorico]);
 
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  const buscarEmpresas = useCallback(async () => {
+    setBuscandoEmpresas(true);
+    const [oc, oh] = await Promise.all([
+      usaCasos
+        ? consultarCasos<Record<string, unknown>>("relatorio_opcoes_empresa", {
+            p_busca: buscaEmpresa.trim() || null,
+            p_limit: 50,
+            p_offset: 0,
+          })
+        : Promise.resolve({ estado: "ok" as const, dados: [] }),
+      usaHistorico
+        ? consultarHistorico<Record<string, unknown>>("opcoes_empresa", { busca: buscaEmpresa.trim() || null, limit: 50, offset: 0 })
+        : Promise.resolve({ estado: "ok" as const, dados: [] }),
+    ]);
+    const opcoes: EmpresaSelecionada[] = [
+      ...(oc.estado === "ok" ? oc.dados : []).map((o) => ({
+        origem: "casos" as const,
+        id: txt(o.empresa_id) ?? "",
+        rotulo: rotuloEmpresaModelo(txt(o.empresa_rotulo) ?? txt(o.empresa_id)),
+      })),
+      ...(oh.estado === "ok" ? oh.dados : []).map((o) => ({
+        origem: "historico" as const,
+        id: txt(o.empresa_id) ?? "",
+        rotulo: rotuloEmpresaModelo(txt(o.empresa_rotulo) ?? txt(o.empresa_id)),
+      })),
+    ];
+    const estado: EstadoFonte = oc.estado !== "ok" ? oc.estado : oh.estado !== "ok" ? oh.estado : "ok";
+    setOpcoesEmpresa({ estado, motivo: oc.motivo ?? oh.motivo, dados: opcoes });
+    setBuscandoEmpresas(false);
+  }, [buscaEmpresa, usaCasos, usaHistorico]);
+
+  useEffect(() => {
+    void buscarEmpresas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usaCasos, usaHistorico]);
 
   const subtotais = useMemo(() => {
     const extrair = (f: Fonte<Record<string, unknown>>): TotaisFonte => {
@@ -200,6 +260,16 @@ export default function Relatorios() {
     return saida;
   }, [linhas, usaCasos, usaHistorico]);
 
+  /** A próxima página só existe enquanto alguma fonte tiver mais linhas do que já foram percorridas. */
+  const proximaDisponivel = useMemo(() => {
+    if (visao === "tema") return false;
+    const totaisFonte = [
+      usaCasos && linhas.casos.estado === "ok" ? totalLinhas(linhas.casos.dados) : 0,
+      usaHistorico && linhas.historico.estado === "ok" ? totalLinhas(linhas.historico.dados) : 0,
+    ];
+    return temProximaPagina(pagina, PAGINA, totaisFonte);
+  }, [visao, linhas, pagina, usaCasos, usaHistorico]);
+
   const avisos = useMemo(() => {
     const lista: string[] = [];
     const checar = (origem: OrigemRelatorio, f: Fonte<unknown>) => {
@@ -224,14 +294,13 @@ export default function Relatorios() {
     if (rascunho.de && !competenciaValida(rascunho.de)) return toast.error("Período inicial deve estar no formato MM/AAAA");
     if (rascunho.ate && !competenciaValida(rascunho.ate)) return toast.error("Período final deve estar no formato MM/AAAA");
     if (!periodoCoerente(de, ate)) return toast.error("O período inicial não pode ser posterior ao final");
-    const empresas = empresaTexto.split(",").map((x) => x.trim()).filter(Boolean);
     setPagina(0);
-    setFiltros({ ...rascunho, de, ate, empresas });
+    setFiltros({ ...rascunho, de, ate });
   };
 
   const limpar = () => {
     setRascunho({ ...FILTROS_INICIAIS });
-    setEmpresaTexto("");
+    setBuscaEmpresa("");
     setPagina(0);
     setFiltros({ ...FILTROS_INICIAIS });
   };
@@ -247,16 +316,54 @@ export default function Relatorios() {
     }));
   };
 
+  /** Empresa é sempre escolhida na lista vinda do servidor, pelo identificador da própria origem. */
+  const alternarEmpresa = (e: EmpresaSelecionada) => {
+    const k = chaveEmpresa(e);
+    setRascunho((p) => ({
+      ...p,
+      empresas: p.empresas.some((x) => chaveEmpresa(x) === k)
+        ? p.empresas.filter((x) => chaveEmpresa(x) !== k)
+        : [...p.empresas, e],
+    }));
+  };
+
+  const carregarLancamentos = useCallback(
+    async (pessoa: { id: string; origem: OrigemRelatorio }, pag: number) => {
+      const serie = ++serieLancamentos.current;
+      setCarregandoLancamentos(true);
+      const r =
+        pessoa.origem === "casos"
+          ? await consultarCasos<Linha>("relatorio_lancamentos_pessoa", {
+              ...payload,
+              p_pessoa_id: pessoa.id,
+              p_limit: LANCAMENTOS_POR_PAGINA,
+              p_offset: pag * LANCAMENTOS_POR_PAGINA,
+            })
+          : await consultarHistorico<Linha>("lancamentos", {
+              ...corpoHistorico,
+              pessoa_id: pessoa.id,
+              limit: LANCAMENTOS_POR_PAGINA,
+              offset: pag * LANCAMENTOS_POR_PAGINA,
+            });
+      if (serie !== serieLancamentos.current) return;
+      setLancamentos(r);
+      if (r.estado !== "ok") toast.error(r.motivo ?? "Não foi possível carregar os lançamentos");
+      setCarregandoLancamentos(false);
+    },
+    [payload, corpoHistorico],
+  );
+
   const abrirPessoa = async (id: string, nome: string, origem: OrigemRelatorio) => {
     setPessoaAberta({ id, nome, origem });
-    setCarregandoLancamentos(true);
-    const r =
-      origem === "casos"
-        ? await consultarCasos<Linha>("relatorio_lancamentos_pessoa", { ...payload, p_pessoa_id: id, p_limit: 300, p_offset: 0 })
-        : await consultarHistorico<Linha>("lancamentos", { ...corpoHistorico, pessoa_id: id, limit: 300, offset: 0 });
-    setLancamentos(r.estado === "ok" ? r.dados : []);
-    if (r.estado !== "ok") toast.error(r.motivo ?? "Não foi possível carregar os lançamentos");
-    setCarregandoLancamentos(false);
+    setPaginaLancamentos(0);
+    setLancamentos({ estado: "ok", dados: [] });
+    await carregarLancamentos({ id, origem }, 0);
+  };
+
+  const irParaPaginaLancamentos = async (pag: number) => {
+    if (!pessoaAberta) return;
+    setPaginaLancamentos(pag);
+    await carregarLancamentos(pessoaAberta, pag);
   };
 
   const alternarTema = (nome: string) => {
@@ -265,6 +372,10 @@ export default function Relatorios() {
       temas: p.temas.includes(nome) ? p.temas.filter((t) => t !== nome) : [...p.temas, nome],
     }));
   };
+
+  const proximaLancamentos = temProximaPagina(paginaLancamentos, LANCAMENTOS_POR_PAGINA, [
+    lancamentos.estado === "ok" ? totalLinhas(lancamentos.dados) : 0,
+  ]);
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -287,7 +398,15 @@ export default function Relatorios() {
             <div>
               <Label className="mb-2 block">Temas</Label>
               <div className="flex flex-wrap gap-2">
-                {temas.length === 0 && <span className="text-sm text-muted-foreground">Nenhum tema ativo cadastrado.</span>}
+                {temasEstado === "carregando" && <span className="text-sm text-muted-foreground">Carregando temas…</span>}
+                {temasEstado === "erro" && (
+                  <span className="text-sm text-destructive">
+                    Não foi possível carregar os temas. Isto é uma falha de consulta, não ausência de cadastro.
+                  </span>
+                )}
+                {temasEstado === "ok" && temas.length === 0 && (
+                  <span className="text-sm text-muted-foreground">Nenhum tema ativo cadastrado.</span>
+                )}
                 {temas.map((t) => (
                   <Button
                     key={t.nome}
@@ -324,11 +443,59 @@ export default function Relatorios() {
               )}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1">
-                <Label htmlFor="rel-empresas">Empresa/modelo</Label>
-                <Input id="rel-empresas" placeholder="Ex.: unigel, (sem empresa/modelo)" value={empresaTexto} onChange={(e) => setEmpresaTexto(e.target.value)} />
+            <div>
+              <Label className="mb-2 block" htmlFor="rel-busca-empresa">Empresa/modelo</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="rel-busca-empresa"
+                  placeholder="Buscar empresa/modelo"
+                  value={buscaEmpresa}
+                  onChange={(e) => setBuscaEmpresa(e.target.value)}
+                />
+                <Button type="button" variant="outline" onClick={() => void buscarEmpresas()} disabled={buscandoEmpresas}>
+                  Buscar
+                </Button>
               </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                A lista vem do servidor. Nos casos do aplicativo a opção é o modelo de leitura do contracheque; na base
+                histórica é a empresa cadastrada, identificada pelo seu registro e não apenas pelo nome.
+              </p>
+              {rascunho.empresas.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {rascunho.empresas.map((e) => (
+                    <Button key={chaveEmpresa(e)} type="button" size="sm" variant="secondary" onClick={() => alternarEmpresa(e)}>
+                      {rotuloEmpresaSelecionada(e)} ✕
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                {buscandoEmpresas && <span className="text-sm text-muted-foreground">Buscando…</span>}
+                {!buscandoEmpresas && opcoesEmpresa.estado !== "ok" && (
+                  <span className="text-sm text-destructive">
+                    Lista de empresas indisponível nesta consulta. {opcoesEmpresa.motivo ?? ""}
+                  </span>
+                )}
+                {!buscandoEmpresas && opcoesEmpresa.estado === "ok" && opcoesEmpresa.dados.length === 0 && (
+                  <span className="text-sm text-muted-foreground">Nenhuma opção encontrada para esta busca.</span>
+                )}
+                {!buscandoEmpresas &&
+                  opcoesEmpresa.estado === "ok" &&
+                  opcoesEmpresa.dados.map((o) => (
+                    <Button
+                      key={chaveEmpresa(o)}
+                      type="button"
+                      size="sm"
+                      variant={rascunho.empresas.some((x) => chaveEmpresa(x) === chaveEmpresa(o)) ? "default" : "outline"}
+                      onClick={() => alternarEmpresa(o)}
+                    >
+                      {rotuloEmpresaSelecionada(o)}
+                    </Button>
+                  ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1">
                 <Label htmlFor="rel-de">Período inicial</Label>
                 <Input id="rel-de" placeholder="MM/AAAA" value={rascunho.de ?? ""} onChange={(e) => setRascunho((p) => ({ ...p, de: e.target.value }))} />
@@ -379,15 +546,24 @@ export default function Relatorios() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between text-base">
                   <span>{ROTULO_ORIGEM[s.origem]}</span>
-                  {s.estado !== "ok" && <Badge variant="destructive">sem dados</Badge>}
+                  {s.estado !== "ok" && <Badge variant="destructive">sem resposta</Badge>}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-muted-foreground">Itens: </span>{s.totais.itens}</div>
-                <div><span className="text-muted-foreground">Pessoas: </span>{s.totais.pessoas}</div>
-                <div><span className="text-muted-foreground">Proventos: </span>{formatarMoeda(s.totais.proventos)}</div>
-                <div><span className="text-muted-foreground">Descontos: </span>{formatarMoeda(s.totais.descontos)}</div>
-              </CardContent>
+              {/* Fonte sem resposta não exibe zero: zero seria lido como "não há dados". */}
+              {s.estado !== "ok" ? (
+                <CardContent className="text-sm text-muted-foreground">
+                  {s.estado === "indisponivel"
+                    ? "Consulta não realizada nesta fonte. Os valores não foram apurados e não são zero."
+                    : "Falha ao consultar esta fonte. Os valores não foram apurados e não são zero."}
+                </CardContent>
+              ) : (
+                <CardContent className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-muted-foreground">Itens: </span>{s.totais.itens}</div>
+                  <div><span className="text-muted-foreground">Pessoas: </span>{s.totais.pessoas}</div>
+                  <div><span className="text-muted-foreground">Proventos: </span>{formatarMoeda(s.totais.proventos)}</div>
+                  <div><span className="text-muted-foreground">Descontos: </span>{formatarMoeda(s.totais.descontos)}</div>
+                </CardContent>
+              )}
             </Card>
           ))}
         </div>
@@ -506,7 +682,7 @@ export default function Relatorios() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={carregando || linhasVisiveis.length === 0}
+                    disabled={carregando || !proximaDisponivel}
                     onClick={() => setPagina((p) => p + 1)}
                   >
                     Próxima
@@ -517,7 +693,17 @@ export default function Relatorios() {
           </TabsContent>
         </Tabs>
 
-        <Dialog open={!!pessoaAberta} onOpenChange={(o) => { if (!o) { setPessoaAberta(null); setLancamentos([]); } }}>
+        <Dialog
+          open={!!pessoaAberta}
+          onOpenChange={(o) => {
+            if (!o) {
+              serieLancamentos.current++;
+              setPessoaAberta(null);
+              setLancamentos({ estado: "ok", dados: [] });
+              setPaginaLancamentos(0);
+            }
+          }}
+        >
           <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
@@ -527,41 +713,71 @@ export default function Relatorios() {
             </DialogHeader>
             {carregandoLancamentos ? (
               <p className="py-8 text-center text-muted-foreground">Carregando…</p>
-            ) : lancamentos.length === 0 ? (
+            ) : lancamentos.estado !== "ok" ? (
+              <p className="py-8 text-center text-destructive">
+                Não foi possível carregar os lançamentos desta pessoa. {lancamentos.motivo ?? ""}
+              </p>
+            ) : lancamentos.dados.length === 0 ? (
               <p className="py-8 text-center text-muted-foreground">Nenhum lançamento para os filtros aplicados.</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Competência</TableHead>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                    <TableHead>Caso</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lancamentos.map((l, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{txt(l.competencia) ?? "—"}</TableCell>
-                      <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
-                      <TableCell>{txt(l.descricao) ?? "—"}</TableCell>
-                      <TableCell>{txt(l.tipo) ?? "—"}</TableCell>
-                      <TableCell className="text-right">{formatarMoeda(num(l.valor))}</TableCell>
-                      <TableCell>
-                        {txt(l.caso_id) ? (
-                          <Link className="text-primary underline" to={`/casos/${txt(l.caso_id)}`} onClick={(e) => e.stopPropagation()}>
-                            abrir
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Competência</TableHead>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                      <TableHead>Caso</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {lancamentos.dados.map((l, i) => (
+                      <TableRow key={txt(l.item_id) ?? i}>
+                        <TableCell>{txt(l.competencia) ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
+                        <TableCell>{txt(l.descricao) ?? "—"}</TableCell>
+                        <TableCell>{txt(l.tipo) ?? "—"}</TableCell>
+                        <TableCell className="text-right">{formatarMoeda(num(l.valor))}</TableCell>
+                        <TableCell>
+                          {txt(l.caso_id) ? (
+                            <Link className="text-primary underline" to={`/casos/${txt(l.caso_id)}`} onClick={(e) => e.stopPropagation()}>
+                              abrir
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-sm text-muted-foreground">
+                    Página {paginaLancamentos + 1} de {Math.max(Math.ceil(totalLinhas(lancamentos.dados) / LANCAMENTOS_POR_PAGINA), 1)} —{" "}
+                    {totalLinhas(lancamentos.dados)} lançamentos
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paginaLancamentos === 0 || carregandoLancamentos}
+                      onClick={() => void irParaPaginaLancamentos(Math.max(paginaLancamentos - 1, 0))}
+                    >
+                      Anterior
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={carregandoLancamentos || !proximaLancamentos}
+                      onClick={() => void irParaPaginaLancamentos(paginaLancamentos + 1)}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              </>
             )}
           </DialogContent>
         </Dialog>
