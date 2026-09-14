@@ -14,9 +14,21 @@ export type EscopoOrigem = "ambas" | OrigemRelatorio;
 
 export type TemaComTermos = { nome: string; termos: string[] };
 
+/**
+ * Rubrica selecionada para filtro: o código isolado é ambíguo (o mesmo código
+ * aparece com descrições, tipos e empresas/modelos diferentes, além de códigos
+ * nulos). A seleção é sempre a combinação exata, com o código original.
+ */
+export type RubricaSelecionada = {
+  codigo: string | null;
+  descricao: string | null;
+  tipo: string | null;
+  empresa: string | null;
+};
+
 export type FiltrosRelatorio = {
   temas: string[];
-  codigos: string[];
+  rubricas: RubricaSelecionada[];
   empresas: string[];
   de: string | null;
   ate: string | null;
@@ -42,7 +54,7 @@ export type ResultadoFonte<T> = {
 
 export const FILTROS_INICIAIS: FiltrosRelatorio = {
   temas: [],
-  codigos: [],
+  rubricas: [],
   empresas: [],
   de: null,
   ate: null,
@@ -54,27 +66,115 @@ export const ROTULO_ORIGEM: Record<OrigemRelatorio, string> = {
   historico: "Base histórica",
 };
 
-/** Competência aceita apenas no formato MM/AAAA. */
-export function competenciaValida(valor: string | null | undefined): boolean {
-  if (!valor) return false;
-  const m = /^(\d{2})\/(\d{4})$/.exec(valor.trim());
-  if (!m) return false;
-  const mes = Number(m[1]);
-  return mes >= 1 && mes <= 12;
+/**
+ * Chave de competência: aceita MM/AAAA e AAAA-MM, exigindo mês entre 01 e 12.
+ * Qualquer outro conteúdo é irreconhecível e retorna null — nunca é convertido
+ * à força em data, e uma competência irreconhecível não entra em intervalo.
+ */
+export function chaveCompetencia(valor: string | null | undefined): string | null {
+  const v = (valor ?? "").trim();
+  let ano: string;
+  let mes: string;
+  const br = /^(\d{2})\/(\d{4})$/.exec(v);
+  const iso = /^(\d{4})-(\d{2})$/.exec(v);
+  if (br) {
+    mes = br[1];
+    ano = br[2];
+  } else if (iso) {
+    ano = iso[1];
+    mes = iso[2];
+  } else {
+    return null;
+  }
+  const m = Number(mes);
+  if (m < 1 || m > 12) return null;
+  return `${ano}${mes}`;
 }
 
-/** Normaliza o campo de período: vazio vira null; inválido também vira null. */
+/** Competência aceita nos formatos MM/AAAA e AAAA-MM, com mês válido. */
+export function competenciaValida(valor: string | null | undefined): boolean {
+  return chaveCompetencia(valor) !== null;
+}
+
+/** Normaliza o campo de período para MM/AAAA; vazio ou inválido vira null. */
 export function normalizarCompetenciaFiltro(valor: string | null | undefined): string | null {
-  const v = (valor ?? "").trim();
-  if (!v) return null;
-  return competenciaValida(v) ? v : null;
+  const chave = chaveCompetencia(valor);
+  if (!chave) return null;
+  return `${chave.slice(4, 6)}/${chave.slice(0, 4)}`;
 }
 
 /** Período coerente: início não pode ser posterior ao fim. */
 export function periodoCoerente(de: string | null, ate: string | null): boolean {
-  if (!de || !ate) return true;
-  const chave = (v: string) => `${v.slice(3)}${v.slice(0, 2)}`;
-  return chave(de) <= chave(ate);
+  const a = chaveCompetencia(de);
+  const b = chaveCompetencia(ate);
+  if (!a || !b) return true;
+  return a <= b;
+}
+
+/** Dígitos do CPF, sem máscara. */
+export function cpfDigitos(valor: string | null | undefined): string | null {
+  const d = (valor ?? "").replace(/\D/g, "");
+  return d === "" ? null : d;
+}
+
+/** Validação de CPF por módulo 11 (mesma regra aplicada no banco). */
+export function cpfValido(valor: string | null | undefined): boolean {
+  const d = cpfDigitos(valor);
+  if (!d || d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const digito = (ate: number) => {
+    let soma = 0;
+    for (let i = 0; i < ate; i++) soma += Number(d[i]) * (ate + 1 - i);
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  return digito(9) === Number(d[9]) && digito(10) === Number(d[10]);
+}
+
+/**
+ * Identidade da pessoa DENTRO de uma origem: CPF válido quando houver; caso
+ * contrário, o identificador do registro, explicitamente sem CPF validado.
+ * Dois casos do mesmo CPF são uma pessoa só; origens distintas nunca são
+ * unificadas (a chave é sempre qualificada pela origem na tela).
+ */
+export function identidadePessoa(
+  cpf: string | null | undefined,
+  idRegistro: string | null | undefined,
+): { pessoaId: string; identificacao: "cpf" | "caso_sem_cpf" } {
+  if (cpfValido(cpf)) return { pessoaId: `cpf:${cpfDigitos(cpf)}`, identificacao: "cpf" };
+  return { pessoaId: `caso:${idRegistro ?? "(sem identificador)"}`, identificacao: "caso_sem_cpf" };
+}
+
+export function rotuloIdentificacao(valor: string | null | undefined): string {
+  return valor === "cpf" ? "CPF validado" : "Sem CPF validado — identificada pelo registro";
+}
+
+/** Chave estável de uma rubrica: combinação exata, com o código original. */
+export function chaveRubrica(r: RubricaSelecionada): string {
+  return JSON.stringify([r.codigo ?? null, r.descricao ?? null, r.tipo ?? null, r.empresa ?? null]);
+}
+
+/** Payload de rubricas: combinações exatas, sem duplicatas. */
+export function montarRubricasPayload(rubricas: RubricaSelecionada[]): RubricaSelecionada[] {
+  const vistas = new Set<string>();
+  const saida: RubricaSelecionada[] = [];
+  for (const r of rubricas) {
+    const item: RubricaSelecionada = {
+      codigo: r.codigo ?? null,
+      descricao: r.descricao ?? null,
+      tipo: r.tipo ?? null,
+      empresa: r.empresa ?? null,
+    };
+    const k = chaveRubrica(item);
+    if (vistas.has(k)) continue;
+    vistas.add(k);
+    saida.push(item);
+  }
+  return saida;
+}
+
+export function rotuloRubrica(r: RubricaSelecionada): string {
+  const partes = [r.codigo ?? "(sem código)", r.descricao ?? "(sem descrição)", r.tipo ?? "(sem tipo)", rotuloEmpresaModelo(r.empresa)];
+  return partes.join(" · ");
 }
 
 /**
@@ -151,10 +251,18 @@ export function juntarLinhas<T>(
     .flatMap((r) => r.dados.map((d) => ({ ...d, origem: r.origem })));
 }
 
-export function rotuloEmpresa(valor: string | null | undefined): string {
+/**
+ * Empresa/modelo: nos casos do aplicativo o valor vem do modelo de leitura do
+ * contracheque, que não é prova de pessoa jurídica. Por isso o rótulo é
+ * "empresa/modelo" e nunca se inventa nome de empresa.
+ */
+export function rotuloEmpresaModelo(valor: string | null | undefined): string {
   const v = (valor ?? "").trim();
-  return v === "" ? "(sem empresa)" : v;
+  return v === "" ? "(sem empresa/modelo)" : v;
 }
+
+/** @deprecated use rotuloEmpresaModelo */
+export const rotuloEmpresa = rotuloEmpresaModelo;
 
 export function rotuloPessoa(nome: string | null | undefined): string {
   const v = (nome ?? "").trim();
