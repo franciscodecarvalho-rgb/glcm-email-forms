@@ -160,23 +160,50 @@ export default function Temas() {
     toast.success(valor ? "Tema ativado" : "Tema inativado");
   };
 
-  const verRubricas = async (tema: Tema) => {
-    setTemaRubricas(tema);
-    setRubricas([]);
-    const filtro = montarFiltroDescricao(tema.tema_termos.map((t) => t.termo));
-    if (!filtro) return;
+  // Busca no servidor: comparação normalizada e literal, sem repetições,
+  // com paginação estável. Respostas antigas são descartadas.
+  const buscarRubricas = useCallback(async (tema: Tema, pagina: number) => {
+    const requisicao = ++requisicaoRubricas.current;
     setBuscandoRubricas(true);
-    const { data, error } = await supabase
-      .from("itens_contracheque")
-      .select("codigo, descricao, tipo, contracheques(modelo_origem, arquivo_origem)")
-      .or(filtro)
-      .limit(500);
-    setBuscandoRubricas(false);
-    if (error) {
-      toast.error("Erro ao buscar rubricas correspondentes");
+    setErroRubricas(null);
+    const termosTema = deduplicarTermos(tema.tema_termos.map((t) => t.termo));
+    if (termosTema.length === 0) {
+      if (requisicao !== requisicaoRubricas.current) return;
+      setRubricas([]);
+      setRubricasTotal(0);
+      setBuscandoRubricas(false);
       return;
     }
-    setRubricas((data ?? []) as unknown as Rubrica[]);
+    const { data, error } = await supabase.rpc("temas_rubricas_correspondentes", {
+      p_termos: termosTema,
+      p_limit: RUBRICAS_POR_PAGINA,
+      p_offset: pagina * RUBRICAS_POR_PAGINA,
+    });
+    if (requisicao !== requisicaoRubricas.current) return;
+    setBuscandoRubricas(false);
+    if (error) {
+      setRubricas([]);
+      setRubricasTotal(0);
+      setErroRubricas("Não foi possível consultar as rubricas correspondentes.");
+      return;
+    }
+    const linhas = (data ?? []) as Rubrica[];
+    setRubricas(linhas);
+    setRubricasTotal(Number(linhas[0]?.total_linhas ?? 0));
+  }, []);
+
+  const verRubricas = (tema: Tema) => {
+    setTemaRubricas(tema);
+    setRubricas([]);
+    setRubricasTotal(0);
+    setRubricasPagina(0);
+    void buscarRubricas(tema, 0);
+  };
+
+  const irParaPagina = (pagina: number) => {
+    if (!temaRubricas) return;
+    setRubricasPagina(pagina);
+    void buscarRubricas(temaRubricas, pagina);
   };
 
   return (
