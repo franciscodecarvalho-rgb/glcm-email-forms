@@ -1,4 +1,4 @@
-import { Scale, LogOut, FileText, LayoutDashboard, Users, Tag } from "lucide-react";
+import { Scale, LogOut, FileText, LayoutDashboard, Users, Tag, BarChart3 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
