@@ -66,7 +66,11 @@ export default function Temas() {
 
   const [temaRubricas, setTemaRubricas] = useState<Tema | null>(null);
   const [rubricas, setRubricas] = useState<Rubrica[]>([]);
+  const [rubricasTotal, setRubricasTotal] = useState(0);
+  const [rubricasPagina, setRubricasPagina] = useState(0);
   const [buscandoRubricas, setBuscandoRubricas] = useState(false);
+  const [erroRubricas, setErroRubricas] = useState<string | null>(null);
+  const requisicaoRubricas = useRef(0);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
