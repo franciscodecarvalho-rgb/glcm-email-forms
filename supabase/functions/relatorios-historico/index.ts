@@ -102,17 +102,20 @@ Deno.serve(async (req) => {
     // (supabase/historico/edge-function-relatorios-ponte.ts). Nenhuma chave de
     // serviço histórica precisa existir aqui; o token do usuário é repassado e
     // validado lá contra o Auth do aplicativo.
-    const PONTE_URL = Deno.env.get("HISTORICO_PONTE_URL");
+    const PONTE_URL =
+      Deno.env.get("HISTORICO_PONTE_URL") ??
+      "https://pcquefluiltrvwjpndvw.supabase.co/functions/v1/relatorios-ponte";
     const PONTE_KEY = Deno.env.get("HISTORICO_PONTE_ANON_KEY");
-    if (PONTE_URL && PONTE_KEY) {
+    if (PONTE_URL) {
       const corpo = await req.text();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+      };
+      if (PONTE_KEY) headers.apikey = PONTE_KEY;
       const resp = await fetch(PONTE_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authHeader,
-          apikey: PONTE_KEY,
-        },
+        headers,
         body: corpo || "{}",
       });
       const texto = await resp.text();

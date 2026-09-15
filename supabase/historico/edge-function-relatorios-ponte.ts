@@ -12,10 +12,9 @@
 //   * a autorização é reconferida lendo `user_roles` no banco do app com o
 //     token do próprio usuário (respeitando as políticas de acesso do app).
 //
-// Configuração exigida (secrets do projeto histórico):
-//   APP_SUPABASE_URL              = https://<ref-do-app>.supabase.co
-//   APP_SUPABASE_PUBLISHABLE_KEY  = chave publishable/anon pública do app
-//   (SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já existem por padrão)
+// A URL e a chave publishable do aplicativo são públicas por natureza e ficam
+// como fallback neste arquivo. Os secrets homônimos, quando presentes,
+// prevalecem. SUPABASE_SERVICE_ROLE_KEY continua apenas no ambiente histórico.
 //
 // Configuração exigida no app: secret HISTORICO_PONTE_URL apontando para
 //   https://pcquefluiltrvwjpndvw.supabase.co/functions/v1/relatorios-ponte
@@ -109,8 +108,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const APP_URL = Deno.env.get("APP_SUPABASE_URL");
-    const APP_KEY = Deno.env.get("APP_SUPABASE_PUBLISHABLE_KEY");
+    const APP_URL = Deno.env.get("APP_SUPABASE_URL") ?? "https://kaopnizsbkzxqdzmocwa.supabase.co";
+    const APP_KEY = Deno.env.get("APP_SUPABASE_PUBLISHABLE_KEY") ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imthb3BuaXpzYmt6eHFkem1vY3dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NDg4OTAsImV4cCI6MjA5MzEyNDg5MH0.Pou2WGgxRhr58KA-VnBX_mv2m-Yx3dFtZFsS1Ai9Vmk";
     if (!APP_URL || !APP_KEY) return json({ disponivel: false, motivo: "Ponte histórica sem configuração do aplicativo." });
 
     const authHeader = req.headers.get("Authorization") ?? "";
