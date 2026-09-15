@@ -61,6 +61,11 @@ const rpc = supabase as unknown as {
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
 };
 
+// A ponte histórica valida o token de sessão no Auth do aplicativo e confere o
+// papel do usuário. Ela é chamada diretamente porque o projeto do aplicativo
+// não concede a esta conta permissão de publicação de Edge Functions.
+const HISTORICO_PONTE_URL = "https://pcquefluiltrvwjpndvw.supabase.co/functions/v1/relatorios-ponte";
+
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
 const txt = (v: unknown) => (typeof v === "string" ? v : v == null ? null : String(v));
 
@@ -71,11 +76,27 @@ async function consultarCasos<T>(nome: string, params: Record<string, unknown>):
 }
 
 async function consultarHistorico<T>(acao: string, body: Record<string, unknown>): Promise<Fonte<T>> {
-  const { data, error } = await supabase.functions.invoke("relatorios-historico", {
-    body: { acao, ...body },
-  });
-  if (error) return { estado: "erro", motivo: error.message, dados: [] };
-  const r = data as { disponivel?: boolean; motivo?: string; dados?: T[] };
+  const { data: sessao, error: erroSessao } = await supabase.auth.getSession();
+  if (erroSessao || !sessao.session?.access_token) {
+    return { estado: "erro", motivo: "Não foi possível identificar a sessão do usuário.", dados: [] };
+  }
+
+  let resposta: Response;
+  try {
+    resposta = await fetch(HISTORICO_PONTE_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${sessao.session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ acao, ...body }),
+    });
+  } catch {
+    return { estado: "erro", motivo: "Não foi possível conectar à base histórica.", dados: [] };
+  }
+
+  const r = (await resposta.json().catch(() => null)) as { disponivel?: boolean; motivo?: string; dados?: T[]; error?: string } | null;
+  if (!resposta.ok) return { estado: "erro", motivo: r?.motivo ?? r?.error ?? `Consulta histórica indisponível (${resposta.status}).`, dados: [] };
   if (!r?.disponivel) return { estado: "indisponivel", motivo: r?.motivo, dados: [] };
   return { estado: "ok", dados: r.dados ?? [] };
 }

@@ -339,3 +339,10 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:**
 **Evitar:**
 ```
+
+### 2026-09 — Fluxo obrigatório de desenvolvimento e publicação
+
+**Regra confirmada:** Toda alteração do GLCM deve ser implementada e testada localmente, registrada e enviada ao Git; o Lovable é utilizado somente para realizar o deploy da versão já enviada ao repositório.
+**Origem:** Correção expressa de Nodley durante a implementação dos relatórios por tema.
+**Aplicação:** Fazer o ciclo local → validações → Git → Lovable, sem editar ou construir funcionalidades no Lovable.
+**Evitar:** Usar o Lovable para implementar, testar ou alterar o código-fonte do projeto.
