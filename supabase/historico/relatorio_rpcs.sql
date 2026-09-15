@@ -56,9 +56,9 @@ CREATE OR REPLACE FUNCTION public.competencia_para_data(_valor text)
 RETURNS date LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE
     WHEN _valor IS NULL THEN NULL
-    WHEN btrim(_valor) ~ '^(0[1-9]|1[0-2])/[0-9]{4}$'
+    WHEN btrim(_valor) ~ '^(0[1-9]|1[0-2])/(0[1-9][0-9]{3})$'
       THEN make_date(substr(btrim(_valor), 4, 4)::int, substr(btrim(_valor), 1, 2)::int, 1)
-    WHEN btrim(_valor) ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'
+    WHEN btrim(_valor) ~ '^(0[1-9][0-9]{3})-(0[1-9]|1[0-2])$'
       THEN make_date(substr(btrim(_valor), 1, 4)::int, substr(btrim(_valor), 6, 2)::int, 1)
     ELSE NULL
   END;
@@ -73,7 +73,7 @@ CREATE OR REPLACE FUNCTION public.relatorio_itens_filtrados(
 ) RETURNS TABLE (
   item_id uuid, contracheque_id uuid, caso_id uuid,
   pessoa_id text, pessoa_identificacao text, pessoa_nome text, pessoa_cpf text,
-  empresa text, competencia text, comp_data date,
+  empresa_id text, empresa text, competencia text, comp_data date,
   codigo text, descricao text, tipo text, valor numeric, temas text[]
 ) LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public AS $$
   WITH t AS (
@@ -94,6 +94,7 @@ CREATE OR REPLACE FUNCTION public.relatorio_itens_filtrados(
            CASE WHEN public.cpf_valido(f.cpf) THEN 'cpf' ELSE 'caso_sem_cpf' END AS pessoa_identificacao,
            f.nome AS pessoa_nome,
            CASE WHEN public.cpf_valido(f.cpf) THEN public.normalizar_cpf_digitos(f.cpf) END AS pessoa_cpf,
+           COALESCE(c.empresa_id::text, '(sem empresa/modelo)') AS empresa_id,
            COALESCE(NULLIF(btrim(em.nome), ''), '(sem empresa/modelo)') AS empresa,
            c.competencia::text AS competencia,
            public.competencia_para_data(c.competencia::text) AS comp_data,
@@ -105,7 +106,7 @@ CREATE OR REPLACE FUNCTION public.relatorio_itens_filtrados(
     LEFT JOIN public.empresas em ON em.id = c.empresa_id
   )
   SELECT b.item_id, b.contracheque_id, b.caso_id, b.pessoa_id, b.pessoa_identificacao,
-         b.pessoa_nome, b.pessoa_cpf, b.empresa, b.competencia, b.comp_data,
+         b.pessoa_nome, b.pessoa_cpf, b.empresa_id, b.empresa, b.competencia, b.comp_data,
          b.codigo, b.descricao, b.tipo, b.valor,
          COALESCE((SELECT array_agg(t.tema ORDER BY t.tema) FROM t
                    WHERE EXISTS (SELECT 1 FROM unnest(t.termos) u
@@ -116,8 +117,8 @@ CREATE OR REPLACE FUNCTION public.relatorio_itens_filtrados(
                     WHERE r.codigo IS NOT DISTINCT FROM b.codigo
                       AND r.descricao IS NOT DISTINCT FROM b.descricao
                       AND r.tipo IS NOT DISTINCT FROM b.tipo
-                      AND r.empresa IS NOT DISTINCT FROM b.empresa))
-    AND (p_empresas IS NULL OR array_length(p_empresas, 1) IS NULL OR b.empresa = ANY(p_empresas))
+                      AND r.empresa IS NOT DISTINCT FROM b.empresa_id))
+    AND (p_empresas IS NULL OR array_length(p_empresas, 1) IS NULL OR b.empresa_id = ANY(p_empresas))
     AND (public.competencia_para_data(p_de) IS NULL
          OR (b.comp_data IS NOT NULL AND b.comp_data >= public.competencia_para_data(p_de)))
     AND (public.competencia_para_data(p_ate) IS NULL
@@ -150,7 +151,7 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public AS $$
          count(DISTINCT f.pessoa_id),
          count(DISTINCT f.pessoa_id) FILTER (WHERE f.pessoa_identificacao = 'caso_sem_cpf'),
          0::bigint,
-         count(DISTINCT f.empresa),
+         count(DISTINCT f.empresa_id),
          COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'provento'), 0),
          COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'desconto'), 0)
   FROM public.relatorio_itens_filtrados(p_temas, p_rubricas, p_empresas, p_de, p_ate) f;
@@ -190,13 +191,13 @@ CREATE OR REPLACE FUNCTION public.relatorio_por_empresa(
                  proventos numeric, descontos numeric, total_linhas bigint)
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public AS $$
   WITH agg AS (
-    SELECT f.empresa AS empresa_id, f.empresa AS empresa_nome,
+    SELECT f.empresa_id, max(f.empresa) AS empresa_nome,
            count(DISTINCT f.pessoa_id) AS pessoas,
            count(DISTINCT f.item_id) AS itens,
            COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'provento'), 0) AS proventos,
            COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'desconto'), 0) AS descontos
     FROM public.relatorio_itens_filtrados(p_temas, p_rubricas, p_empresas, p_de, p_ate) f
-    GROUP BY f.empresa
+    GROUP BY f.empresa_id
   )
   SELECT a.empresa_id, a.empresa_nome, a.pessoas, a.itens, a.proventos, a.descontos,
          count(*) OVER () AS total_linhas
@@ -209,21 +210,21 @@ CREATE OR REPLACE FUNCTION public.relatorio_rubricas(
   p_temas jsonb DEFAULT '[]'::jsonb, p_rubricas jsonb DEFAULT '[]'::jsonb,
   p_empresas text[] DEFAULT NULL, p_de text DEFAULT NULL, p_ate text DEFAULT NULL,
   p_limit integer DEFAULT 50, p_offset integer DEFAULT 0
-) RETURNS TABLE (codigo text, descricao text, tipo text, empresa text, itens bigint,
+) RETURNS TABLE (codigo text, descricao text, tipo text, empresa_id text, empresa text, itens bigint,
                  proventos numeric, descontos numeric, total_linhas bigint)
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public AS $$
   WITH agg AS (
-    SELECT f.codigo, f.descricao, f.tipo, f.empresa,
+    SELECT f.codigo, f.descricao, f.tipo, f.empresa_id, f.empresa,
            count(DISTINCT f.item_id) AS itens,
            COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'provento'), 0) AS proventos,
            COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'desconto'), 0) AS descontos
     FROM public.relatorio_itens_filtrados(p_temas, p_rubricas, p_empresas, p_de, p_ate) f
-    GROUP BY f.codigo, f.descricao, f.tipo, f.empresa
+    GROUP BY f.codigo, f.descricao, f.tipo, f.empresa_id, f.empresa
   )
-  SELECT a.codigo, a.descricao, a.tipo, a.empresa, a.itens, a.proventos, a.descontos,
+  SELECT a.codigo, a.descricao, a.tipo, a.empresa_id, a.empresa, a.itens, a.proventos, a.descontos,
          count(*) OVER () AS total_linhas
   FROM agg a
-  ORDER BY a.itens DESC, a.descricao NULLS LAST, a.codigo NULLS LAST, a.tipo NULLS LAST, a.empresa
+  ORDER BY a.itens DESC, a.descricao NULLS LAST, a.codigo NULLS LAST, a.tipo NULLS LAST, a.empresa_id
   LIMIT GREATEST(COALESCE(p_limit, 50), 1) OFFSET GREATEST(COALESCE(p_offset, 0), 0);
 $$;
 
@@ -241,3 +242,43 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public AS $$
   ORDER BY f.comp_data NULLS LAST, f.codigo NULLS LAST, f.descricao NULLS LAST, f.item_id
   LIMIT GREATEST(COALESCE(p_limit, 200), 1) OFFSET GREATEST(COALESCE(p_offset, 0), 0);
 $$;
+
+CREATE OR REPLACE FUNCTION public.relatorio_opcoes_empresa(
+  p_busca text DEFAULT NULL, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0
+) RETURNS TABLE (empresa_id text, empresa_rotulo text, total_linhas bigint)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public AS $$
+  WITH opcoes AS (
+    SELECT COALESCE(c.empresa_id::text, '(sem empresa/modelo)') AS empresa_id,
+           COALESCE(NULLIF(btrim(e.nome), ''), '(sem empresa/modelo)') AS empresa_rotulo
+    FROM public.contracheques c
+    LEFT JOIN public.empresas e ON e.id = c.empresa_id
+    GROUP BY 1, 2
+  ), filtradas AS (
+    SELECT * FROM opcoes
+    WHERE public.normalizar_termo_tema(COALESCE(p_busca, '')) = ''
+       OR position(public.normalizar_termo_tema(p_busca) IN public.normalizar_termo_tema(empresa_rotulo)) > 0
+  )
+  SELECT empresa_id, empresa_rotulo, count(*) OVER ()
+  FROM filtradas
+  ORDER BY empresa_rotulo, empresa_id
+  LIMIT GREATEST(COALESCE(p_limit, 50), 1) OFFSET GREATEST(COALESCE(p_offset, 0), 0)
+$$;
+
+-- A ponte histórica é o único chamador destas RPCs. Elas não são expostas à
+-- Data API para anon/autenticado; a Edge Function usa service_role internamente.
+REVOKE ALL ON FUNCTION public.relatorio_itens_filtrados(jsonb, jsonb, text[], text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_totais_tema(jsonb, jsonb, text[], text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_total_geral(jsonb, jsonb, text[], text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_por_pessoa(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_por_empresa(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_rubricas(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_lancamentos_pessoa(text, jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_opcoes_empresa(text, integer, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.relatorio_itens_filtrados(jsonb, jsonb, text[], text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_totais_tema(jsonb, jsonb, text[], text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_total_geral(jsonb, jsonb, text[], text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_por_pessoa(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_por_empresa(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_rubricas(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_lancamentos_pessoa(text, jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_opcoes_empresa(text, integer, integer) TO service_role;

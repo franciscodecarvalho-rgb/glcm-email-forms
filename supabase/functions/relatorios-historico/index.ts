@@ -23,6 +23,7 @@ const ACOES: Record<string, string> = {
   por_empresa: "relatorio_por_empresa",
   lancamentos: "relatorio_lancamentos_pessoa",
   rubricas: "relatorio_rubricas",
+  opcoes_empresa: "relatorio_opcoes_empresa",
 };
 
 function sanitizarTemas(valor: unknown): { tema: string; termos: string[] }[] {
@@ -71,7 +72,7 @@ function sanitizarCompetencia(valor: unknown): string | null {
   const iso = /^(\d{4})-(\d{2})$/.exec(v);
   const mes = br ? Number(br[1]) : iso ? Number(iso[2]) : Number.NaN;
   const ano = br ? br[2] : iso ? iso[1] : "";
-  if (!Number.isFinite(mes) || mes < 1 || mes > 12) return null;
+  if (!Number.isFinite(mes) || mes < 1 || mes > 12 || Number(ano) < 1) return null;
   return `${String(mes).padStart(2, "0")}/${ano}`;
 }
 
@@ -146,7 +147,16 @@ Deno.serve(async (req) => {
       p_de: sanitizarCompetencia(body?.de),
       p_ate: sanitizarCompetencia(body?.ate),
     };
-    if (acao !== "total_geral" && acao !== "totais_tema") {
+    if (acao === "opcoes_empresa") {
+      params.p_busca = typeof body?.busca === "string" ? body.busca.trim() || null : null;
+      params.p_limit = inteiro(body?.limit, 50, 500);
+      params.p_offset = inteiro(body?.offset, 0, 1_000_000);
+      delete params.p_temas;
+      delete params.p_rubricas;
+      delete params.p_empresas;
+      delete params.p_de;
+      delete params.p_ate;
+    } else if (acao !== "total_geral" && acao !== "totais_tema") {
       params.p_limit = inteiro(body?.limit, 50, 500);
       params.p_offset = inteiro(body?.offset, 0, 1_000_000);
     }

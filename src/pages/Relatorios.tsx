@@ -654,7 +654,7 @@ export default function Relatorios() {
                                   codigo: txt(l.codigo),
                                   descricao: txt(l.descricao),
                                   tipo: txt(l.tipo),
-                                  empresa: txt(l.empresa),
+                                  empresa: txt(l.empresa_id) ?? txt(l.empresa),
                                 })
                               }
                             >

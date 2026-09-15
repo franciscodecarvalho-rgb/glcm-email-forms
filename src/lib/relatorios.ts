@@ -26,10 +26,17 @@ export type RubricaSelecionada = {
   empresa: string | null;
 };
 
+/** Empresa/modelo selecionada com o identificador estável da própria fonte. */
+export type EmpresaSelecionada = {
+  origem: OrigemRelatorio;
+  id: string;
+  rotulo: string;
+};
+
 export type FiltrosRelatorio = {
   temas: string[];
   rubricas: RubricaSelecionada[];
-  empresas: string[];
+  empresas: EmpresaSelecionada[];
   de: string | null;
   ate: string | null;
   origem: EscopoOrigem;
@@ -87,7 +94,7 @@ export function chaveCompetencia(valor: string | null | undefined): string | nul
     return null;
   }
   const m = Number(mes);
-  if (m < 1 || m > 12) return null;
+  if (m < 1 || m > 12 || Number(ano) < 1) return null;
   return `${ano}${mes}`;
 }
 
@@ -175,6 +182,33 @@ export function montarRubricasPayload(rubricas: RubricaSelecionada[]): RubricaSe
 export function rotuloRubrica(r: RubricaSelecionada): string {
   const partes = [r.codigo ?? "(sem código)", r.descricao ?? "(sem descrição)", r.tipo ?? "(sem tipo)", rotuloEmpresaModelo(r.empresa)];
   return partes.join(" · ");
+}
+
+/** Chave que não permite confundir empresas/modelos de fontes diferentes. */
+export function chaveEmpresa(empresa: EmpresaSelecionada): string {
+  return `${empresa.origem}:${empresa.id}`;
+}
+
+/** Valores do filtro destinados apenas à fonte consultada. */
+export function empresasPorOrigem(empresas: EmpresaSelecionada[], origem: OrigemRelatorio): string[] | null {
+  const valores = Array.from(new Set(empresas.filter((empresa) => empresa.origem === origem).map((empresa) => empresa.id)));
+  return valores.length > 0 ? valores : null;
+}
+
+export function rotuloEmpresaSelecionada(empresa: EmpresaSelecionada): string {
+  return `${ROTULO_ORIGEM[empresa.origem]}: ${rotuloEmpresaModelo(empresa.rotulo)}`;
+}
+
+/** A primeira linha da resposta traz o total da paginação retornado pelo banco. */
+export function totalLinhas(linhas: Array<Record<string, unknown>>): number {
+  const total = linhas[0]?.total_linhas;
+  const numero = typeof total === "number" ? total : Number(total ?? 0);
+  return Number.isSafeInteger(numero) && numero >= 0 ? numero : 0;
+}
+
+/** Há próxima página se pelo menos uma origem tiver linhas além do deslocamento atual. */
+export function temProximaPagina(pagina: number, tamanhoPagina: number, totaisPorFonte: number[]): boolean {
+  return totaisPorFonte.some((total) => total > (pagina + 1) * tamanhoPagina);
 }
 
 /**

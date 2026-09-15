@@ -10,12 +10,16 @@ import {
   rotuloIdentificacao,
   rotuloRubrica,
   consolidarTotais,
+  chaveEmpresa,
+  empresasPorOrigem,
   juntarLinhas,
   montarTemasPayload,
   normalizarCompetenciaFiltro,
   periodoCoerente,
   rotuloEmpresaModelo,
   rotuloPessoa,
+  temProximaPagina,
+  totalLinhas,
   TOTAIS_ZERADOS,
   type ResultadoFonte,
 } from "./relatorios";
@@ -27,6 +31,7 @@ describe("filtros de período", () => {
     expect(competenciaValida("1/2023")).toBe(false);
     expect(competenciaValida("2023-01")).toBe(true);
     expect(competenciaValida("2023-13")).toBe(false);
+    expect(competenciaValida("0000-01")).toBe(false);
     expect(competenciaValida("31/03/2023")).toBe(false);
     expect(competenciaValida(null)).toBe(false);
   });
@@ -41,6 +46,24 @@ describe("filtros de período", () => {
     expect(periodoCoerente("01/2023", "12/2023")).toBe(true);
     expect(periodoCoerente("12/2023", "01/2023")).toBe(false);
     expect(periodoCoerente(null, "01/2023")).toBe(true);
+  });
+});
+
+describe("empresas e paginação", () => {
+  const casos = { origem: "casos" as const, id: "unigel", rotulo: "unigel" };
+  const historico = { origem: "historico" as const, id: "unigel", rotulo: "Unigel S.A." };
+
+  it("mantém o identificador qualificado pela origem", () => {
+    expect(chaveEmpresa(casos)).not.toBe(chaveEmpresa(historico));
+    expect(empresasPorOrigem([casos, historico], "casos")).toEqual(["unigel"]);
+    expect(empresasPorOrigem([casos, historico], "historico")).toEqual(["unigel"]);
+  });
+
+  it("usa total_linhas para impedir páginas sem resultado", () => {
+    expect(totalLinhas([{ total_linhas: "26" }])).toBe(26);
+    expect(totalLinhas([])).toBe(0);
+    expect(temProximaPagina(0, 25, [25, 26])).toBe(true);
+    expect(temProximaPagina(1, 25, [25, 26])).toBe(false);
   });
 });
 
