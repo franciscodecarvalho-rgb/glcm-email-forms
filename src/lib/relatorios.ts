@@ -65,7 +65,7 @@ export const FILTROS_INICIAIS: FiltrosRelatorio = {
   empresas: [],
   de: null,
   ate: null,
-  origem: "ambas",
+  origem: "casos",
 };
 
 export const ROTULO_ORIGEM: Record<OrigemRelatorio, string> = {
@@ -305,4 +305,91 @@ export function rotuloPessoa(nome: string | null | undefined): string {
 
 export function formatarMoeda(valor: number | null | undefined): string {
   return (valor ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+export const LIMITE_VIABILIDADE_PADRAO = 15000;
+
+export function acaoViavel(saldoLiquido: number, limite = LIMITE_VIABILIDADE_PADRAO): boolean {
+  return saldoLiquido >= limite;
+}
+
+export type MetricasGestao = {
+  clientesElegiveis: number;
+  acoesViaveis: number;
+  percentualViaveis: number;
+  lastroMedioMeses: number;
+  empresaPredominante: string;
+  empresaPredominanteQtd: number;
+};
+
+export function calcularMetricasGestao(
+  linhasPessoa: Array<{
+    pessoa_cpf?: string | null;
+    empresa?: string | null;
+    competencias?: number | null;
+    proventos?: number | null;
+    descontos?: number | null;
+  }>,
+  totalPessoasGeral?: number,
+): MetricasGestao {
+  const total = totalPessoasGeral ?? linhasPessoa.length;
+  if (total === 0 || linhasPessoa.length === 0) {
+    return {
+      clientesElegiveis: total,
+      acoesViaveis: 0,
+      percentualViaveis: 0,
+      lastroMedioMeses: 0,
+      empresaPredominante: "—",
+      empresaPredominanteQtd: 0,
+    };
+  }
+
+  let viaveis = 0;
+  let somaMeses = 0;
+  let totalComMeses = 0;
+  const contagemEmpresas = new Map<string, number>();
+
+  for (const l of linhasPessoa) {
+    const proventos = Number(l.proventos ?? 0);
+    const descontos = Number(l.descontos ?? 0);
+    const saldo = proventos - descontos;
+    if (saldo >= LIMITE_VIABILIDADE_PADRAO) {
+      viaveis++;
+    }
+    const meses = Number(l.competencias ?? 0);
+    if (meses > 0) {
+      somaMeses += meses;
+      totalComMeses++;
+    }
+    const emp = rotuloEmpresaModelo(l.empresa);
+    contagemEmpresas.set(emp, (contagemEmpresas.get(emp) ?? 0) + 1);
+  }
+
+  let empresaMax = "—";
+  let qtdMax = 0;
+  for (const [emp, qtd] of contagemEmpresas.entries()) {
+    if (qtd > qtdMax && emp !== "(sem empresa/modelo)") {
+      empresaMax = emp;
+      qtdMax = qtd;
+    }
+  }
+  if (empresaMax === "—" && contagemEmpresas.size > 0) {
+    const first = contagemEmpresas.entries().next().value;
+    if (first) {
+      empresaMax = first[0];
+      qtdMax = first[1];
+    }
+  }
+
+  const percentual = linhasPessoa.length > 0 ? Math.round((viaveis / linhasPessoa.length) * 100) : 0;
+  const lastroMedio = totalComMeses > 0 ? Math.round(somaMeses / totalComMeses) : 0;
+
+  return {
+    clientesElegiveis: total,
+    acoesViaveis: viaveis,
+    percentualViaveis: percentual,
+    lastroMedioMeses: lastroMedio,
+    empresaPredominante: empresaMax,
+    empresaPredominanteQtd: qtdMax,
+  };
 }

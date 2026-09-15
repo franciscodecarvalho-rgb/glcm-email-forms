@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Filter, Loader2, RotateCcw, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  Calendar,
+  Check,
+  ChevronDown,
+  Filter,
+  Layers,
+  Loader2,
+  RotateCcw,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -8,12 +21,15 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
+  acaoViavel,
+  calcularMetricasGestao,
   chaveEmpresa,
   chaveRubrica,
   consolidarTotais,
@@ -21,7 +37,7 @@ import {
   empresasPorOrigem,
   FILTROS_INICIAIS,
   formatarMoeda,
-  
+  LIMITE_VIABILIDADE_PADRAO,
   montarRubricasPayload,
   montarTemasPayload,
   normalizarCompetenciaFiltro,
@@ -45,13 +61,13 @@ import {
   type TotaisFonte,
 } from "@/lib/relatorios";
 
-type Visao = "tema" | "pessoa" | "empresa" | "rubrica";
+type Visao = "pessoa" | "tema" | "empresa" | "rubrica";
 
 type Linha = Record<string, unknown> & { origem?: OrigemRelatorio };
 
 type Fonte<T> = { estado: EstadoFonte; motivo?: string; dados: T[] };
 
-export const PAGINA = 25;
+export const PAGINA = 50;
 export const LANCAMENTOS_POR_PAGINA = 50;
 
 const rpc = supabase as unknown as {
@@ -61,9 +77,7 @@ const rpc = supabase as unknown as {
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
 };
 
-// A ponte histórica valida o token de sessão no Auth do aplicativo e confere o
-// papel do usuário. Ela é chamada diretamente porque o projeto do aplicativo
-// não concede a esta conta permissão de publicação de Edge Functions.
+// A ponte histórica valida o token de sessão no Auth do aplicativo e confere o papel do usuário.
 const HISTORICO_PONTE_URL = "https://pcquefluiltrvwjpndvw.supabase.co/functions/v1/relatorios-ponte";
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0) || 0);
@@ -95,8 +109,18 @@ async function consultarHistorico<T>(acao: string, body: Record<string, unknown>
     return { estado: "erro", motivo: "Não foi possível conectar à base histórica.", dados: [] };
   }
 
-  const r = (await resposta.json().catch(() => null)) as { disponivel?: boolean; motivo?: string; dados?: T[]; error?: string } | null;
-  if (!resposta.ok) return { estado: "erro", motivo: r?.motivo ?? r?.error ?? `Consulta histórica indisponível (${resposta.status}).`, dados: [] };
+  const r = (await resposta.json().catch(() => null)) as {
+    disponivel?: boolean;
+    motivo?: string;
+    dados?: T[];
+    error?: string;
+  } | null;
+  if (!resposta.ok)
+    return {
+      estado: "erro",
+      motivo: r?.motivo ?? r?.error ?? `Consulta histórica indisponível (${resposta.status}).`,
+      dados: [],
+    };
   if (!r?.disponivel) return { estado: "indisponivel", motivo: r?.motivo, dados: [] };
   return { estado: "ok", dados: r.dados ?? [] };
 }
@@ -106,13 +130,20 @@ export default function Relatorios() {
   const [temasEstado, setTemasEstado] = useState<"carregando" | "ok" | "erro">("carregando");
   const [rascunho, setRascunho] = useState<FiltrosRelatorio>({ ...FILTROS_INICIAIS });
   const [filtros, setFiltros] = useState<FiltrosRelatorio>({ ...FILTROS_INICIAIS });
-  const [visao, setVisao] = useState<Visao>("tema");
+  const [visao, setVisao] = useState<Visao>("pessoa");
   const [pagina, setPagina] = useState(0);
   const [carregando, setCarregando] = useState(false);
 
+  // Combobox popovers
+  const [popoverTemasAberto, setPopoverTemasAberto] = useState(false);
+  const [buscaTemaPopover, setBuscaTemaPopover] = useState("");
+  const [popoverEmpresasAberto, setPopoverEmpresasAberto] = useState(false);
   const [buscaEmpresa, setBuscaEmpresa] = useState("");
   const [opcoesEmpresa, setOpcoesEmpresa] = useState<Fonte<EmpresaSelecionada>>({ estado: "ok", dados: [] });
   const [buscandoEmpresas, setBuscandoEmpresas] = useState(false);
+
+  // Busca rápida na tabela de clientes
+  const [buscaClienteLocal, setBuscaClienteLocal] = useState("");
 
   const [totais, setTotais] = useState<Record<OrigemRelatorio, Fonte<Record<string, unknown>>>>({
     casos: { estado: "ok", dados: [] },
@@ -123,16 +154,17 @@ export default function Relatorios() {
     historico: { estado: "ok", dados: [] },
   });
 
-  const [pessoaAberta, setPessoaAberta] = useState<{ id: string; nome: string; origem: OrigemRelatorio } | null>(null);
+  // Modal de detalhamento e totalização por tema
+  const [pessoaAberta, setPessoaAberta] = useState<{
+    id: string;
+    nome: string;
+    origem: OrigemRelatorio;
+    temaDestaque?: string;
+  } | null>(null);
   const [lancamentos, setLancamentos] = useState<Fonte<Linha>>({ estado: "ok", dados: [] });
   const [paginaLancamentos, setPaginaLancamentos] = useState(0);
   const [carregandoLancamentos, setCarregandoLancamentos] = useState(false);
 
-  /**
-   * Descarte de respostas antigas: cada consulta recebe um número de série e
-   * só grava o resultado se ainda for a consulta mais recente. Sem isso, trocar
-   * de aba, de página ou de pessoa rapidamente pode exibir o resultado anterior.
-   */
   const serieLista = useRef(0);
   const serieLancamentos = useRef(0);
 
@@ -198,7 +230,13 @@ export default function Relatorios() {
             ? "relatorio_por_empresa"
             : "relatorio_rubricas";
     const acaoVisao =
-      visao === "tema" ? "totais_tema" : visao === "pessoa" ? "por_pessoa" : visao === "empresa" ? "por_empresa" : "rubricas";
+      visao === "tema"
+        ? "totais_tema"
+        : visao === "pessoa"
+          ? "por_pessoa"
+          : visao === "empresa"
+            ? "por_empresa"
+            : "rubricas";
     const paginacao = visao === "tema" ? {} : { p_limit: PAGINA, p_offset: pagina * PAGINA };
     const paginacaoHist = visao === "tema" ? {} : { limit: PAGINA, offset: pagina * PAGINA };
 
@@ -230,7 +268,11 @@ export default function Relatorios() {
           })
         : Promise.resolve({ estado: "ok" as const, dados: [] }),
       usaHistorico
-        ? consultarHistorico<Record<string, unknown>>("opcoes_empresa", { busca: buscaEmpresa.trim() || null, limit: 50, offset: 0 })
+        ? consultarHistorico<Record<string, unknown>>("opcoes_empresa", {
+            busca: buscaEmpresa.trim() || null,
+            limit: 50,
+            offset: 0,
+          })
         : Promise.resolve({ estado: "ok" as const, dados: [] }),
     ]);
     const opcoes: EmpresaSelecionada[] = [
@@ -275,13 +317,40 @@ export default function Relatorios() {
 
   const linhasVisiveis = useMemo(() => {
     const saida: (Linha & { origem: OrigemRelatorio })[] = [];
-    if (usaCasos && linhas.casos.estado === "ok") saida.push(...linhas.casos.dados.map((d) => ({ ...d, origem: "casos" as const })));
+    if (usaCasos && linhas.casos.estado === "ok")
+      saida.push(...linhas.casos.dados.map((d) => ({ ...d, origem: "casos" as const })));
     if (usaHistorico && linhas.historico.estado === "ok")
       saida.push(...linhas.historico.dados.map((d) => ({ ...d, origem: "historico" as const })));
     return saida;
   }, [linhas, usaCasos, usaHistorico]);
 
-  /** A próxima página só existe enquanto alguma fonte tiver mais linhas do que já foram percorridas. */
+  // Linhas filtradas localmente pela busca rápida do cliente
+  const linhasFiltradasLocal = useMemo(() => {
+    if (!buscaClienteLocal.trim()) return linhasVisiveis;
+    const q = buscaClienteLocal.toLowerCase().trim();
+    return linhasVisiveis.filter((l) => {
+      const nome = rotuloPessoa(txt(l.pessoa_nome)).toLowerCase();
+      const cpf = txt(l.pessoa_cpf)?.replace(/\D/g, "") ?? "";
+      const emp = rotuloEmpresaModelo(txt(l.empresa) ?? txt(l.empresa_nome)).toLowerCase();
+      return nome.includes(q) || cpf.includes(q) || emp.includes(q);
+    });
+  }, [linhasVisiveis, buscaClienteLocal]);
+
+  // Cálculo das 4 métricas de gestão aprovadas por Ana e Nodley
+  const metricasGestao = useMemo(() => {
+    const dadosParaMetricas = (
+      linhas.casos.dados.length > 0 ? linhas.casos.dados : linhas.historico.dados
+    ) as Array<{
+      pessoa_cpf?: string | null;
+      empresa?: string | null;
+      competencias?: number | null;
+      proventos?: number | null;
+      descontos?: number | null;
+    }>;
+    const totalPessoasBase = subtotais.somaSimples.pessoas;
+    return calcularMetricasGestao(dadosParaMetricas, totalPessoasBase);
+  }, [linhas, subtotais]);
+
   const proximaDisponivel = useMemo(() => {
     if (visao === "tema") return false;
     const totaisFonte = [
@@ -296,7 +365,8 @@ export default function Relatorios() {
     const checar = (origem: OrigemRelatorio, f: Fonte<unknown>) => {
       if (f.estado === "indisponivel")
         lista.push(`${ROTULO_ORIGEM[origem]}: consulta não realizada. ${f.motivo ?? ""}`.trim());
-      if (f.estado === "erro") lista.push(`${ROTULO_ORIGEM[origem]}: falha na consulta. ${f.motivo ?? ""}`.trim());
+      if (f.estado === "erro")
+        lista.push(`${ROTULO_ORIGEM[origem]}: falha na consulta. ${f.motivo ?? ""}`.trim());
     };
     if (usaCasos) {
       checar("casos", totais.casos);
@@ -312,9 +382,12 @@ export default function Relatorios() {
   const aplicar = () => {
     const de = normalizarCompetenciaFiltro(rascunho.de);
     const ate = normalizarCompetenciaFiltro(rascunho.ate);
-    if (rascunho.de && !competenciaValida(rascunho.de)) return toast.error("Período inicial deve estar no formato MM/AAAA");
-    if (rascunho.ate && !competenciaValida(rascunho.ate)) return toast.error("Período final deve estar no formato MM/AAAA");
-    if (!periodoCoerente(de, ate)) return toast.error("O período inicial não pode ser posterior ao final");
+    if (rascunho.de && !competenciaValida(rascunho.de))
+      return toast.error("Período inicial deve estar no formato MM/AAAA");
+    if (rascunho.ate && !competenciaValida(rascunho.ate))
+      return toast.error("Período final deve estar no formato MM/AAAA");
+    if (!periodoCoerente(de, ate))
+      return toast.error("O período inicial não pode ser posterior ao final");
     setPagina(0);
     setFiltros({ ...rascunho, de, ate });
   };
@@ -322,11 +395,17 @@ export default function Relatorios() {
   const limpar = () => {
     setRascunho({ ...FILTROS_INICIAIS });
     setBuscaEmpresa("");
+    setBuscaClienteLocal("");
     setPagina(0);
     setFiltros({ ...FILTROS_INICIAIS });
   };
 
-  /** Seleção de rubrica sempre pela combinação exata exibida na visão "Por rubrica". */
+  const alternarOrigemAba = (novaOrigem: OrigemRelatorio) => {
+    setRascunho((p) => ({ ...p, origem: novaOrigem }));
+    setFiltros((p) => ({ ...p, origem: novaOrigem }));
+    setPagina(0);
+  };
+
   const alternarRubrica = (r: RubricaSelecionada) => {
     const k = chaveRubrica(r);
     setRascunho((p) => ({
@@ -337,7 +416,6 @@ export default function Relatorios() {
     }));
   };
 
-  /** Empresa é sempre escolhida na lista vinda do servidor, pelo identificador da própria origem. */
   const alternarEmpresa = (e: EmpresaSelecionada) => {
     const k = chaveEmpresa(e);
     setRascunho((p) => ({
@@ -347,6 +425,27 @@ export default function Relatorios() {
         : [...p.empresas, e],
     }));
   };
+
+  const alternarTema = (nome: string) => {
+    setRascunho((p) => ({
+      ...p,
+      temas: p.temas.includes(nome) ? p.temas.filter((t) => t !== nome) : [...p.temas, nome],
+    }));
+  };
+
+  const marcarTodosTemas = () => {
+    setRascunho((p) => ({ ...p, temas: temas.map((t) => t.nome) }));
+  };
+
+  const limparTemas = () => {
+    setRascunho((p) => ({ ...p, temas: [] }));
+  };
+
+  const temasFiltradosPopover = useMemo(() => {
+    if (!buscaTemaPopover.trim()) return temas;
+    const q = buscaTemaPopover.toLowerCase().trim();
+    return temas.filter((t) => t.nome.toLowerCase().includes(q));
+  }, [temas, buscaTemaPopover]);
 
   const carregarLancamentos = useCallback(
     async (pessoa: { id: string; origem: OrigemRelatorio }, pag: number) => {
@@ -374,8 +473,13 @@ export default function Relatorios() {
     [payload, corpoHistorico],
   );
 
-  const abrirPessoa = async (id: string, nome: string, origem: OrigemRelatorio) => {
-    setPessoaAberta({ id, nome, origem });
+  const abrirPessoa = async (
+    id: string,
+    nome: string,
+    origem: OrigemRelatorio,
+    temaDestaque?: string,
+  ) => {
+    setPessoaAberta({ id, nome, origem, temaDestaque });
     setPaginaLancamentos(0);
     setLancamentos({ estado: "ok", dados: [] });
     await carregarLancamentos({ id, origem }, 0);
@@ -387,317 +491,628 @@ export default function Relatorios() {
     await carregarLancamentos(pessoaAberta, pag);
   };
 
-  const alternarTema = (nome: string) => {
-    setRascunho((p) => ({
-      ...p,
-      temas: p.temas.includes(nome) ? p.temas.filter((t) => t !== nome) : [...p.temas, nome],
-    }));
-  };
-
   const proximaLancamentos = temProximaPagina(paginaLancamentos, LANCAMENTOS_POR_PAGINA, [
     lancamentos.estado === "ok" ? totalLinhas(lancamentos.dados) : 0,
   ]);
 
+  // Totalização do tema selecionado para o modal
+  const resumoTemaDestaque = useMemo(() => {
+    if (!pessoaAberta?.temaDestaque || lancamentos.dados.length === 0) return null;
+    const temaAlvo = pessoaAberta.temaDestaque.toLowerCase();
+    const termoTema = temas.find((t) => t.nome === pessoaAberta.temaDestaque)?.termos ?? [temaAlvo];
+
+    const itensDoTema = lancamentos.dados.filter((l) => {
+      const desc = txt(l.descricao)?.toLowerCase() ?? "";
+      return termoTema.some((termo) => desc.includes(termo.toLowerCase().trim()));
+    });
+
+    const itens = itensDoTema.length > 0 ? itensDoTema : lancamentos.dados;
+    let proventos = 0;
+    let descontos = 0;
+    const comps = new Set<string>();
+
+    for (const item of itens) {
+      const v = num(item.valor);
+      if (item.tipo === "provento") proventos += v;
+      if (item.tipo === "desconto") descontos += v;
+      if (item.competencia) comps.add(String(item.competencia));
+    }
+
+    const saldo = proventos - descontos;
+    const meses = comps.size || 1;
+    const mediaMensal = saldo / meses;
+    const viavel = acaoViavel(saldo);
+
+    return {
+      nomeTema: pessoaAberta.temaDestaque,
+      saldo,
+      proventos,
+      descontos,
+      meses,
+      mediaMensal,
+      viavel,
+    };
+  }, [pessoaAberta, lancamentos, temas]);
+
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-muted/20">
       <AppHeader />
-      <main className="container py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight">Relatórios por tema</h1>
-          <p className="text-sm text-muted-foreground">
-            Os termos vêm do cadastro de Temas e valem para as duas fontes. Cada fonte é somada separadamente.
-          </p>
+      <main className="container max-w-7xl py-8">
+        {/* CABEÇALHO DA PÁGINA COM SELETOR DE ORIGEM (SHADCN TABS) */}
+        <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Relatórios por tema</h1>
+            <p className="text-sm text-muted-foreground">
+              Visão consolidada de direitos dos clientes por teses jurídicas. Somente dados{" "}
+              <strong>válidos e deduplicados</strong>.
+            </p>
+          </div>
+
+          {/* SELETOR SEGMENTADO: CASOS DO APLICATIVO vs BASE HISTÓRICA */}
+          <div className="inline-flex rounded-lg border bg-muted p-1">
+            <button
+              type="button"
+              onClick={() => alternarOrigemAba("casos")}
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                filtros.origem === "casos"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>📁</span> Casos do aplicativo
+            </button>
+            <button
+              type="button"
+              onClick={() => alternarOrigemAba("historico")}
+              className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                filtros.origem === "historico"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>🏛️</span> Base histórica
+            </button>
+          </div>
         </div>
 
-        <Card className="mb-6">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Filter className="h-4 w-4" /> Filtros
+        {/* 1. PAINEL DE FILTROS (OPÇÃO 1: COMBOBOX ESCALÁVEL PARA 300+ TEMAS) */}
+        <Card className="mb-6 shadow-sm">
+          <CardHeader className="border-b pb-3 pt-4">
+            <CardTitle className="flex items-center justify-between text-sm font-semibold">
+              <span className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-primary" /> Filtros de Pesquisa
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
+                {filtros.origem === "casos" ? "Base ativa do aplicativo" : "Consulta da base histórica"}
+              </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="mb-2 block">Temas</Label>
-              <div className="flex flex-wrap gap-2">
-                {temasEstado === "carregando" && <span className="text-sm text-muted-foreground">Carregando temas…</span>}
-                {temasEstado === "erro" && (
-                  <span className="text-sm text-destructive">
-                    Não foi possível carregar os temas. Isto é uma falha de consulta, não ausência de cadastro.
-                  </span>
-                )}
-                {temasEstado === "ok" && temas.length === 0 && (
-                  <span className="text-sm text-muted-foreground">Nenhum tema ativo cadastrado.</span>
-                )}
-                {temas.map((t) => (
+          <CardContent className="space-y-4 pt-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* COMBOBOX OPÇÃO 1: TEMAS JURÍDICOS (MULTI-SELECT ESCALÁVEL 3 A 300+ TEMAS) */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">Temas Jurídicos</Label>
+                <Popover open={popoverTemasAberto} onOpenChange={setPopoverTemasAberto}>
+                  <PopoverTrigger asChild>
+                    <div className="flex min-h-[40px] w-full cursor-pointer items-center justify-between rounded-md border bg-background px-3 py-1.5 text-sm hover:bg-accent/5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {rascunho.temas.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">Todos os temas ativos</span>
+                        ) : rascunho.temas.length <= 2 ? (
+                          rascunho.temas.map((t) => (
+                            <Badge key={t} variant="secondary" className="gap-1 py-0 text-xs">
+                              {t}
+                              <X
+                                className="h-3 w-3 cursor-pointer hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  alternarTema(t);
+                                }}
+                              />
+                            </Badge>
+                          ))
+                        ) : (
+                          <>
+                            <Badge variant="secondary" className="gap-1 py-0 text-xs">
+                              {rascunho.temas[0]}
+                              <X
+                                className="h-3 w-3 cursor-pointer hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  alternarTema(rascunho.temas[0]);
+                                }}
+                              />
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              +{rascunho.temas.length - 1} selecionados
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground opacity-50" />
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-3" align="start">
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="🔍 Buscar entre os temas..."
+                        value={buscaTemaPopover}
+                        onChange={(e) => setBuscaTemaPopover(e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                      <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
+                        {temasFiltradosPopover.length === 0 ? (
+                          <p className="py-4 text-center text-xs text-muted-foreground">Nenhum tema encontrado</p>
+                        ) : (
+                          temasFiltradosPopover.map((t) => {
+                            const selecionado = rascunho.temas.includes(t.nome);
+                            return (
+                              <label
+                                key={t.nome}
+                                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent transition-colors"
+                              >
+                                <Checkbox
+                                  checked={selecionado}
+                                  onCheckedChange={() => alternarTema(t.nome)}
+                                  className="h-4 w-4"
+                                />
+                                <span className="flex-1 font-medium">{t.nome}</span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between border-t pt-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={marcarTodosTemas}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          Selecionar todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={limparTemas}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* COMBOBOX EMPRESAS / EMPREGADOR */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">Empresa / Empregador</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Buscar empresa/modelo..."
+                    value={buscaEmpresa}
+                    onChange={(e) => setBuscaEmpresa(e.target.value)}
+                    className="h-10 text-xs"
+                  />
                   <Button
-                    key={t.nome}
                     type="button"
-                    size="sm"
-                    variant={rascunho.temas.includes(t.nome) ? "default" : "outline"}
-                    onClick={() => alternarTema(t.nome)}
+                    variant="outline"
+                    onClick={() => void buscarEmpresas()}
+                    disabled={buscandoEmpresas}
+                    className="h-10 text-xs shrink-0"
                   >
-                    {t.nome}
+                    {buscandoEmpresas ? <Loader2 className="h-3 w-3 animate-spin" /> : "Buscar"}
                   </Button>
+                </div>
+              </div>
+
+              {/* INTERVALO DE COMPETÊNCIAS MM/AAAA */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-foreground">Período de Competências</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="MM/AAAA"
+                    value={rascunho.de ?? ""}
+                    onChange={(e) => setRascunho((p) => ({ ...p, de: e.target.value }))}
+                    className="h-10 font-mono text-xs"
+                  />
+                  <span className="text-xs text-muted-foreground">até</span>
+                  <Input
+                    placeholder="MM/AAAA"
+                    value={rascunho.ate ?? ""}
+                    onChange={(e) => setRascunho((p) => ({ ...p, ate: e.target.value }))}
+                    className="h-10 font-mono text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* TAGS DE EMPRESAS SELECIONADAS */}
+            {rascunho.empresas.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-xs text-muted-foreground mr-1">Empresas ativas:</span>
+                {rascunho.empresas.map((e) => (
+                  <Badge key={chaveEmpresa(e)} variant="secondary" className="gap-1 py-0 text-xs">
+                    {rotuloEmpresaSelecionada(e)}
+                    <X className="h-3 w-3 cursor-pointer hover:text-destructive" onClick={() => alternarEmpresa(e)} />
+                  </Badge>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Sem seleção, todos os temas ativos são considerados.
-              </p>
-            </div>
+            )}
 
-            <div>
-              <Label className="mb-2 block">Rubricas selecionadas</Label>
-              {rascunho.rubricas.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Nenhuma rubrica selecionada. Na aba “Por rubrica”, clique em “Filtrar” na linha desejada: a seleção usa
-                  a combinação exata de código, descrição, tipo e empresa/modelo, porque o mesmo código aparece em
-                  rubricas diferentes.
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {rascunho.rubricas.map((r) => (
-                    <Button key={chaveRubrica(r)} type="button" size="sm" variant="secondary" onClick={() => alternarRubrica(r)}>
-                      {rotuloRubrica(r)} ✕
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <Label className="mb-2 block" htmlFor="rel-busca-empresa">Empresa/modelo</Label>
+            {/* BOTÕES DE AÇÃO */}
+            <div className="flex items-center justify-between border-t pt-3">
               <div className="flex gap-2">
-                <Input
-                  id="rel-busca-empresa"
-                  placeholder="Buscar empresa/modelo"
-                  value={buscaEmpresa}
-                  onChange={(e) => setBuscaEmpresa(e.target.value)}
-                />
-                <Button type="button" variant="outline" onClick={() => void buscarEmpresas()} disabled={buscandoEmpresas}>
-                  Buscar
+                <Button onClick={aplicar} disabled={carregando} size="sm">
+                  {carregando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                  Filtrar
+                </Button>
+                <Button variant="outline" onClick={limpar} disabled={carregando} size="sm">
+                  <RotateCcw className="mr-2 h-4 w-4" /> Limpar
                 </Button>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                A lista vem do servidor. Nos casos do aplicativo a opção é o modelo de leitura do contracheque; na base
-                histórica é a empresa cadastrada, identificada pelo seu registro e não apenas pelo nome.
-              </p>
-              {rascunho.empresas.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {rascunho.empresas.map((e) => (
-                    <Button key={chaveEmpresa(e)} type="button" size="sm" variant="secondary" onClick={() => alternarEmpresa(e)}>
-                      {rotuloEmpresaSelecionada(e)} ✕
-                    </Button>
-                  ))}
-                </div>
-              )}
-              <div className="mt-2 flex flex-wrap gap-2">
-                {buscandoEmpresas && <span className="text-sm text-muted-foreground">Buscando…</span>}
-                {!buscandoEmpresas && opcoesEmpresa.estado !== "ok" && (
-                  <span className="text-sm text-destructive">
-                    Lista de empresas indisponível nesta consulta. {opcoesEmpresa.motivo ?? ""}
-                  </span>
-                )}
-                {!buscandoEmpresas && opcoesEmpresa.estado === "ok" && opcoesEmpresa.dados.length === 0 && (
-                  <span className="text-sm text-muted-foreground">Nenhuma opção encontrada para esta busca.</span>
-                )}
-                {!buscandoEmpresas &&
-                  opcoesEmpresa.estado === "ok" &&
-                  opcoesEmpresa.dados.map((o) => (
-                    <Button
-                      key={chaveEmpresa(o)}
-                      type="button"
-                      size="sm"
-                      variant={rascunho.empresas.some((x) => chaveEmpresa(x) === chaveEmpresa(o)) ? "default" : "outline"}
-                      onClick={() => alternarEmpresa(o)}
-                    >
-                      {rotuloEmpresaSelecionada(o)}
-                    </Button>
-                  ))}
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-1">
-                <Label htmlFor="rel-de">Período inicial</Label>
-                <Input id="rel-de" placeholder="MM/AAAA" value={rascunho.de ?? ""} onChange={(e) => setRascunho((p) => ({ ...p, de: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="rel-ate">Período final</Label>
-                <Input id="rel-ate" placeholder="MM/AAAA" value={rascunho.ate ?? ""} onChange={(e) => setRascunho((p) => ({ ...p, ate: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Origem</Label>
-                <Select value={rascunho.origem} onValueChange={(v) => setRascunho((p) => ({ ...p, origem: v as EscopoOrigem }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ambas">Ambas as fontes</SelectItem>
-                    <SelectItem value="casos">Casos do aplicativo</SelectItem>
-                    <SelectItem value="historico">Base histórica</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={aplicar} disabled={carregando}>
-                {carregando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                Aplicar filtros
-              </Button>
-              <Button variant="outline" onClick={limpar} disabled={carregando}>
-                <RotateCcw className="mr-2 h-4 w-4" />Limpar
-              </Button>
+              <span className="text-xs text-muted-foreground">
+                {filtros.temas.length === 0 ? "Todos os temas" : `${filtros.temas.length} temas selecionados`}
+              </span>
             </div>
           </CardContent>
         </Card>
 
+        {/* MENSAGENS E ALERTAS DE FONTE (APENAS QUANDO A FONTE ATIVA TEM PROBLEMA REAL) */}
         {avisos.length > 0 && (
           <div className="mb-6 space-y-2">
             {avisos.map((a) => (
-              <div key={a} className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <span>{a} Os números abaixo são parciais e não representam o conjunto completo.</span>
+              <div
+                key={a}
+                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{a}</span>
               </div>
             ))}
           </div>
         )}
 
-        <div className="mb-6 grid gap-4 md:grid-cols-2">
-          {subtotais.subtotais.map((s) => (
-            <Card key={s.origem}>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between text-base">
-                  <span>{ROTULO_ORIGEM[s.origem]}</span>
-                  {s.estado !== "ok" && <Badge variant="destructive">sem resposta</Badge>}
-                </CardTitle>
-              </CardHeader>
-              {/* Fonte sem resposta não exibe zero: zero seria lido como "não há dados". */}
-              {s.estado !== "ok" ? (
-                <CardContent className="text-sm text-muted-foreground">
-                  {s.estado === "indisponivel"
-                    ? "Consulta não realizada nesta fonte. Os valores não foram apurados e não são zero."
-                    : "Falha ao consultar esta fonte. Os valores não foram apurados e não são zero."}
-                </CardContent>
-              ) : (
-                <CardContent className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className="text-muted-foreground">Itens: </span>{s.totais.itens}</div>
-                  <div><span className="text-muted-foreground">Pessoas: </span>{s.totais.pessoas}</div>
-                  <div><span className="text-muted-foreground">Proventos: </span>{formatarMoeda(s.totais.proventos)}</div>
-                  <div><span className="text-muted-foreground">Descontos: </span>{formatarMoeda(s.totais.descontos)}</div>
-                </CardContent>
-              )}
-            </Card>
-          ))}
+        {/* 2. CARDS DE GESTÃO APROVADOS POR ANA E NODLEY (FOCO EM VIABILIDADE & CARTEIRA) */}
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* CARD 1: CLIENTES ELEGÍVEIS */}
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                <span>Clientes Elegíveis</span>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {metricasGestao.clientesElegiveis}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Identificados com CPF e dados válidos</p>
+            </CardContent>
+          </Card>
+
+          {/* CARD 2: AÇÕES VIÁVEIS (SUPERAM R$ 15.000,00) */}
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                <span>Ações Viáveis</span>
+                <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                  {metricasGestao.percentualViaveis}% da Carteira
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {metricasGestao.acoesViaveis} Clientes
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Superam a linha de corte (R$ 15.000,00)</p>
+            </CardContent>
+          </Card>
+
+          {/* CARD 3: LASTRO MÉDIO DE FOLHAS */}
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                <span>Lastro Médio de Folhas</span>
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <div className="text-2xl font-bold tracking-tight text-foreground">
+                {metricasGestao.lastroMedioMeses} meses
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Média de holerites apurados por cliente</p>
+            </CardContent>
+          </Card>
+
+          {/* CARD 4: EMPRESA PREDOMINANTE */}
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-2 pt-4">
+              <CardTitle className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                <span>Empresa Predominante</span>
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <div className="truncate text-2xl font-bold tracking-tight text-foreground">
+                {metricasGestao.empresaPredominante}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {metricasGestao.empresaPredominanteQtd > 0
+                  ? `${metricasGestao.empresaPredominanteQtd} dos ${metricasGestao.clientesElegiveis} clientes apurados`
+                  : "Nenhuma empresa apurada"}
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
-        {subtotais.sobreposicaoNaoValidada && (
-          <div className="mb-6 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-            <strong>Soma simples das duas fontes:</strong> {formatarMoeda(subtotais.somaSimples.proventos)} em proventos e{" "}
-            {formatarMoeda(subtotais.somaSimples.descontos)} em descontos. Este número é apenas a adição dos subtotais; a
-            mesma pessoa pode existir nas duas bases e a sobreposição ainda não foi conferida, portanto não é um total único.
-          </div>
-        )}
+        {/* 3. VISÃO PRINCIPAL DA TABELA: HIERARQUIA DE CLIENTE */}
+        <Card className="shadow-sm">
+          <CardHeader className="border-b pb-3 pt-4">
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+              <div>
+                <CardTitle className="text-base font-semibold text-foreground">
+                  Clientes por Temas Jurídicos
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Clique sobre o cliente ou sobre um tema específico para totalizar a ação
+                </p>
+              </div>
 
-        <Tabs value={visao} onValueChange={(v) => { setVisao(v as Visao); setPagina(0); }}>
-          <TabsList>
-            <TabsTrigger value="tema">Por tema</TabsTrigger>
-            <TabsTrigger value="pessoa">Por pessoa</TabsTrigger>
-            <TabsTrigger value="empresa">Por empresa</TabsTrigger>
-            <TabsTrigger value="rubrica">Por rubrica</TabsTrigger>
-          </TabsList>
+              {/* ABAS SECUNDÁRIAS E BUSCA LOCAL */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  placeholder="Buscar por cliente, CPF ou empresa..."
+                  value={buscaClienteLocal}
+                  onChange={(e) => setBuscaClienteLocal(e.target.value)}
+                  className="h-8 w-60 text-xs"
+                />
 
-          <TabsContent value={visao} className="mt-4">
-            <div className="overflow-x-auto rounded-lg border bg-card">
+                <Tabs
+                  value={visao}
+                  onValueChange={(v) => {
+                    setVisao(v as Visao);
+                    setPagina(0);
+                  }}
+                >
+                  <TabsList className="h-8">
+                    <TabsTrigger value="pessoa" className="text-xs px-2.5">
+                      Por cliente
+                    </TabsTrigger>
+                    <TabsTrigger value="tema" className="text-xs px-2.5">
+                      Por tema
+                    </TabsTrigger>
+                    <TabsTrigger value="empresa" className="text-xs px-2.5">
+                      Por empresa
+                    </TabsTrigger>
+                    <TabsTrigger value="rubrica" className="text-xs px-2.5">
+                      Por rubrica
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Origem</TableHead>
-                    {visao === "tema" && <TableHead>Tema</TableHead>}
+                  <TableRow className="bg-muted/30">
+                    <TableHead className="text-xs font-semibold">Origem</TableHead>
                     {visao === "pessoa" && (
-                      <><TableHead>Pessoa</TableHead><TableHead>CPF</TableHead><TableHead>Identificação</TableHead><TableHead className="text-right">Casos</TableHead></>
+                      <>
+                        <TableHead className="text-xs font-semibold">Cliente</TableHead>
+                        <TableHead className="text-xs font-semibold">CPF</TableHead>
+                        <TableHead className="text-xs font-semibold">Empresa</TableHead>
+                        <TableHead className="text-xs font-semibold">Temas Abrangidos</TableHead>
+                        <TableHead className="text-center text-xs font-semibold">Meses</TableHead>
+                      </>
                     )}
-                    {visao === "empresa" && <><TableHead>Empresa/modelo</TableHead><TableHead>Pessoas</TableHead></>}
+                    {visao === "tema" && <TableHead className="text-xs font-semibold">Tema</TableHead>}
+                    {visao === "empresa" && (
+                      <>
+                        <TableHead className="text-xs font-semibold">Empresa/modelo</TableHead>
+                        <TableHead className="text-xs font-semibold">Pessoas</TableHead>
+                      </>
+                    )}
                     {visao === "rubrica" && (
-                      <><TableHead>Código</TableHead><TableHead>Descrição</TableHead><TableHead>Tipo</TableHead><TableHead>Empresa/modelo</TableHead><TableHead>Filtro</TableHead></>
+                      <>
+                        <TableHead className="text-xs font-semibold">Código</TableHead>
+                        <TableHead className="text-xs font-semibold">Descrição</TableHead>
+                        <TableHead className="text-xs font-semibold">Tipo</TableHead>
+                        <TableHead className="text-xs font-semibold">Empresa/modelo</TableHead>
+                        <TableHead className="text-xs font-semibold">Filtro</TableHead>
+                      </>
                     )}
-                    <TableHead className="text-right">Itens</TableHead>
-                    <TableHead className="text-right">Proventos</TableHead>
-                    <TableHead className="text-right">Descontos</TableHead>
+                    <TableHead className="text-right text-xs font-semibold">Proventos</TableHead>
+                    <TableHead className="text-right text-xs font-semibold">Descontos</TableHead>
+                    {visao === "pessoa" && (
+                      <TableHead className="text-right text-xs font-semibold">Saldo Líquido</TableHead>
+                    )}
+                    <TableHead className="text-center text-xs font-semibold">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {carregando && (
-                    <TableRow><TableCell colSpan={10} className="py-10 text-center text-muted-foreground">Carregando…</TableCell></TableRow>
-                  )}
-                  {!carregando && linhasVisiveis.length === 0 && (
-                    <TableRow><TableCell colSpan={10} className="py-10 text-center text-muted-foreground">Nenhum resultado para os filtros aplicados.</TableCell></TableRow>
-                  )}
-                  {!carregando && linhasVisiveis.map((l, i) => (
-                    <TableRow
-                      key={`${l.origem}-${i}-${txt(l.pessoa_id) ?? txt(l.tema) ?? txt(l.empresa_id) ?? txt(l.codigo)}`}
-                      className={visao === "pessoa" ? "cursor-pointer" : undefined}
-                      onClick={
-                        visao === "pessoa"
-                          ? () => abrirPessoa(txt(l.pessoa_id) ?? "", rotuloPessoa(txt(l.pessoa_nome)), l.origem)
-                          : undefined
-                      }
-                    >
-                      <TableCell><Badge variant="outline">{ROTULO_ORIGEM[l.origem]}</Badge></TableCell>
-                      {visao === "tema" && <TableCell>{txt(l.tema)}</TableCell>}
-                      {visao === "pessoa" && (
-                        <>
-                          <TableCell className="font-medium">{rotuloPessoa(txt(l.pessoa_nome))}</TableCell>
-                          <TableCell>{txt(l.pessoa_cpf) ?? "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {rotuloIdentificacao(txt(l.pessoa_identificacao))}
-                          </TableCell>
-                          <TableCell className="text-right">{num(l.casos)}</TableCell>
-                        </>
-                      )}
-                      {visao === "empresa" && (
-                        <>
-                          <TableCell>{rotuloEmpresaModelo(txt(l.empresa_nome))}</TableCell>
-                          <TableCell>{num(l.pessoas)}</TableCell>
-                        </>
-                      )}
-                      {visao === "rubrica" && (
-                        <>
-                          <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
-                          <TableCell>{txt(l.descricao) ?? "—"}</TableCell>
-                          <TableCell>{txt(l.tipo) ?? "—"}</TableCell>
-                          <TableCell>{rotuloEmpresaModelo(txt(l.empresa))}</TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                alternarRubrica({
-                                  codigo: txt(l.codigo),
-                                  descricao: txt(l.descricao),
-                                  tipo: txt(l.tipo),
-                                  empresa: txt(l.empresa_id) ?? txt(l.empresa),
-                                })
-                              }
-                            >
-                              Filtrar
-                            </Button>
-                          </TableCell>
-                        </>
-                      )}
-                      <TableCell className="text-right">{num(l.itens)}</TableCell>
-                      <TableCell className="text-right">{formatarMoeda(num(l.proventos))}</TableCell>
-                      <TableCell className="text-right">{formatarMoeda(num(l.descontos))}</TableCell>
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-12 text-center text-sm text-muted-foreground">
+                        <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
+                        Carregando registros apurados…
+                      </TableCell>
                     </TableRow>
-                  ))}
+                  )}
+                  {!carregando && linhasFiltradasLocal.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-12 text-center text-sm text-muted-foreground">
+                        Nenhum registro encontrado para os filtros e critérios informados.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!carregando &&
+                    linhasFiltradasLocal.map((l, i) => {
+                      const saldoLiquido = num(l.proventos) - num(l.descontos);
+                      const viavel = acaoViavel(saldoLiquido);
+                      const temasLista = (Array.isArray(l.temas) ? l.temas : []) as string[];
+
+                      return (
+                        <TableRow
+                          key={`${l.origem}-${i}-${txt(l.pessoa_id) ?? txt(l.tema) ?? txt(l.empresa_id) ?? txt(l.codigo)}`}
+                          className={visao === "pessoa" ? "cursor-pointer hover:bg-muted/40 transition-colors" : undefined}
+                          onClick={
+                            visao === "pessoa"
+                              ? () => abrirPessoa(txt(l.pessoa_id) ?? "", rotuloPessoa(txt(l.pessoa_nome)), l.origem)
+                              : undefined
+                          }
+                        >
+                          <TableCell>
+                            <Badge variant="outline" className="text-[11px] font-normal">
+                              {ROTULO_ORIGEM[l.origem]}
+                            </Badge>
+                          </TableCell>
+
+                          {visao === "pessoa" && (
+                            <>
+                              <TableCell>
+                                <div className="font-semibold text-foreground text-sm">
+                                  {rotuloPessoa(txt(l.pessoa_nome))}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {rotuloIdentificacao(txt(l.pessoa_identificacao))}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs text-foreground">
+                                {txt(l.pessoa_cpf) ?? "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="text-xs font-normal">
+                                  {rotuloEmpresaModelo(txt(l.empresa))}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {temasLista.length === 0 && (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                  {temasLista.map((temaNome) => (
+                                    <Badge
+                                      key={temaNome}
+                                      variant="outline"
+                                      className="cursor-pointer border-blue-200 bg-blue-50/70 text-blue-700 hover:bg-blue-100 transition-colors text-[11px]"
+                                      title="Clique para totalizar esta ação especificamente"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        abrirPessoa(
+                                          txt(l.pessoa_id) ?? "",
+                                          rotuloPessoa(txt(l.pessoa_nome)),
+                                          l.origem,
+                                          temaNome,
+                                        );
+                                      }}
+                                    >
+                                      {temaNome} 🔍
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center font-semibold text-xs">
+                                {num(l.competencias) || 1}
+                              </TableCell>
+                            </>
+                          )}
+
+                          {visao === "tema" && (
+                            <TableCell className="font-semibold text-foreground">{txt(l.tema)}</TableCell>
+                          )}
+
+                          {visao === "empresa" && (
+                            <>
+                              <TableCell className="font-medium text-foreground">
+                                {rotuloEmpresaModelo(txt(l.empresa_nome))}
+                              </TableCell>
+                              <TableCell>{num(l.pessoas)}</TableCell>
+                            </>
+                          )}
+
+                          {visao === "rubrica" && (
+                            <>
+                              <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
+                              <TableCell>{txt(l.descricao) ?? "—"}</TableCell>
+                              <TableCell>{txt(l.tipo) ?? "—"}</TableCell>
+                              <TableCell>{rotuloEmpresaModelo(txt(l.empresa))}</TableCell>
+                              <TableCell>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    alternarRubrica({
+                                      codigo: txt(l.codigo),
+                                      descricao: txt(l.descricao),
+                                      tipo: txt(l.tipo),
+                                      empresa: txt(l.empresa_id) ?? txt(l.empresa),
+                                    })
+                                  }
+                                >
+                                  Filtrar
+                                </Button>
+                              </TableCell>
+                            </>
+                          )}
+
+                          <TableCell className="text-right font-mono font-medium text-emerald-600 text-xs">
+                            {formatarMoeda(num(l.proventos))}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium text-destructive text-xs">
+                            {formatarMoeda(num(l.descontos))}
+                          </TableCell>
+
+                          {visao === "pessoa" && (
+                            <TableCell className="text-right font-mono font-bold text-foreground text-xs">
+                              <span className={viavel ? "text-foreground" : "text-muted-foreground"}>
+                                {formatarMoeda(saldoLiquido)}
+                              </span>
+                            </TableCell>
+                          )}
+
+                          <TableCell className="text-center">
+                            {visao === "pessoa" ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                className="h-7 text-xs px-2.5"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirPessoa(txt(l.pessoa_id) ?? "", rotuloPessoa(txt(l.pessoa_nome)), l.origem);
+                                }}
+                              >
+                                Ver Holerites
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{num(l.itens)} itens</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                 </TableBody>
               </Table>
             </div>
 
+            {/* CONTROLE DE PAGINAÇÃO */}
             {visao !== "tema" && (
-              <div className="mt-4 flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Página {pagina + 1} — {PAGINA} linhas por fonte</span>
+              <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
+                <span>
+                  Página {pagina + 1} — exibindo até {PAGINA} linhas por fonte
+                </span>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={pagina === 0 || carregando} onClick={() => setPagina((p) => Math.max(p - 1, 0))}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pagina === 0 || carregando}
+                    onClick={() => setPagina((p) => Math.max(p - 1, 0))}
+                    className="h-8 text-xs"
+                  >
                     Anterior
                   </Button>
                   <Button
@@ -705,15 +1120,17 @@ export default function Relatorios() {
                     size="sm"
                     disabled={carregando || !proximaDisponivel}
                     onClick={() => setPagina((p) => p + 1)}
+                    className="h-8 text-xs"
                   >
                     Próxima
                   </Button>
                 </div>
               </div>
             )}
-          </TabsContent>
-        </Tabs>
+          </CardContent>
+        </Card>
 
+        {/* 4. MODAL DIALOG: LANÇAMENTOS E TOTALIZAÇÃO DA AÇÃO POR CLIENTE */}
         <Dialog
           open={!!pessoaAberta}
           onOpenChange={(o) => {
@@ -725,59 +1142,122 @@ export default function Relatorios() {
             }
           }}
         >
-          <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>
-                Lançamentos — {pessoaAberta?.nome}{" "}
-                <Badge variant="outline">{pessoaAberta ? ROTULO_ORIGEM[pessoaAberta.origem] : ""}</Badge>
-              </DialogTitle>
+              <div className="flex items-center justify-between gap-2 pr-4">
+                <div>
+                  <DialogTitle className="text-lg font-bold text-foreground">
+                    Detalhamento Canônico — {pessoaAberta?.nome}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    Holerites e rubricas estruturadas extraídas dos contracheques originais
+                  </DialogDescription>
+                </div>
+                {pessoaAberta && <Badge variant="outline">{ROTULO_ORIGEM[pessoaAberta.origem]}</Badge>}
+              </div>
             </DialogHeader>
+
+            {/* BANNER DE TOTALIZAÇÃO DO TEMA CLICADO (RESPOSTA DIRETA À PERGUNTA DE ANA) */}
+            {resumoTemaDestaque && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mt-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-primary text-sm">
+                        Totalização da Ação: {resumoTemaDestaque.nomeTema}
+                      </span>
+                      <Badge
+                        variant={resumoTemaDestaque.viavel ? "default" : "secondary"}
+                        className={resumoTemaDestaque.viavel ? "bg-emerald-600 text-white" : ""}
+                      >
+                        {resumoTemaDestaque.viavel ? "VIÁVEL (> R$ 15.000)" : "ABAIXO DO LIMITE"}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Apurado em {resumoTemaDestaque.meses} competências · Média de{" "}
+                      {formatarMoeda(resumoTemaDestaque.mediaMensal)}/mês
+                    </div>
+                  </div>
+                  <div className="sm:text-right">
+                    <div className="text-xs text-muted-foreground">Valor Total do Tema</div>
+                    <div className="text-xl font-bold font-mono text-foreground">
+                      {formatarMoeda(resumoTemaDestaque.saldo)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {carregandoLancamentos ? (
-              <p className="py-8 text-center text-muted-foreground">Carregando…</p>
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
+                Carregando lançamentos canônicos…
+              </div>
             ) : lancamentos.estado !== "ok" ? (
-              <p className="py-8 text-center text-destructive">
+              <p className="py-8 text-center text-destructive text-sm">
                 Não foi possível carregar os lançamentos desta pessoa. {lancamentos.motivo ?? ""}
               </p>
             ) : lancamentos.dados.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">Nenhum lançamento para os filtros aplicados.</p>
+              <p className="py-8 text-center text-muted-foreground text-sm">
+                Nenhum lançamento registrado para os filtros aplicados.
+              </p>
             ) : (
-              <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Competência</TableHead>
-                      <TableHead>Código</TableHead>
-                      <TableHead>Descrição</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                      <TableHead>Caso</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lancamentos.dados.map((l, i) => (
-                      <TableRow key={txt(l.item_id) ?? i}>
-                        <TableCell>{txt(l.competencia) ?? "—"}</TableCell>
-                        <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
-                        <TableCell>{txt(l.descricao) ?? "—"}</TableCell>
-                        <TableCell>{txt(l.tipo) ?? "—"}</TableCell>
-                        <TableCell className="text-right">{formatarMoeda(num(l.valor))}</TableCell>
-                        <TableCell>
-                          {txt(l.caso_id) ? (
-                            <Link className="text-primary underline" to={`/casos/${txt(l.caso_id)}`} onClick={(e) => e.stopPropagation()}>
-                              abrir
-                            </Link>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
+              <div className="space-y-4 pt-2">
+                <div className="overflow-x-auto rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30">
+                        <TableHead className="text-xs">Competência</TableHead>
+                        <TableHead className="text-xs">Código</TableHead>
+                        <TableHead className="text-xs">Descrição</TableHead>
+                        <TableHead className="text-xs">Tipo</TableHead>
+                        <TableHead className="text-right text-xs">Valor</TableHead>
+                        <TableHead className="text-center text-xs">Caso</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                <div className="flex items-center justify-between pt-2">
-                  <span className="text-sm text-muted-foreground">
-                    Página {paginaLancamentos + 1} de {Math.max(Math.ceil(totalLinhas(lancamentos.dados) / LANCAMENTOS_POR_PAGINA), 1)} —{" "}
-                    {totalLinhas(lancamentos.dados)} lançamentos
+                    </TableHeader>
+                    <TableBody>
+                      {lancamentos.dados.map((l, i) => (
+                        <TableRow key={txt(l.item_id) ?? i}>
+                          <TableCell className="font-mono text-xs">{txt(l.competencia) ?? "—"}</TableCell>
+                          <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
+                          <TableCell className="text-xs font-medium">{txt(l.descricao) ?? "—"}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={l.tipo === "provento" ? "outline" : "secondary"}
+                              className={`text-[10px] ${
+                                l.tipo === "provento" ? "text-emerald-700 border-emerald-300" : "text-destructive"
+                              }`}
+                            >
+                              {txt(l.tipo) ?? "—"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs font-semibold">
+                            {formatarMoeda(num(l.valor))}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {txt(l.caso_id) ? (
+                              <Link
+                                className="text-xs text-primary underline hover:text-primary/80"
+                                to={`/casos/${txt(l.caso_id)}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Abrir caso
+                              </Link>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+                  <span>
+                    Página {paginaLancamentos + 1} de{" "}
+                    {Math.max(Math.ceil(totalLinhas(lancamentos.dados) / LANCAMENTOS_POR_PAGINA), 1)} —{" "}
+                    {totalLinhas(lancamentos.dados)} lançamentos apurados
                   </span>
                   <div className="flex gap-2">
                     <Button
@@ -785,6 +1265,7 @@ export default function Relatorios() {
                       size="sm"
                       disabled={paginaLancamentos === 0 || carregandoLancamentos}
                       onClick={() => void irParaPaginaLancamentos(Math.max(paginaLancamentos - 1, 0))}
+                      className="h-8 text-xs"
                     >
                       Anterior
                     </Button>
@@ -793,12 +1274,13 @@ export default function Relatorios() {
                       size="sm"
                       disabled={carregandoLancamentos || !proximaLancamentos}
                       onClick={() => void irParaPaginaLancamentos(paginaLancamentos + 1)}
+                      className="h-8 text-xs"
                     >
                       Próxima
                     </Button>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </DialogContent>
         </Dialog>

@@ -21,6 +21,8 @@ import {
   temProximaPagina,
   totalLinhas,
   TOTAIS_ZERADOS,
+  acaoViavel,
+  calcularMetricasGestao,
   type ResultadoFonte,
 } from "./relatorios";
 
@@ -203,5 +205,39 @@ describe("competência aceita MM/AAAA e AAAA-MM", () => {
     expect(chaveCompetencia("2023-04")).toBe("202304");
     expect(periodoCoerente("2023-04", "12/2023")).toBe(true);
     expect(periodoCoerente("12/2023", "2023-04")).toBe(false);
+  });
+});
+
+describe("métricas de gestão e viabilidade de ações", () => {
+  it("avalia viabilidade contra o limite padrão de R$ 15.000", () => {
+    expect(acaoViavel(15000)).toBe(true);
+    expect(acaoViavel(330659.86)).toBe(true);
+    expect(acaoViavel(14999.99)).toBe(false);
+    expect(acaoViavel(0)).toBe(false);
+    expect(acaoViavel(-500)).toBe(false);
+  });
+
+  it("calcula metricas de carteira, lastro e empresa predominante", () => {
+    const clientes = [
+      { pessoa_cpf: "21548912544", empresa: "Petrobras", competencias: 48, proventos: 369109.98, descontos: 38450.12 },
+      { pessoa_cpf: "11488231500", empresa: "BASF", competencias: 36, proventos: 214800, descontos: 12100.5 },
+      { pessoa_cpf: "33190281277", empresa: "Petrobras", competencias: 42, proventos: 14000, descontos: 0 },
+    ];
+    const metricas = calcularMetricasGestao(clientes, 3);
+    expect(metricas.clientesElegiveis).toBe(3);
+    expect(metricas.acoesViaveis).toBe(2); // cliente 1 e 2 superam 15k, cliente 3 tem 14k
+    expect(metricas.percentualViaveis).toBe(67); // 2/3 = 67%
+    expect(metricas.lastroMedioMeses).toBe(42); // (48+36+42)/3 = 42
+    expect(metricas.empresaPredominante).toBe("Petrobras");
+    expect(metricas.empresaPredominanteQtd).toBe(2);
+  });
+
+  it("trata lista vazia de clientes sem falhar", () => {
+    const metricas = calcularMetricasGestao([], 0);
+    expect(metricas.clientesElegiveis).toBe(0);
+    expect(metricas.acoesViaveis).toBe(0);
+    expect(metricas.percentualViaveis).toBe(0);
+    expect(metricas.lastroMedioMeses).toBe(0);
+    expect(metricas.empresaPredominante).toBe("—");
   });
 });

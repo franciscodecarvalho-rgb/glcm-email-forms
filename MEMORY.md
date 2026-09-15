@@ -17,6 +17,7 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
   separadamente e só é implementada com autorização explícita.
 - Ao alterar o MEMORY.md, sincronizar automaticamente o `.claude/CLAUDE.md`
   (cópia espelho), sem solicitar permissão.
+- Quando ocorrer a mensagem "Our servers are experiencing high traffic right now, please try again in a minute" ou erro 503, aguardar 2 minutos e tentar efetuar a tarefa automaticamente.
 
 ## Regras confirmadas do projeto
 
