@@ -393,3 +393,50 @@ export function calcularMetricasGestao(
     empresaPredominanteQtd: qtdMax,
   };
 }
+
+/**
+ * Deduplicação canônica de lançamentos (holerites/rubricas):
+ * Garante que lançamentos duplicados por reprocessamento de OCR, múltiplos contracheques
+ * da mesma competência ou duplicidades cartesianas sejam colapsados em um único registro canônico.
+ * Partição canônica: competência + código + tipo + descrição normalizada.
+ */
+export function deduplicarLancamentos<T extends Record<string, unknown>>(itens: T[]): T[] {
+  const vistos = new Map<string, T>();
+
+  for (const item of itens) {
+    const comp = chaveCompetencia(String(item.competencia ?? "")) ?? String(item.competencia ?? "").trim();
+    const cod = String(item.codigo ?? "").trim().toLowerCase();
+    const tipo = String(item.tipo ?? "").trim().toLowerCase();
+    const desc = String(item.descricao ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    const chave = `${comp}|${cod}|${tipo}|${desc}`;
+
+    if (!vistos.has(chave)) {
+      vistos.set(chave, item);
+    }
+  }
+
+  return Array.from(vistos.values());
+}
+
+/**
+ * Deduplica registros de pessoas/clientes na listagem pelo identificador canônico.
+ */
+export function deduplicarPessoas<T extends Record<string, unknown>>(pessoas: T[]): T[] {
+  const vistos = new Set<string>();
+  const saida: T[] = [];
+
+  for (const p of pessoas) {
+    const id = String(p.pessoa_id ?? p.caso_id ?? p.pessoa_cpf ?? "").trim();
+    if (!id || !vistos.has(id)) {
+      if (id) vistos.add(id);
+      saida.push(p);
+    }
+  }
+
+  return saida;
+}

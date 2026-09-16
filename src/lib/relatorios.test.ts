@@ -23,6 +23,8 @@ import {
   TOTAIS_ZERADOS,
   acaoViavel,
   calcularMetricasGestao,
+  deduplicarLancamentos,
+  deduplicarPessoas,
   type ResultadoFonte,
 } from "./relatorios";
 
@@ -239,5 +241,45 @@ describe("métricas de gestão e viabilidade de ações", () => {
     expect(metricas.percentualViaveis).toBe(0);
     expect(metricas.lastroMedioMeses).toBe(0);
     expect(metricas.empresaPredominante).toBe("—");
+  });
+});
+
+describe("deduplicação canônica de lançamentos e pessoas", () => {
+  it("elimina duplicidades de mesma competência, código, tipo e descrição", () => {
+    const lancamentos = [
+      // 8 duplicatas de 09/2021 (exatamente como visto no caso Edson Santos Sena)
+      { id: "1", competencia: "09/2021", codigo: "1513", tipo: "provento", descricao: "Banco de Horas", valor: 3835.13 },
+      { id: "2", competencia: "09/2021", codigo: "1513", tipo: "provento", descricao: "Banco de Horas", valor: 3835.13 },
+      { id: "3", competencia: "09/2021", codigo: "1513", tipo: "provento", descricao: "Banco de Horas", valor: 3835.13 },
+      { id: "4", competencia: "09/2021", codigo: "1513", tipo: "provento", descricao: "Banco de Horas", valor: 3835.13 },
+      // 8 duplicatas de 10/2021
+      { id: "5", competencia: "10/2021", codigo: "1513", tipo: "provento", descricao: "Banco de Horas", valor: 739.24 },
+      { id: "6", competencia: "10/2021", codigo: "1513", tipo: "provento", descricao: "Banco de Horas", valor: 739.24 },
+      // Outra rubrica diferente no mesmo mês (deve ser mantida)
+      { id: "7", competencia: "10/2021", codigo: "1001", tipo: "provento", descricao: "Salário Base", valor: 5000 },
+    ];
+
+    const resultado = deduplicarLancamentos(lancamentos);
+
+    expect(resultado).toHaveLength(3);
+    expect(resultado[0].competencia).toBe("09/2021");
+    expect(resultado[0].valor).toBe(3835.13);
+    expect(resultado[1].competencia).toBe("10/2021");
+    expect(resultado[1].codigo).toBe("1513");
+    expect(resultado[1].valor).toBe(739.24);
+    expect(resultado[2].codigo).toBe("1001");
+  });
+
+  it("deduplica pessoas pelo identificador único", () => {
+    const pessoas = [
+      { pessoa_id: "cpf:02334085502", pessoa_nome: "EDSON SANTOS SENA" },
+      { pessoa_id: "cpf:02334085502", pessoa_nome: "EDSON SANTOS SENA" },
+      { pessoa_id: "cpf:11122233344", pessoa_nome: "OUTRO CLIENTE" },
+    ];
+
+    const resultado = deduplicarPessoas(pessoas);
+    expect(resultado).toHaveLength(2);
+    expect(resultado[0].pessoa_id).toBe("cpf:02334085502");
+    expect(resultado[1].pessoa_id).toBe("cpf:11122233344");
   });
 });

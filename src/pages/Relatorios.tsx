@@ -34,6 +34,8 @@ import {
   chaveRubrica,
   consolidarTotais,
   competenciaValida,
+  deduplicarLancamentos,
+  deduplicarPessoas,
   empresasPorOrigem,
   FILTROS_INICIAIS,
   formatarMoeda,
@@ -133,6 +135,7 @@ export default function Relatorios() {
   const [visao, setVisao] = useState<Visao>("pessoa");
   const [pagina, setPagina] = useState(0);
   const [carregando, setCarregando] = useState(false);
+  const [consultou, setConsultou] = useState(false);
 
   // Combobox popovers
   const [popoverTemasAberto, setPopoverTemasAberto] = useState(false);
@@ -249,13 +252,22 @@ export default function Relatorios() {
 
     if (serie !== serieLista.current) return;
     setTotais({ casos: tc, historico: th });
-    setLinhas({ casos: lc, historico: lh });
+    const lcDedup: Fonte<Linha> = {
+      ...lc,
+      dados: visao === "pessoa" ? deduplicarPessoas(lc.dados) : lc.dados,
+    };
+    const lhDedup: Fonte<Linha> = {
+      ...lh,
+      dados: visao === "pessoa" ? deduplicarPessoas(lh.dados) : lh.dados,
+    };
+    setLinhas({ casos: lcDedup, historico: lhDedup });
     setCarregando(false);
   }, [temasEstado, payload, corpoHistorico, visao, pagina, usaCasos, usaHistorico]);
 
   useEffect(() => {
+    if (!consultou) return;
     void carregar();
-  }, [carregar]);
+  }, [consultou, carregar]);
 
   const buscarEmpresas = useCallback(async () => {
     setBuscandoEmpresas(true);
@@ -293,9 +305,10 @@ export default function Relatorios() {
   }, [buscaEmpresa, usaCasos, usaHistorico]);
 
   useEffect(() => {
-    void buscarEmpresas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usaCasos, usaHistorico]);
+    if (popoverEmpresasAberto) {
+      void buscarEmpresas();
+    }
+  }, [popoverEmpresasAberto, buscarEmpresas]);
 
   const subtotais = useMemo(() => {
     const extrair = (f: Fonte<Record<string, unknown>>): TotaisFonte => {
@@ -361,6 +374,7 @@ export default function Relatorios() {
   }, [visao, linhas, pagina, usaCasos, usaHistorico]);
 
   const avisos = useMemo(() => {
+    if (!consultou) return [];
     const lista: string[] = [];
     const checar = (origem: OrigemRelatorio, f: Fonte<unknown>) => {
       if (f.estado === "indisponivel")
@@ -377,7 +391,7 @@ export default function Relatorios() {
       checar("historico", linhas.historico);
     }
     return Array.from(new Set(lista));
-  }, [totais, linhas, usaCasos, usaHistorico]);
+  }, [totais, linhas, usaCasos, usaHistorico, consultou]);
 
   const aplicar = () => {
     const de = normalizarCompetenciaFiltro(rascunho.de);
@@ -390,6 +404,7 @@ export default function Relatorios() {
       return toast.error("O período inicial não pode ser posterior ao final");
     setPagina(0);
     setFiltros({ ...rascunho, de, ate });
+    setConsultou(true);
   };
 
   const limpar = () => {
@@ -398,12 +413,19 @@ export default function Relatorios() {
     setBuscaClienteLocal("");
     setPagina(0);
     setFiltros({ ...FILTROS_INICIAIS });
+    setConsultou(false);
+    setTotais({
+      casos: { estado: "ok", dados: [] },
+      historico: { estado: "ok", dados: [] },
+    });
+    setLinhas({
+      casos: { estado: "ok", dados: [] },
+      historico: { estado: "ok", dados: [] },
+    });
   };
 
   const alternarOrigemAba = (novaOrigem: OrigemRelatorio) => {
     setRascunho((p) => ({ ...p, origem: novaOrigem }));
-    setFiltros((p) => ({ ...p, origem: novaOrigem }));
-    setPagina(0);
   };
 
   const alternarRubrica = (r: RubricaSelecionada) => {
@@ -448,7 +470,7 @@ export default function Relatorios() {
   }, [temas, buscaTemaPopover]);
 
   const carregarLancamentos = useCallback(
-    async (pessoa: { id: string; origem: OrigemRelatorio }, pag: number) => {
+    async (pessoa: { id: string; origem: OrigemRelatorio }) => {
       const serie = ++serieLancamentos.current;
       setCarregandoLancamentos(true);
       const r =
@@ -456,17 +478,62 @@ export default function Relatorios() {
           ? await consultarCasos<Linha>("relatorio_lancamentos_pessoa", {
               ...payload,
               p_pessoa_id: pessoa.id,
-              p_limit: LANCAMENTOS_POR_PAGINA,
-              p_offset: pag * LANCAMENTOS_POR_PAGINA,
+              p_limit: 500,
+              p_offset: 0,
             })
           : await consultarHistorico<Linha>("lancamentos", {
               ...corpoHistorico,
               pessoa_id: pessoa.id,
-              limit: LANCAMENTOS_POR_PAGINA,
-              offset: pag * LANCAMENTOS_POR_PAGINA,
+              limit: 500,
+              offset: 0,
             });
       if (serie !== serieLancamentos.current) return;
-      setLancamentos(r);
+
+      // Deduplicação canônica imediata para eliminar repetições de holerites idênticos
+      const dadosDedup = deduplicarLancamentos(r.dados);
+      setLancamentos({
+        ...r,
+        dados: dadosDedup,
+      });
+
+      // Recalcula totais deduplicados e atualiza a linha correspondente na tabela principal
+      if (dadosDedup.length > 0) {
+        let dedupProventos = 0;
+        let dedupDescontos = 0;
+        const compsUnicas = new Set<string>();
+        let empresaDetectada: string | null = null;
+
+        for (const item of dadosDedup) {
+          const v = num(item.valor);
+          if (item.tipo === "provento") dedupProventos += v;
+          if (item.tipo === "desconto") dedupDescontos += v;
+          if (item.competencia) compsUnicas.add(String(item.competencia));
+          if (item.empresa && !empresaDetectada) empresaDetectada = txt(item.empresa);
+        }
+
+        setLinhas((prev) => {
+          const atualizarFonte = (fonte: Fonte<Linha>): Fonte<Linha> => ({
+            ...fonte,
+            dados: fonte.dados.map((linha) => {
+              if (txt(linha.pessoa_id) === pessoa.id) {
+                return {
+                  ...linha,
+                  proventos: dedupProventos,
+                  descontos: dedupDescontos,
+                  competencias: compsUnicas.size || 1,
+                  empresa: linha.empresa ?? empresaDetectada,
+                };
+              }
+              return linha;
+            }),
+          });
+          return {
+            casos: pessoa.origem === "casos" ? atualizarFonte(prev.casos) : prev.casos,
+            historico: pessoa.origem === "historico" ? atualizarFonte(prev.historico) : prev.historico,
+          };
+        });
+      }
+
       if (r.estado !== "ok") toast.error(r.motivo ?? "Não foi possível carregar os lançamentos");
       setCarregandoLancamentos(false);
     },
@@ -482,18 +549,19 @@ export default function Relatorios() {
     setPessoaAberta({ id, nome, origem, temaDestaque });
     setPaginaLancamentos(0);
     setLancamentos({ estado: "ok", dados: [] });
-    await carregarLancamentos({ id, origem }, 0);
+    await carregarLancamentos({ id, origem });
   };
 
-  const irParaPaginaLancamentos = async (pag: number) => {
-    if (!pessoaAberta) return;
+  const irParaPaginaLancamentos = (pag: number) => {
     setPaginaLancamentos(pag);
-    await carregarLancamentos(pessoaAberta, pag);
   };
 
-  const proximaLancamentos = temProximaPagina(paginaLancamentos, LANCAMENTOS_POR_PAGINA, [
-    lancamentos.estado === "ok" ? totalLinhas(lancamentos.dados) : 0,
-  ]);
+  const lancamentosPaginados = useMemo(() => {
+    const inicio = paginaLancamentos * LANCAMENTOS_POR_PAGINA;
+    return lancamentos.dados.slice(inicio, inicio + LANCAMENTOS_POR_PAGINA);
+  }, [lancamentos.dados, paginaLancamentos]);
+
+  const proximaLancamentos = (paginaLancamentos + 1) * LANCAMENTOS_POR_PAGINA < lancamentos.dados.length;
 
   // Totalização do tema selecionado para o modal
   const resumoTemaDestaque = useMemo(() => {
@@ -554,7 +622,7 @@ export default function Relatorios() {
               type="button"
               onClick={() => alternarOrigemAba("casos")}
               className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                filtros.origem === "casos"
+                rascunho.origem === "casos"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -565,7 +633,7 @@ export default function Relatorios() {
               type="button"
               onClick={() => alternarOrigemAba("historico")}
               className={`flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                filtros.origem === "historico"
+                rascunho.origem === "historico"
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -583,7 +651,7 @@ export default function Relatorios() {
                 <Filter className="h-4 w-4 text-primary" /> Filtros de Pesquisa
               </span>
               <span className="text-xs font-normal text-muted-foreground">
-                {filtros.origem === "casos" ? "Base ativa do aplicativo" : "Consulta da base histórica"}
+                {rascunho.origem === "casos" ? "Base ativa do aplicativo" : "Consulta da base histórica"}
               </span>
             </CardTitle>
           </CardHeader>
@@ -784,9 +852,11 @@ export default function Relatorios() {
             </CardHeader>
             <CardContent className="pb-4">
               <div className="text-2xl font-bold tracking-tight text-foreground">
-                {metricasGestao.clientesElegiveis}
+                {consultou ? metricasGestao.clientesElegiveis : "—"}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Identificados com CPF e dados válidos</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {consultou ? "Identificados com CPF e dados válidos" : "Aguardando filtro"}
+              </p>
             </CardContent>
           </Card>
 
@@ -795,16 +865,20 @@ export default function Relatorios() {
             <CardHeader className="pb-2 pt-4">
               <CardTitle className="flex items-center justify-between text-xs font-medium text-muted-foreground">
                 <span>Ações Viáveis</span>
-                <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                  {metricasGestao.percentualViaveis}% da Carteira
-                </span>
+                {consultou && (
+                  <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                    {metricasGestao.percentualViaveis}% da Carteira
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
               <div className="text-2xl font-bold tracking-tight text-foreground">
-                {metricasGestao.acoesViaveis} Clientes
+                {consultou ? `${metricasGestao.acoesViaveis} Clientes` : "—"}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Superam a linha de corte (R$ 15.000,00)</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {consultou ? "Superam a linha de corte (R$ 15.000,00)" : "Clique em Filtrar para apurar"}
+              </p>
             </CardContent>
           </Card>
 
@@ -818,9 +892,11 @@ export default function Relatorios() {
             </CardHeader>
             <CardContent className="pb-4">
               <div className="text-2xl font-bold tracking-tight text-foreground">
-                {metricasGestao.lastroMedioMeses} meses
+                {consultou ? `${metricasGestao.lastroMedioMeses} meses` : "—"}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Média de holerites apurados por cliente</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {consultou ? "Média de holerites apurados por cliente" : "Aguardando filtro"}
+              </p>
             </CardContent>
           </Card>
 
@@ -834,12 +910,14 @@ export default function Relatorios() {
             </CardHeader>
             <CardContent className="pb-4">
               <div className="truncate text-2xl font-bold tracking-tight text-foreground">
-                {metricasGestao.empresaPredominante}
+                {consultou ? metricasGestao.empresaPredominante : "—"}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {metricasGestao.empresaPredominanteQtd > 0
-                  ? `${metricasGestao.empresaPredominanteQtd} dos ${metricasGestao.clientesElegiveis} clientes apurados`
-                  : "Nenhuma empresa apurada"}
+                {consultou
+                  ? metricasGestao.empresaPredominanteQtd > 0
+                    ? `${metricasGestao.empresaPredominanteQtd} dos ${metricasGestao.clientesElegiveis} clientes apurados`
+                    : "Nenhuma empresa apurada"
+                  : "Aguardando filtro"}
               </p>
             </CardContent>
           </Card>
@@ -933,22 +1011,33 @@ export default function Relatorios() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {carregando && (
+                  {!consultou ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-16 text-center text-sm text-muted-foreground">
+                        <Filter className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
+                        <p className="font-semibold text-foreground text-sm">Aguardando definição de filtros</p>
+                        <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                          Selecione os temas jurídicos ou preencha os filtros desejados acima e clique em{" "}
+                          <strong className="text-foreground font-medium">Filtrar</strong> para realizar a consulta consolidada.
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  ) : carregando ? (
                     <TableRow>
                       <TableCell colSpan={10} className="py-12 text-center text-sm text-muted-foreground">
                         <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" />
                         Carregando registros apurados…
                       </TableCell>
                     </TableRow>
-                  )}
-                  {!carregando && linhasFiltradasLocal.length === 0 && (
+                  ) : linhasFiltradasLocal.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={10} className="py-12 text-center text-sm text-muted-foreground">
                         Nenhum registro encontrado para os filtros e critérios informados.
                       </TableCell>
                     </TableRow>
-                  )}
-                  {!carregando &&
+                  ) : null}
+                  {consultou &&
+                    !carregando &&
                     linhasFiltradasLocal.map((l, i) => {
                       const saldoLiquido = num(l.proventos) - num(l.descontos);
                       const viavel = acaoViavel(saldoLiquido);
@@ -1216,7 +1305,7 @@ export default function Relatorios() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {lancamentos.dados.map((l, i) => (
+                      {lancamentosPaginados.map((l, i) => (
                         <TableRow key={txt(l.item_id) ?? i}>
                           <TableCell className="font-mono text-xs">{txt(l.competencia) ?? "—"}</TableCell>
                           <TableCell className="font-mono text-xs">{txt(l.codigo) ?? "—"}</TableCell>
@@ -1256,15 +1345,15 @@ export default function Relatorios() {
                 <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
                   <span>
                     Página {paginaLancamentos + 1} de{" "}
-                    {Math.max(Math.ceil(totalLinhas(lancamentos.dados) / LANCAMENTOS_POR_PAGINA), 1)} —{" "}
-                    {totalLinhas(lancamentos.dados)} lançamentos apurados
+                    {Math.max(Math.ceil(lancamentos.dados.length / LANCAMENTOS_POR_PAGINA), 1)} —{" "}
+                    {lancamentos.dados.length} lançamentos deduplicados apurados
                   </span>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       disabled={paginaLancamentos === 0 || carregandoLancamentos}
-                      onClick={() => void irParaPaginaLancamentos(Math.max(paginaLancamentos - 1, 0))}
+                      onClick={() => irParaPaginaLancamentos(Math.max(paginaLancamentos - 1, 0))}
                       className="h-8 text-xs"
                     >
                       Anterior
@@ -1273,7 +1362,7 @@ export default function Relatorios() {
                       variant="outline"
                       size="sm"
                       disabled={carregandoLancamentos || !proximaLancamentos}
-                      onClick={() => void irParaPaginaLancamentos(paginaLancamentos + 1)}
+                      onClick={() => irParaPaginaLancamentos(paginaLancamentos + 1)}
                       className="h-8 text-xs"
                     >
                       Próxima
