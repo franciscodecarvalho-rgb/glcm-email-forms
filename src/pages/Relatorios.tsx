@@ -278,14 +278,14 @@ export default function Relatorios() {
             p_limit: 50,
             p_offset: 0,
           })
-        : Promise.resolve({ estado: "ok" as const, dados: [] }),
+        : Promise.resolve<Fonte<Record<string, unknown>>>({ estado: "ok", dados: [] }),
       usaHistorico
         ? consultarHistorico<Record<string, unknown>>("opcoes_empresa", {
             busca: buscaEmpresa.trim() || null,
             limit: 50,
             offset: 0,
           })
-        : Promise.resolve({ estado: "ok" as const, dados: [] }),
+        : Promise.resolve<Fonte<Record<string, unknown>>>({ estado: "ok", dados: [] }),
     ]);
     const opcoes: EmpresaSelecionada[] = [
       ...(oc.estado === "ok" ? oc.dados : []).map((o) => ({

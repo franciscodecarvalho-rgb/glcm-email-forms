@@ -203,6 +203,13 @@ describe("competência aceita MM/AAAA e AAAA-MM", () => {
     expect(normalizarCompetenciaFiltro("contracheques-unificados.pdf")).toBeNull();
   });
 
+  it("rejeita ano 0000 em ambos os formatos", () => {
+    expect(normalizarCompetenciaFiltro("04/0000")).toBeNull();
+    expect(normalizarCompetenciaFiltro("0000-04")).toBeNull();
+    expect(chaveCompetencia("04/0000")).toBeNull();
+    expect(chaveCompetencia("0000-04")).toBeNull();
+  });
+
   it("compara períodos entre formatos diferentes", () => {
     expect(chaveCompetencia("2023-04")).toBe("202304");
     expect(periodoCoerente("2023-04", "12/2023")).toBe(true);

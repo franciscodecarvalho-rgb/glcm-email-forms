@@ -603,16 +603,13 @@ export type Database = {
         }
         Returns: {
           casos: number
-          competencias: number
           descontos: number
-          empresa: string
           itens: number
           pessoa_cpf: string
           pessoa_id: string
           pessoa_identificacao: string
           pessoa_nome: string
           proventos: number
-          temas: string[]
           total_linhas: number
         }[]
       }
