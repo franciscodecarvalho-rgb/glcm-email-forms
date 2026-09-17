@@ -10,8 +10,8 @@ import { toast } from "sonner";
 import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
 import { formatarCpf } from "@/lib/cpf";
-import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 import { mensagemErroFuncao } from "@/lib/edge-function-error";
+import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 

@@ -1157,6 +1157,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  let etapa = "validar dados recebidos";
   try {
     const {
       caso_id,
@@ -1177,6 +1178,7 @@ Deno.serve(async (req) => {
     }
     if (!uf_comarca?.trim()) throw new Error("uf_comarca obrigatório");
 
+    etapa = "buscar dados do caso";
     const { data: caso, error: cErr } = await supabase
       .from("casos")
       .select("*")
@@ -1188,6 +1190,7 @@ Deno.serve(async (req) => {
     const pecas = selecionarPecas(caso.tipo_acao, escritorios);
     const tipos = pecas.map((peca) => peca.templateTipo);
 
+    etapa = "buscar templates";
     const { data: templates, error: tErr } = await supabase
       .from("templates")
       .select("*")
@@ -1201,6 +1204,7 @@ Deno.serve(async (req) => {
     // O JSON legado casos.contracheques não é atualizado pelo fluxo de upload
     // (process-contracheques-pdf), então usar as tabelas relacionais evita a
     // planilha/petição saírem vazias. O JSON legado é apenas fallback.
+    etapa = "buscar contracheques";
     const { data: contrasRel, error: ccRelErr } = await supabase
       .from("contracheques")
       .select("id, competencia, arquivo_origem, modelo_origem")
@@ -1249,6 +1253,7 @@ Deno.serve(async (req) => {
     }
     const generated: { tipo: string; storage_path: string; nome: string }[] = [];
 
+    etapa = "gerar documentos DOCX";
     for (const tpl of templates) {
       const peca = pecas.find((item) => item.templateTipo === tpl.tipo);
       if (!peca) continue;
@@ -1287,6 +1292,7 @@ Deno.serve(async (req) => {
     // Planilha de cálculo: .xlsx com fórmulas (sempre, sem template).
     // Para a ação de contribuição extraordinária a planilha é exclusiva
     // (rubricas familia_hra = "contrib_extra"); a planilha HRA não é gerada.
+    etapa = "gerar planilha de cálculo";
     const ehContribExtra = caso.tipo_acao === "contribuicao_extraordinaria";
     {
       const linhasXlsx: LinhaPlanilha[] = contras.map((c: any) => ({
@@ -1323,6 +1329,7 @@ Deno.serve(async (req) => {
     // Planilha complementar de Contribuição Extraordinária: apenas na ação
     // "ir_sobre_hra" e somente quando existirem rubricas relacionais da
     // família "contrib_extra". A ação exclusiva não duplica a planilha.
+    etapa = "gerar planilha de contribuição extraordinária";
     if (caso.tipo_acao === "ir_sobre_hra") {
       const linhasCE = agregarContribExtraPorCompetencia(contrasRel, itensRel);
       if (linhasCE.length > 0) {
@@ -1346,6 +1353,7 @@ Deno.serve(async (req) => {
 
     // Planilha Banco de Horas (1513): somente quando houver ocorrências do
     // código 1513 nas rubricas relacionais extraídas dos contracheques do caso.
+    etapa = "gerar planilha de banco de horas";
     {
       const { data: contrachequesRows, error: ccErr } = await supabase
         .from("contracheques")
@@ -1383,6 +1391,7 @@ Deno.serve(async (req) => {
 
     // PDF unificado de contracheques: anexa ao pacote o arquivo já unificado
     // na criação do caso (bucket casos-arquivos), copiando para casos-documentos.
+    etapa = "copiar contracheques unificados";
     {
       const { data: arquivosUnificados, error: arqErr } = await supabase
         .from("arquivos")
@@ -1413,6 +1422,7 @@ Deno.serve(async (req) => {
 
     if (generated.length === 0) throw new Error("Nenhum documento foi gerado.");
 
+    etapa = "salvar documentos gerados";
     await supabase
       .from("casos")
       .update({ documentos_gerados: generated, status: "concluido" })
@@ -1425,7 +1435,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro";
     console.error("generate-documents error:", msg);
-    return new Response(JSON.stringify({ error: msg }), {
+    return new Response(JSON.stringify({ error: msg, etapa }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

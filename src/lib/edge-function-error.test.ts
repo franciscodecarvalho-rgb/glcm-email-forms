@@ -14,6 +14,16 @@ describe("mensagemErroFuncao", () => {
     );
   });
 
+  it("inclui a etapa informada pela função para facilitar a correção", async () => {
+    const resposta = new Response(
+      JSON.stringify({ error: "Bucket indisponível", etapa: "gerar planilha de cálculo" }),
+      { status: 500 },
+    );
+    await expect(mensagemErroFuncao(new FunctionsHttpError(resposta))).resolves.toBe(
+      "Bucket indisponível (gerar planilha de cálculo)",
+    );
+  });
+
   it("cai para a mensagem do erro quando o corpo não é JSON válido", async () => {
     const resposta = new Response("não é json", { status: 500 });
     const erro = new FunctionsHttpError(resposta);

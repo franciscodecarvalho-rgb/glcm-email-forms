@@ -11,8 +11,13 @@ export async function mensagemErroFuncao(
 ): Promise<string> {
   if (error instanceof FunctionsHttpError) {
     try {
-      const corpo = await error.context.json();
-      if (typeof corpo?.error === "string" && corpo.error) return corpo.error;
+      const corpo = await error.context.json() as { error?: unknown; etapa?: unknown };
+      if (typeof corpo?.error === "string" && corpo.error) {
+        const etapa = typeof corpo.etapa === "string" && corpo.etapa.trim()
+          ? ` (${corpo.etapa.trim()})`
+          : "";
+        return `${corpo.error}${etapa}`;
+      }
     } catch {
       // corpo não é JSON válido; cai no retorno abaixo
     }
