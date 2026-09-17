@@ -34,3 +34,4 @@ templates-convertidos/
 .artifacts/
 output/templates-docx-local-backup/
 *.tsbuildinfo
+supabase/.temp/

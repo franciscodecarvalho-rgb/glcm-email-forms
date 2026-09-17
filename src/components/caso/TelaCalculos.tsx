@@ -11,6 +11,7 @@ import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
 import { formatarCpf } from "@/lib/cpf";
 import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
+import { mensagemErroFuncao } from "@/lib/edge-function-error";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -48,7 +49,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
       .from("casos")
       .update({ numero_pasta: pasta, valor_causa: valorCausa })
       .eq("id", caso.id);
-    if (updErr) { setGenerating(false); toast.error("Erro ao salvar"); return; }
+    if (updErr) { setGenerating(false); toast.error(updErr.message || "Erro ao salvar"); return; }
     const { error } = await supabase.functions.invoke("generate-documents", {
       body: {
         caso_id: caso.id,
@@ -61,7 +62,13 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
       },
     });
     setGenerating(false);
-    if (error) toast.error("Erro ao gerar documentos"); else toast.success("Documentos gerados");
+    if (error) {
+      const msg = await mensagemErroFuncao(error, "Erro ao gerar documentos");
+      console.error("[generate-documents] Falha:", error, msg);
+      toast.error(msg);
+    } else {
+      toast.success("Documentos gerados");
+    }
   };
 
   const e = caso.endereco ?? {};

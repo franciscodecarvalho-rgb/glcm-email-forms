@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { PECA_LABELS } from "@/lib/status";
 import { toast } from "sonner";
 import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
+import { mensagemErroFuncao } from "@/lib/edge-function-error";
 
 type Doc = { tipo: string; storage_path: string; nome: string };
 
@@ -37,8 +38,13 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
       },
     });
     setRegerando(false);
-    if (error || (data as any)?.error) toast.error((data as any)?.error ?? "Falha ao regerar");
-    else toast.success("Documentos regerados");
+    if (error || (data as any)?.error) {
+      const msg = await mensagemErroFuncao(error, (data as any)?.error ?? "Falha ao regerar");
+      console.error("[generate-documents] Falha ao regerar:", error, msg);
+      toast.error(msg);
+    } else {
+      toast.success("Documentos regerados");
+    }
   };
   const docs: Doc[] = Array.isArray(caso.documentos_gerados) ? (caso.documentos_gerados as any) : [];
   const labelOf = (tipo: string) => PECA_LABELS[tipo] ?? tipo;
