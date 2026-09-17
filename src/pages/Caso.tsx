@@ -27,6 +27,7 @@ import { ordenarPorCompetencia } from "@/lib/planilha-xlsx";
 export type CasoData = {
   id: string;
   status: string;
+  tipo_acao: string;
   nome_cliente: string | null;
   cpf: string | null;
   rg: string | null;
@@ -42,6 +43,7 @@ export type CasoData = {
   cliente_recorrente_ref: string | null;
   qualificacao: any;
   empregadores: any;
+  escritorios: unknown;
 };
 
 // PostgREST devolve no máximo 1.000 linhas por consulta; sem paginação, casos

@@ -24,6 +24,19 @@ describe("mensagemErroFuncao", () => {
     );
   });
 
+  it("lê mensagens de erro da plataforma, como o limite 546", async () => {
+    const resposta = new Response(
+      JSON.stringify({
+        code: "WORKER_RESOURCE_LIMIT",
+        message: "Function failed due to not having enough compute resources",
+      }),
+      { status: 546 },
+    );
+    await expect(mensagemErroFuncao(new FunctionsHttpError(resposta))).resolves.toBe(
+      "WORKER_RESOURCE_LIMIT: Function failed due to not having enough compute resources",
+    );
+  });
+
   it("cai para a mensagem do erro quando o corpo não é JSON válido", async () => {
     const resposta = new Response("não é json", { status: 500 });
     const erro = new FunctionsHttpError(resposta);

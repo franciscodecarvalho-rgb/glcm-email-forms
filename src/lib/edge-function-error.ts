@@ -11,12 +11,20 @@ export async function mensagemErroFuncao(
 ): Promise<string> {
   if (error instanceof FunctionsHttpError) {
     try {
-      const corpo = await error.context.json() as { error?: unknown; etapa?: unknown };
+      const corpo = await error.context.json() as { error?: unknown; etapa?: unknown; message?: unknown; code?: unknown };
       if (typeof corpo?.error === "string" && corpo.error) {
         const etapa = typeof corpo.etapa === "string" && corpo.etapa.trim()
           ? ` (${corpo.etapa.trim()})`
           : "";
         return `${corpo.error}${etapa}`;
+      }
+      // Erros de plataforma (por exemplo 546 WORKER_RESOURCE_LIMIT) seguem
+      // o formato { code, message }, e não o formato { error, etapa } da nossa função.
+      if (typeof corpo?.message === "string" && corpo.message.trim()) {
+        const codigo = typeof corpo.code === "string" && corpo.code.trim()
+          ? `${corpo.code.trim()}: `
+          : "";
+        return `${codigo}${corpo.message.trim()}`;
       }
     } catch {
       // corpo não é JSON válido; cai no retorno abaixo

@@ -19,6 +19,45 @@ const ALIQUOTA = 0.275;
 type NaturezaAcao = "tributaria" | "trabalhista";
 type ConfiguracaoAcao = { natureza: NaturezaAcao; peticao: string; contrato: string };
 type PecaSelecionada = { templateTipo: string; tipoSaida: string };
+type EtapaGeracao =
+  | "completo"
+  | "docx"
+  | "planilha_calculo"
+  | "planilha_contrib_extra"
+  | "planilha_banco_horas"
+  | "pdf_unificado"
+  | "finalizar";
+
+const ETAPAS_GERACAO = new Set<EtapaGeracao>([
+  "completo",
+  "docx",
+  "planilha_calculo",
+  "planilha_contrib_extra",
+  "planilha_banco_horas",
+  "pdf_unificado",
+  "finalizar",
+]);
+
+type DocumentoGerado = { tipo: string; storage_path: string; nome: string };
+
+function combinarDocumentosGerados(existentes: unknown, novos: DocumentoGerado[]): DocumentoGerado[] {
+  const porTipo = new Map<string, DocumentoGerado>();
+  if (Array.isArray(existentes)) {
+    for (const documento of existentes) {
+      if (
+        documento
+        && typeof documento === "object"
+        && typeof (documento as DocumentoGerado).tipo === "string"
+        && typeof (documento as DocumentoGerado).storage_path === "string"
+        && typeof (documento as DocumentoGerado).nome === "string"
+      ) {
+        porTipo.set((documento as DocumentoGerado).tipo, documento as DocumentoGerado);
+      }
+    }
+  }
+  for (const documento of novos) porTipo.set(documento.tipo, documento);
+  return [...porTipo.values()];
+}
 
 // Espelho de src/lib/modelos-documentos.ts (mapa e selecionarPecas). Mantido
 // inline porque esta Edge Function é publicada como arquivo único no ambiente
@@ -1167,6 +1206,8 @@ Deno.serve(async (req) => {
       telefone_cliente,
       uf_comarca,
       endereco_uniao,
+      etapa: etapaRecebida = "completo",
+      template_tipo: templateTipoRecebido,
     } = await req.json();
     if (!caso_id) throw new Error("caso_id obrigatório");
     if (!captador?.trim()) throw new Error("captador obrigatório");
@@ -1177,6 +1218,20 @@ Deno.serve(async (req) => {
       throw new Error("telefone_cliente inválido");
     }
     if (!uf_comarca?.trim()) throw new Error("uf_comarca obrigatório");
+
+    if (typeof etapaRecebida !== "string" || !ETAPAS_GERACAO.has(etapaRecebida as EtapaGeracao)) {
+      throw new Error("etapa de geração inválida");
+    }
+    const etapaGeracao = etapaRecebida as EtapaGeracao;
+    const gerarDocx = etapaGeracao === "completo" || etapaGeracao === "docx";
+    const gerarPlanilhaCalculo = etapaGeracao === "completo" || etapaGeracao === "planilha_calculo";
+    const gerarPlanilhaContribExtra = etapaGeracao === "completo" || etapaGeracao === "planilha_contrib_extra";
+    const gerarPlanilhaBancoHoras = etapaGeracao === "completo" || etapaGeracao === "planilha_banco_horas";
+    const copiarPdfUnificado = etapaGeracao === "completo" || etapaGeracao === "pdf_unificado";
+
+    if (etapaGeracao === "docx" && (typeof templateTipoRecebido !== "string" || !templateTipoRecebido.trim())) {
+      throw new Error("template_tipo obrigatório para gerar um DOCX");
+    }
 
     etapa = "buscar dados do caso";
     const { data: caso, error: cErr } = await supabase
@@ -1190,29 +1245,45 @@ Deno.serve(async (req) => {
     const pecas = selecionarPecas(caso.tipo_acao, escritorios);
     const tipos = pecas.map((peca) => peca.templateTipo);
 
-    etapa = "buscar templates";
-    const { data: templates, error: tErr } = await supabase
-      .from("templates")
-      .select("*")
-      .in("tipo", tipos);
-    if (tErr) throw tErr;
-    if (!templates || templates.length === 0) {
-      throw new Error("Nenhum template configurado. Acesse /templates para enviar os modelos .docx.");
+    let templates: any[] = [];
+    let tiposParaGerar: string[] = [];
+    if (gerarDocx) {
+      tiposParaGerar = etapaGeracao === "docx"
+        ? [templateTipoRecebido.trim()]
+        : tipos;
+      if (etapaGeracao === "docx" && !tipos.includes(templateTipoRecebido.trim())) {
+        throw new Error("Template não pertence ao tipo de ação deste caso");
+      }
+      etapa = "buscar template";
+      const { data, error: tErr } = await supabase
+        .from("templates")
+        .select("*")
+        .in("tipo", tiposParaGerar);
+      if (tErr) throw tErr;
+      templates = data ?? [];
+      if (templates.length === 0) {
+        throw new Error("Nenhum template configurado. Acesse /templates para enviar os modelos .docx.");
+      }
     }
 
-    // Fonte de verdade: tabelas relacionais (contracheques + itens_contracheque).
-    // O JSON legado casos.contracheques não é atualizado pelo fluxo de upload
-    // (process-contracheques-pdf), então usar as tabelas relacionais evita a
-    // planilha/petição saírem vazias. O JSON legado é apenas fallback.
-    etapa = "buscar contracheques";
-    const { data: contrasRel, error: ccRelErr } = await supabase
-      .from("contracheques")
-      .select("id, competencia, arquivo_origem, modelo_origem")
-      .eq("caso_id", caso_id)
-      .order("competencia");
-    if (ccRelErr) throw ccRelErr;
-    const idsContrasRel = (contrasRel ?? []).map((c: ContrachequeRelacional) => c.id);
-    const itensRel = await buscarItensContrachequePaginado(supabase, idsContrasRel);
+    // A carga relacional completa só é necessária às planilhas HRA/Contribuição.
+    // Nos passos de um único DOCX, PDF, banco de horas ou finalização ela apenas
+    // aumentaria memória e CPU sem participar do artefato produzido.
+    const precisaDadosRelacionais = gerarPlanilhaCalculo || gerarPlanilhaContribExtra;
+    let contrasRel: ContrachequeRelacional[] = [];
+    let itensRel: ItemContrachequeRelacional[] = [];
+    if (precisaDadosRelacionais) {
+      etapa = "buscar contracheques";
+      const { data, error: ccRelErr } = await supabase
+        .from("contracheques")
+        .select("id, competencia, arquivo_origem, modelo_origem")
+        .eq("caso_id", caso_id)
+        .order("competencia");
+      if (ccRelErr) throw ccRelErr;
+      contrasRel = data ?? [];
+      const idsContrasRel = contrasRel.map((c) => c.id);
+      itensRel = await buscarItensContrachequePaginado(supabase, idsContrasRel);
+    }
 
     const contrasRelacionais = montarContrasRelacionais(contrasRel, itensRel);
     const contras: Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> = contrasRelacionais.length
@@ -1247,14 +1318,15 @@ Deno.serve(async (req) => {
     };
     const data: Record<string, unknown> = { ...montarVariaveisCaso(casoComValor), linhas };
 
-    const faltantes = tipos.filter((t) => !templates.some((tp: any) => tp.tipo === t));
+    const faltantes = tiposParaGerar.filter((t) => !templates.some((tp: any) => tp.tipo === t));
     if (faltantes.length > 0) {
       throw new Error(`Templates obrigatórios ausentes: ${faltantes.join(", ")}`);
     }
-    const generated: { tipo: string; storage_path: string; nome: string }[] = [];
+    const generated: DocumentoGerado[] = [];
 
-    etapa = "gerar documentos DOCX";
-    for (const tpl of templates) {
+    if (gerarDocx) {
+      etapa = "gerar documento DOCX";
+      for (const tpl of templates) {
       const peca = pecas.find((item) => item.templateTipo === tpl.tipo);
       if (!peca) continue;
       const { data: blob, error: dlErr } = await supabase.storage
@@ -1286,15 +1358,16 @@ Deno.serve(async (req) => {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         });
       if (upErr) throw upErr;
-      generated.push({ tipo: peca.tipoSaida, storage_path: path, nome: safeName });
+        generated.push({ tipo: peca.tipoSaida, storage_path: path, nome: safeName });
+      }
     }
 
     // Planilha de cálculo: .xlsx com fórmulas (sempre, sem template).
     // Para a ação de contribuição extraordinária a planilha é exclusiva
     // (rubricas familia_hra = "contrib_extra"); a planilha HRA não é gerada.
-    etapa = "gerar planilha de cálculo";
     const ehContribExtra = caso.tipo_acao === "contribuicao_extraordinaria";
-    {
+    if (gerarPlanilhaCalculo) {
+      etapa = "gerar planilha de cálculo";
       const linhasXlsx: LinhaPlanilha[] = contras.map((c: any) => ({
         competencia: c.label ?? "",
         hra: Number(c.valor_hra) || 0,
@@ -1329,8 +1402,8 @@ Deno.serve(async (req) => {
     // Planilha complementar de Contribuição Extraordinária: apenas na ação
     // "ir_sobre_hra" e somente quando existirem rubricas relacionais da
     // família "contrib_extra". A ação exclusiva não duplica a planilha.
-    etapa = "gerar planilha de contribuição extraordinária";
-    if (caso.tipo_acao === "ir_sobre_hra") {
+    if (gerarPlanilhaContribExtra && caso.tipo_acao === "ir_sobre_hra") {
+      etapa = "gerar planilha de contribuição extraordinária";
       const linhasCE = agregarContribExtraPorCompetencia(contrasRel, itensRel);
       if (linhasCE.length > 0) {
         const partesCE = montarArquivosPlanilhaContribExtraXlsx(caso.nome_cliente ?? "", linhasCE);
@@ -1353,8 +1426,8 @@ Deno.serve(async (req) => {
 
     // Planilha Banco de Horas (1513): somente quando houver ocorrências do
     // código 1513 nas rubricas relacionais extraídas dos contracheques do caso.
-    etapa = "gerar planilha de banco de horas";
-    {
+    if (gerarPlanilhaBancoHoras) {
+      etapa = "gerar planilha de banco de horas";
       const { data: contrachequesRows, error: ccErr } = await supabase
         .from("contracheques")
         .select("id, competencia")
@@ -1391,8 +1464,8 @@ Deno.serve(async (req) => {
 
     // PDF unificado de contracheques: anexa ao pacote o arquivo já unificado
     // na criação do caso (bucket casos-arquivos), copiando para casos-documentos.
-    etapa = "copiar contracheques unificados";
-    {
+    if (copiarPdfUnificado) {
+      etapa = "copiar contracheques unificados";
       const { data: arquivosUnificados, error: arqErr } = await supabase
         .from("arquivos")
         .select("storage_path")
@@ -1420,16 +1493,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (generated.length === 0) throw new Error("Nenhum documento foi gerado.");
+    if (etapaGeracao === "completo" && generated.length === 0) {
+      throw new Error("Nenhum documento foi gerado.");
+    }
 
-    etapa = "salvar documentos gerados";
-    await supabase
+    etapa = etapaGeracao === "finalizar" ? "concluir geração" : "salvar documento gerado";
+    const documentosGerados = combinarDocumentosGerados(caso.documentos_gerados, generated);
+    const atualizacao = etapaGeracao === "finalizar"
+      ? { documentos_gerados: documentosGerados, status: "concluido" }
+      : { documentos_gerados: documentosGerados };
+    const { error: atualizarErro } = await supabase
       .from("casos")
-      .update({ documentos_gerados: generated, status: "concluido" })
+      .update(atualizacao)
       .eq("id", caso_id);
+    if (atualizarErro) throw atualizarErro;
 
     return new Response(
-      JSON.stringify({ ok: true, generated, faltantes: [...new Set(faltantes)] }),
+      JSON.stringify({ ok: true, generated, etapa: etapaGeracao, faltantes: [...new Set(faltantes)] }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {

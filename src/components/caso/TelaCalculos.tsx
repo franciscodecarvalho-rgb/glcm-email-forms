@@ -11,6 +11,7 @@ import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
 import { formatarCpf } from "@/lib/cpf";
 import { mensagemErroFuncao } from "@/lib/edge-function-error";
+import { criarEtapasGeracaoDocumentos } from "@/lib/etapas-geracao-documentos";
 import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -50,8 +51,11 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
       .update({ numero_pasta: pasta, valor_causa: valorCausa })
       .eq("id", caso.id);
     if (updErr) { setGenerating(false); toast.error(updErr.message || "Erro ao salvar"); return; }
-    const { error } = await supabase.functions.invoke("generate-documents", {
-      body: {
+    try {
+      const escritorios = Array.isArray(caso.escritorios)
+        ? caso.escritorios.filter((escritorio): escritorio is string => typeof escritorio === "string")
+        : [];
+      const dadosBase = {
         caso_id: caso.id,
         captador: state.captador.trim(),
         oab: state.oab.trim(),
@@ -59,15 +63,23 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
         telefone_cliente: state.telefone.trim(),
         uf_comarca: state.ufComarca.trim(),
         endereco_uniao: state.enderecoUniao.trim(),
-      },
-    });
-    setGenerating(false);
-    if (error) {
+      };
+
+      // Intencionalmente sequencial: cada chamada processa um único artefato,
+      // evitando que a Edge Function exceda o limite 546 de CPU/memória.
+      for (const passo of criarEtapasGeracaoDocumentos(caso.tipo_acao, escritorios)) {
+        const { error } = await supabase.functions.invoke("generate-documents", {
+          body: { ...dadosBase, ...passo },
+        });
+        if (error) throw error;
+      }
+      toast.success("Documentos gerados");
+    } catch (error) {
       const msg = await mensagemErroFuncao(error, "Erro ao gerar documentos");
       console.error("[generate-documents] Falha:", error, msg);
       toast.error(msg);
-    } else {
-      toast.success("Documentos gerados");
+    } finally {
+      setGenerating(false);
     }
   };
 
