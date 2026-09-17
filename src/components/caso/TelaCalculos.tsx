@@ -10,8 +10,7 @@ import { toast } from "sonner";
 import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
 import { formatarCpf } from "@/lib/cpf";
-import { mensagemErroFuncao } from "@/lib/edge-function-error";
-import { criarEtapasGeracaoDocumentos } from "@/lib/etapas-geracao-documentos";
+import { gerarDocumentosNoNavegador } from "@/lib/gerar-documentos-navegador";
 import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -52,32 +51,19 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
       .eq("id", caso.id);
     if (updErr) { setGenerating(false); toast.error(updErr.message || "Erro ao salvar"); return; }
     try {
-      const escritorios = Array.isArray(caso.escritorios)
-        ? caso.escritorios.filter((escritorio): escritorio is string => typeof escritorio === "string")
-        : [];
-      const dadosBase = {
-        caso_id: caso.id,
+      await gerarDocumentosNoNavegador(caso, {
         captador: state.captador.trim(),
         oab: state.oab.trim(),
         email_cliente: state.email.trim(),
         telefone_cliente: state.telefone.trim(),
         uf_comarca: state.ufComarca.trim(),
         endereco_uniao: state.enderecoUniao.trim(),
-      };
-
-      // Intencionalmente sequencial: cada chamada processa um único artefato,
-      // evitando que a Edge Function exceda o limite 546 de CPU/memória.
-      for (const passo of criarEtapasGeracaoDocumentos(caso.tipo_acao, escritorios)) {
-        const { error } = await supabase.functions.invoke("generate-documents", {
-          body: { ...dadosBase, ...passo },
-        });
-        if (error) throw error;
-      }
+        valor_causa: valorCausa,
+      });
       toast.success("Documentos gerados");
     } catch (error) {
-      const msg = await mensagemErroFuncao(error, "Erro ao gerar documentos");
-      console.error("[generate-documents] Falha:", error, msg);
-      toast.error(msg);
+      console.error("[gerar-documentos-navegador] Falha:", error);
+      toast.error(error instanceof Error ? error.message : "Erro ao gerar documentos");
     } finally {
       setGenerating(false);
     }

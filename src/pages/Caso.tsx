@@ -35,6 +35,7 @@ export type CasoData = {
   contracheques: any;
   contracheques_extraidos: ContrachequeRelacional[];
   numero_pasta: string | null;
+  valor_causa: number | null;
   documentos_gerados: any;
   erro_processamento: string | null;
   mesclado_em: string | null;
