@@ -277,6 +277,17 @@ describe("deduplicação canônica de lançamentos e pessoas", () => {
     expect(resultado[2].codigo).toBe("1001");
   });
 
+  it("normaliza competências ISO e ordena os lançamentos do mais antigo ao mais recente", () => {
+    const resultado = deduplicarLancamentos([
+      { id: "recente", competencia: "2025-01", codigo: "1513", tipo: "provento", descricao: "Banco de Horas" },
+      { id: "antigo", competencia: "2021-12", codigo: "1513", tipo: "provento", descricao: "Banco de Horas" },
+      { id: "intermediario", competencia: "11/2024", codigo: "1513", tipo: "provento", descricao: "Banco de Horas" },
+      { id: "sem-competencia", competencia: "sem competência", codigo: "1513", tipo: "provento", descricao: "Banco de Horas" },
+    ]);
+
+    expect(resultado.map((l) => l.competencia)).toEqual(["12/2021", "11/2024", "01/2025", "sem competência"]);
+  });
+
   it("deduplica pessoas pelo identificador único", () => {
     const pessoas = [
       { pessoa_id: "cpf:02334085502", pessoa_nome: "EDSON SANTOS SENA" },

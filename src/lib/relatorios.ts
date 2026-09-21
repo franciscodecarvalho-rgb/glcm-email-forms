@@ -416,11 +416,21 @@ export function deduplicarLancamentos<T extends Record<string, unknown>>(itens: 
     const chave = `${comp}|${cod}|${tipo}|${desc}`;
 
     if (!vistos.has(chave)) {
-      vistos.set(chave, item);
+      // A competência é apresentada no padrão único do relatório, independente
+      // de a fonte persistir o mês como AAAA-MM ou MM/AAAA.
+      const competencia = normalizarCompetenciaFiltro(String(item.competencia ?? ""));
+      vistos.set(chave, competencia ? ({ ...item, competencia } as T) : item);
     }
   }
 
-  return Array.from(vistos.values());
+  return Array.from(vistos.values()).sort((a, b) => {
+    const competenciaA = chaveCompetencia(String(a.competencia ?? ""));
+    const competenciaB = chaveCompetencia(String(b.competencia ?? ""));
+    if (competenciaA && competenciaB) return competenciaA.localeCompare(competenciaB);
+    if (competenciaA) return -1;
+    if (competenciaB) return 1;
+    return 0;
+  });
 }
 
 /**
