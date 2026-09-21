@@ -1104,7 +1104,7 @@ export default function Relatorios() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-center font-semibold text-xs">
-                                {num(l.competencias) || 1}
+                                {num(l.competencias)}
                               </TableCell>
                             </>
                           )}
