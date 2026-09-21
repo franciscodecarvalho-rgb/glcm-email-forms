@@ -69,6 +69,11 @@ type Linha = Record<string, unknown> & { origem?: OrigemRelatorio };
 
 type Fonte<T> = { estado: EstadoFonte; motivo?: string; dados: T[] };
 
+type ResumoPessoasHistorico = {
+  resumo: Record<string, unknown>;
+  linhas: Linha[];
+};
+
 export const PAGINA = 50;
 export const LANCAMENTOS_POR_PAGINA = 50;
 
@@ -243,22 +248,39 @@ export default function Relatorios() {
     const paginacao = visao === "tema" ? {} : { p_limit: PAGINA, p_offset: pagina * PAGINA };
     const paginacaoHist = visao === "tema" ? {} : { limit: PAGINA, offset: pagina * PAGINA };
 
-    const [tc, th, lc, lh] = await Promise.all([
+    const [tc, th, lc, lh, historicoPessoas] = await Promise.all([
       usaCasos ? consultarCasos<Record<string, unknown>>("relatorio_total_geral", payload) : Promise.resolve(vazio),
-      usaHistorico ? consultarHistorico<Record<string, unknown>>("total_geral", corpoHistorico) : Promise.resolve(vazio),
+      usaHistorico && visao !== "pessoa"
+        ? consultarHistorico<Record<string, unknown>>("total_geral", corpoHistorico)
+        : Promise.resolve(vazio),
       usaCasos ? consultarCasos<Linha>(rpcVisao, { ...payload, ...paginacao }) : Promise.resolve(vazio),
-      usaHistorico ? consultarHistorico<Linha>(acaoVisao, { ...corpoHistorico, ...paginacaoHist }) : Promise.resolve(vazio),
+      usaHistorico && visao !== "pessoa"
+        ? consultarHistorico<Linha>(acaoVisao, { ...corpoHistorico, ...paginacaoHist })
+        : Promise.resolve(vazio),
+      usaHistorico && visao === "pessoa"
+        ? consultarHistorico<ResumoPessoasHistorico>("resumo_pessoas", { ...corpoHistorico, ...paginacaoHist })
+        : Promise.resolve<Fonte<ResumoPessoasHistorico>>({ estado: "ok", dados: [] }),
     ]);
 
     if (serie !== serieLista.current) return;
-    setTotais({ casos: tc, historico: th });
+    const resumoHistorico = historicoPessoas.dados[0];
+    const thEfetivo: Fonte<Record<string, unknown>> =
+      usaHistorico && visao === "pessoa"
+        ? { ...historicoPessoas, dados: resumoHistorico ? [resumoHistorico.resumo] : [] }
+        : th;
+    const lhEfetivo: Fonte<Linha> =
+      usaHistorico && visao === "pessoa"
+        ? { ...historicoPessoas, dados: resumoHistorico?.linhas ?? [] }
+        : lh;
+
+    setTotais({ casos: tc, historico: thEfetivo });
     const lcDedup: Fonte<Linha> = {
       ...lc,
       dados: visao === "pessoa" ? deduplicarPessoas(lc.dados) : lc.dados,
     };
     const lhDedup: Fonte<Linha> = {
-      ...lh,
-      dados: visao === "pessoa" ? deduplicarPessoas(lh.dados) : lh.dados,
+      ...lhEfetivo,
+      dados: visao === "pessoa" ? deduplicarPessoas(lhEfetivo.dados) : lhEfetivo.dados,
     };
     setLinhas({ casos: lcDedup, historico: lhDedup });
     setCarregando(false);

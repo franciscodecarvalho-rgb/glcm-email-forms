@@ -22,7 +22,7 @@
 //
 // Contrato (POST, JSON):
 //   entrada: { acao, temas, rubricas, empresas, de, ate, limit, offset, pessoa_id }
-//     acao ∈ total_geral | totais_tema | por_pessoa | por_empresa | rubricas | lancamentos
+//     acao ∈ total_geral | totais_tema | por_pessoa | resumo_pessoas | por_empresa | rubricas | lancamentos
 //   saída 200: { disponivel: true, dados: [...] }
 //           ou { disponivel: false, motivo: string }
 //   saída 401: { error: "Unauthorized" }
@@ -43,6 +43,7 @@ const ACOES: Record<string, string> = {
   total_geral: "relatorio_total_geral",
   totais_tema: "relatorio_totais_tema",
   por_pessoa: "relatorio_por_pessoa",
+  resumo_pessoas: "relatorio_resumo_pessoas",
   por_empresa: "relatorio_por_empresa",
   lancamentos: "relatorio_lancamentos_pessoa",
   rubricas: "relatorio_rubricas",

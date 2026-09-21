@@ -46,6 +46,13 @@ RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT btrim(regexp_replace(lower(coalesce(p_valor, '')), '\s+', ' ', 'g'));
 $$;
 
+-- O relatório pesquisa a descrição normalizada; o índice bruto acima não
+-- atende essa expressão. O parcial contém apenas itens financeiros úteis.
+CREATE INDEX IF NOT EXISTS idx_itens_relatorio_descricao_norm_trgm
+  ON public.itens_contracheque
+  USING gin (public.normalizar_termo_tema(descricao) gin_trgm_ops)
+  WHERE valor > 0 AND tipo IN ('provento', 'desconto');
+
 CREATE OR REPLACE FUNCTION public.normalizar_cpf_digitos(_cpf text)
 RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT NULLIF(regexp_replace(COALESCE(_cpf, ''), '\D', '', 'g'), '');
@@ -85,6 +92,17 @@ RETURNS date LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.escapar_like_literal(_valor text)
+RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT replace(
+    replace(
+      replace(coalesce(_valor, ''), chr(92), chr(92) || chr(92)),
+      '%', chr(92) || '%'
+    ),
+    '_', chr(92) || '_'
+  );
+$$;
+
 -- ---------------------------------------------------------------------
 -- 2. Função base: relatorio_itens_filtrados com filtragem precoce
 -- ---------------------------------------------------------------------
@@ -117,8 +135,38 @@ SET statement_timeout = '60s' AS $$
            e->>'tipo' AS tipo, e->>'empresa' AS empresa
     FROM jsonb_array_elements(COALESCE(p_rubricas, '[]'::jsonb)) e
   ),
-  -- 1. FILTRAGEM PRECOCE: reduz o universo de itens_contracheque antes de qualquer JOIN
-  itens_candidatos AS (
+  -- 1. FILTRAGEM PRECOCE COM GIN: cada termo conduz uma busca indexada.
+  -- DISTINCT ON preserva um item que corresponda a mais de um termo.
+  itens_por_tema AS (
+    SELECT DISTINCT ON (i.id)
+           i.id AS item_id,
+           i.contracheque_id,
+           i.codigo,
+           i.descricao,
+           i.tipo,
+           i.valor,
+           public.normalizar_termo_tema(i.descricao) AS descricao_norm
+    FROM t_termos_todos tt
+    CROSS JOIN LATERAL (
+      SELECT i.id, i.contracheque_id, i.codigo, i.descricao, i.tipo, i.valor
+      FROM public.itens_contracheque i
+      WHERE i.valor > 0
+        AND i.tipo IN ('provento', 'desconto')
+        AND public.normalizar_termo_tema(i.descricao) LIKE
+          '%' || public.escapar_like_literal(tt.termo) || '%' ESCAPE E'\\'
+        AND (
+          (SELECT count(*) FROM r) = 0
+          OR EXISTS (
+            SELECT 1 FROM r
+            WHERE r.codigo IS NOT DISTINCT FROM i.codigo
+              AND r.descricao IS NOT DISTINCT FROM i.descricao
+              AND r.tipo IS NOT DISTINCT FROM i.tipo
+          )
+        )
+    ) i
+    ORDER BY i.id
+  ),
+  itens_sem_tema AS (
     SELECT i.id AS item_id,
            i.contracheque_id,
            i.codigo,
@@ -129,13 +177,7 @@ SET statement_timeout = '60s' AS $$
     FROM public.itens_contracheque i
     WHERE i.valor > 0
       AND i.tipo IN ('provento', 'desconto')
-      AND (
-        (SELECT count(*) FROM t) = 0
-        OR EXISTS (
-          SELECT 1 FROM t_termos_todos tt
-          WHERE position(tt.termo IN public.normalizar_termo_tema(i.descricao)) > 0
-        )
-      )
+      AND NOT EXISTS (SELECT 1 FROM t)
       AND (
         (SELECT count(*) FROM r) = 0
         OR EXISTS (
@@ -145,6 +187,11 @@ SET statement_timeout = '60s' AS $$
             AND r.tipo IS NOT DISTINCT FROM i.tipo
         )
       )
+  ),
+  itens_candidatos AS (
+    SELECT * FROM itens_por_tema
+    UNION ALL
+    SELECT * FROM itens_sem_tema
   ),
   -- 2. JOIN com contracheques apenas para os itens sobreviventes
   itens_com_contracheque AS (
@@ -304,6 +351,71 @@ SET statement_timeout = '60s' AS $$
   LIMIT GREATEST(COALESCE(p_limit, 50), 1) OFFSET GREATEST(COALESCE(p_offset, 0), 0);
 $$;
 
+-- Resumo e página de pessoas usam a mesma leitura filtrada. A tela chama esta
+-- função no carregamento inicial para não varrer as rubricas duas vezes.
+CREATE OR REPLACE FUNCTION public.relatorio_resumo_pessoas(
+  p_temas jsonb DEFAULT '[]'::jsonb, p_rubricas jsonb DEFAULT '[]'::jsonb,
+  p_empresas text[] DEFAULT NULL, p_de text DEFAULT NULL, p_ate text DEFAULT NULL,
+  p_limit integer DEFAULT 50, p_offset integer DEFAULT 0
+) RETURNS TABLE (resumo jsonb, linhas jsonb)
+LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public
+SET statement_timeout = '60s' AS $$
+  WITH filtrados AS MATERIALIZED (
+    SELECT * FROM public.relatorio_itens_filtrados(p_temas, p_rubricas, p_empresas, p_de, p_ate)
+  ),
+  temas_pessoa AS (
+    SELECT f.pessoa_id, array_agg(DISTINCT t.tema ORDER BY t.tema) AS temas
+    FROM filtrados f
+    CROSS JOIN LATERAL unnest(f.temas) AS t(tema)
+    WHERE t.tema IS NOT NULL AND t.tema <> ''
+    GROUP BY f.pessoa_id
+  ),
+  agg AS (
+    SELECT f.pessoa_id,
+           min(f.pessoa_identificacao) AS pessoa_identificacao,
+           min(f.pessoa_nome) AS pessoa_nome,
+           min(f.pessoa_cpf) AS pessoa_cpf,
+           COALESCE(min(NULLIF(f.empresa, '(sem empresa/modelo)')), '(sem empresa/modelo)') AS empresa,
+           count(DISTINCT f.comp_data) AS competencias,
+           0::bigint AS casos,
+           count(DISTINCT f.item_id) AS itens,
+           COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'provento'), 0) AS proventos,
+           COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'desconto'), 0) AS descontos
+    FROM filtrados f
+    GROUP BY f.pessoa_id
+  ),
+  pagina AS (
+    SELECT a.pessoa_id, a.pessoa_identificacao, a.pessoa_nome, a.pessoa_cpf,
+           a.empresa, a.competencias, COALESCE(tp.temas, '{}'::text[]) AS temas,
+           a.casos, a.itens, a.proventos, a.descontos, count(*) OVER () AS total_linhas
+    FROM agg a
+    LEFT JOIN temas_pessoa tp ON tp.pessoa_id = a.pessoa_id
+    ORDER BY a.proventos DESC, a.pessoa_nome NULLS LAST, a.pessoa_id
+    LIMIT GREATEST(COALESCE(p_limit, 50), 1) OFFSET GREATEST(COALESCE(p_offset, 0), 0)
+  )
+  SELECT
+    (
+      SELECT jsonb_build_object(
+        'itens', count(DISTINCT f.item_id),
+        'pessoas', count(DISTINCT f.pessoa_id),
+        'pessoas_sem_cpf', count(DISTINCT f.pessoa_id) FILTER (WHERE f.pessoa_identificacao = 'caso_sem_cpf'),
+        'casos', 0,
+        'empresas', count(DISTINCT f.empresa_id),
+        'proventos', COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'provento'), 0),
+        'descontos', COALESCE(sum(f.valor) FILTER (WHERE f.tipo = 'desconto'), 0)
+      )
+      FROM filtrados f
+    ),
+    COALESCE(
+      (
+        SELECT jsonb_agg(to_jsonb(p) ORDER BY p.proventos DESC, p.pessoa_nome NULLS LAST, p.pessoa_id)
+        FROM pagina p
+      ),
+      '[]'::jsonb
+    );
+$$;
+
 CREATE OR REPLACE FUNCTION public.relatorio_por_empresa(
   p_temas jsonb DEFAULT '[]'::jsonb, p_rubricas jsonb DEFAULT '[]'::jsonb,
   p_empresas text[] DEFAULT NULL, p_de text DEFAULT NULL, p_ate text DEFAULT NULL,
@@ -400,6 +512,7 @@ REVOKE ALL ON FUNCTION public.relatorio_itens_filtrados(jsonb, jsonb, text[], te
 REVOKE ALL ON FUNCTION public.relatorio_totais_tema(jsonb, jsonb, text[], text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.relatorio_total_geral(jsonb, jsonb, text[], text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.relatorio_por_pessoa(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.relatorio_resumo_pessoas(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.relatorio_por_empresa(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.relatorio_rubricas(jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.relatorio_lancamentos_pessoa(text, jsonb, jsonb, text[], text, text, integer, integer) FROM PUBLIC, anon, authenticated;
@@ -409,6 +522,7 @@ GRANT EXECUTE ON FUNCTION public.relatorio_itens_filtrados(jsonb, jsonb, text[],
 GRANT EXECUTE ON FUNCTION public.relatorio_totais_tema(jsonb, jsonb, text[], text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.relatorio_total_geral(jsonb, jsonb, text[], text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.relatorio_por_pessoa(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.relatorio_resumo_pessoas(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.relatorio_por_empresa(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.relatorio_rubricas(jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.relatorio_lancamentos_pessoa(text, jsonb, jsonb, text[], text, text, integer, integer) TO service_role;
