@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { TelaConfirmacao } from "@/components/caso/TelaConfirmacao";
 import { TelaDadosExtraidos } from "@/components/caso/TelaDadosExtraidos";
 import { TelaCalculos } from "@/components/caso/TelaCalculos";
@@ -75,6 +86,8 @@ export default function Caso() {
   const [caso, setCaso] = useState<CasoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [mesclados, setMesclados] = useState<{ id: string; mesclado_at: string | null }[]>([]);
+  const [excluirAberto, setExcluirAberto] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   const recarregar = async () => {
     if (!id) return;
@@ -151,6 +164,30 @@ export default function Caso() {
     toast.success("Caso cancelado");
     nav("/");
   };
+
+  const excluirCaso = async () => {
+    setExcluindo(true);
+    const { data, error } = await supabase
+      .from("casos")
+      .delete()
+      .eq("id", caso.id)
+      .select("id")
+      .maybeSingle();
+    setExcluindo(false);
+
+    if (error) {
+      toast.error("Falha ao excluir caso");
+      return;
+    }
+    if (!data) {
+      toast.error("Caso não encontrado");
+      return;
+    }
+
+    setExcluirAberto(false);
+    toast.success("Caso excluído");
+    nav("/");
+  };
   const extracaoCompleta = dadosEsperadosForamExtraidos(caso);
   const alertasRubricas = encontrarRubricasAlerta(caso.contracheques_extraidos);
   const rubricasSemIr = encontrarRubricasSemIr(caso.contracheques_extraidos);
@@ -164,6 +201,34 @@ export default function Caso() {
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-muted-foreground">{caso.id.slice(0, 8)}</span>
             <StatusBadge status={caso.status} />
+            <AlertDialog open={excluirAberto} onOpenChange={setExcluirAberto}>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm">
+                  <Trash2 className="mr-1 h-4 w-4" />Excluir caso
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Excluir caso</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Deseja excluir o caso de {caso.nome_cliente ?? "cliente não identificado"} ({caso.id.slice(0, 8)})? Esta ação não pode ser desfeita.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={excluindo}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={excluindo}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void excluirCaso();
+                    }}
+                  >
+                    {excluindo ? "Excluindo..." : "Confirmar exclusão"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
 
