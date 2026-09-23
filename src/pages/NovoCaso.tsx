@@ -32,11 +32,27 @@ const LIMITE_POLLING_LOTE_MS = 120_000;
 
 const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function erroRetornadoNoPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const objeto = payload as Record<string, unknown>;
+  const valor = objeto.error ?? objeto.erro;
+  if (typeof valor === "string" && valor.trim()) return valor.trim();
+  if (valor && typeof valor === "object") {
+    const aninhado = valor as Record<string, unknown>;
+    if (typeof aninhado.message === "string" && aninhado.message.trim()) return aninhado.message.trim();
+  }
+  return null;
+}
+
 async function consultarStatusLote(casoId: string, loteId: string): Promise<StatusLote> {
   const { data, error } = await supabase.functions.invoke("process-contracheques-pdf", {
     body: { caso_id: casoId, progress: true },
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(await mensagemErroFuncao(error, "Falha ao consultar o processamento do lote"));
+  }
+  const erroPayload = erroRetornadoNoPayload(data);
+  if (erroPayload) throw new Error(erroPayload);
   const lote = (data?.lotes as StatusLote[] | undefined)?.find((item) => item.id === loteId);
   if (!lote) throw new Error("Status do lote não encontrado");
   return lote;
@@ -78,6 +94,8 @@ async function processarLoteComRetomada(casoId: string, loteId: string): Promise
   const { data, error } = await supabase.functions.invoke("process-contracheques-pdf", {
     body: { caso_id: casoId, acao: "processar_lote", lote_id: loteId },
   });
+  const erroPayload = erroRetornadoNoPayload(data);
+  if (erroPayload) throw new Error(erroPayload);
   if (!error) {
     if (data?.em_processamento) await aguardarConclusaoLote(casoId, loteId);
     return;
@@ -217,6 +235,8 @@ export default function NovoCaso() {
       if (planoError) {
         throw new Error(await mensagemErroFuncao(planoError, "Falha ao planejar lotes de contracheques"));
       }
+      const erroPlano = erroRetornadoNoPayload(plano);
+      if (erroPlano) throw new Error(erroPlano);
 
       const lotesPlanejados: Array<{ id: string }> = plano?.lotes ?? [];
       for (let indice = 0; indice < lotesPlanejados.length; indice++) {
@@ -234,6 +254,8 @@ export default function NovoCaso() {
       if (pessoaisError) {
         throw new Error(await mensagemErroFuncao(pessoaisError, "Falha ao extrair dados pessoais"));
       }
+      const erroPessoais = erroRetornadoNoPayload(pessoais);
+      if (erroPessoais) throw new Error(erroPessoais);
       if (pessoais?.revisao?.length) {
         toast.warning(`${pessoais.revisao.length} documento(s) pessoal(is) precisam de revisão manual`);
       }
@@ -242,8 +264,9 @@ export default function NovoCaso() {
       setProgresso(100);
       toast.success("Caso criado e documentos processados");
       nav(`/casos/${caso.id}`);
-    } catch (e: any) {
-      toast.error(e.message ?? "Falha ao criar caso");
+    } catch (e: unknown) {
+      const mensagem = e instanceof Error ? e.message : "Falha ao criar caso";
+      toast.error(etapa ? `${etapa}: ${mensagem}` : mensagem, { duration: 10000 });
     } finally {
       setLoading(false);
     }
