@@ -50,7 +50,7 @@ function tipoDocumento(texto: string) {
   return "outro";
 }
 function enderecoDaSecao(texto: string): string | null {
-  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}\s+[A-Z]{2}\b)?)/i);
+  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i);
   return m?.[1]?.trim() || null;
 }
 function extrairDeterministico(texto: string) {

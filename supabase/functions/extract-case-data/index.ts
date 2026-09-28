@@ -43,7 +43,7 @@ function cpfValido(valor: unknown): string | null {
   return digito(cpf.slice(0, 9), 10) === Number(cpf[9]) && digito(cpf.slice(0, 10), 11) === Number(cpf[10]) ? cpf : null;
 }
 function enderecoDaSecao(texto: string): string | null {
-  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}\s+[A-Z]{2}\b)?)/i);
+  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i);
   return m?.[1]?.trim() || null;
 }
 async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
