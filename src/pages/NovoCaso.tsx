@@ -306,7 +306,7 @@ export default function NovoCaso() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pasta">Número do processo</Label>
+              <Label htmlFor="pasta">Número do Processo</Label>
               <Input id="pasta" value={numeroPasta} onChange={(e) => setNumeroPasta(e.target.value)} placeholder="ex: 2026/0123" />
             </div>
             <div className="space-y-2">
