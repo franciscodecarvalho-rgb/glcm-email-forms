@@ -26,7 +26,7 @@ export function classificarDocumentoPessoal(texto: string): TipoDocumentoPessoal
   if (/CARTEIRA NACIONAL DE HABILITACAO|PERMISSAO PARA DIRIGIR/.test(t)) return "cnh";
   if (/CARTEIRA DE IDENTIDADE NACIONAL|\bCIN\b/.test(t)) return "cin";
   if (/REGISTRO GERAL|CARTEIRA DE IDENTIDADE|\bIDENTIDADE\b/.test(t)) return "rg";
-  if (/COMPROVANTE DE RESIDENCIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/.test(t)) return "comprovante_residencia";
+  if (/COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/.test(t)) return "comprovante_residencia";
   if (/CADASTRO DE PESSOAS FISICAS|\bCPF\b/.test(t)) return "cpf";
   return "outro";
 }
@@ -45,9 +45,15 @@ function rgAssociado(texto: string): string | null {
   return match?.[1]?.trim() || null;
 }
 
+export function enderecoDaSecao(texto: string): string | null {
+  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i);
+  return m?.[1]?.trim() || null;
+}
 function enderecoDoComprovante(texto: string, tipo: TipoDocumentoPessoal): Record<string, string> | null {
   if (tipo !== "comprovante_residencia") return null;
   const cep = texto.match(/\b(\d{5}-?\d{3})\b/)?.[1];
+  const secao = enderecoDaSecao(texto);
+  if (secao && cep) return { logradouro: secao, cep };
   const linha = texto.split(/\r?\n/).map((v) => v.trim()).find((v) => /\b(RUA|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b/i.test(v));
   if (!linha && !cep) return null;
   return { ...(linha ? { logradouro: linha } : {}), ...(cep ? { cep } : {}) };
