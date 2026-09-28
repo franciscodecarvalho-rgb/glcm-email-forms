@@ -94,6 +94,15 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("", "Adic. Repouso Alimentação", "generico", "provento")).toBeNull();
   });
 
+  it("classifica CETREL P368 e VOPAK 2000 como hra somente em proventos, sem globalizar", () => {
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "provento")).toBe("hra");
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "desconto")).toBeNull();
+    expect(familia("2000", "H.R.A", "vopak", "provento")).toBe("hra");
+    expect(familia("2000", "H.R.A", "vopak", "desconto")).toBeNull();
+    expect(familia("2000", "Salário Básico", "generico", "provento")).toBeNull();
+    expect(familia("P368", "Outra", "generico", "provento")).toBeNull();
+  });
+
 });
 
 describe("Petrobras — HRA/AHRA", () => {

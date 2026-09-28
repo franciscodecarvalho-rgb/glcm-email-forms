@@ -203,6 +203,8 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   if(modeloOrigem==="oxiteno"&&codigoNormalizado==="2000")return "hra";
   if(modeloOrigem==="oxiteno"&&codigoNormalizado==="3453")return "hra";
   if(modeloOrigem==="oxiteno"&&codigoNormalizado==="3331")return "hra";
+  // CETREL P368 "ADIC HR REM ALIM SUPLEM(HRAS)" e VOPAK 2000 "H.R.A": hra somente em proventos.
+  if((modeloOrigem==="cetrel"&&codigoNormalizado==="P368")||(modeloOrigem==="vopak"&&codigoNormalizado==="2000"))return tipo==="provento"?"hra":null;
   const n=norm(descricao);
   // Birla Carbon: "Adic. Repouso Alimentação" não traz a sigla HRA no PDF.
   // A regra é exclusiva do modelo e só vale quando está em proventos.
