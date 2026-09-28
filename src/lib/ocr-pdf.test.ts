@@ -6,6 +6,7 @@ describe("OCR de PDF", () => {
     const itens = palavrasOcrParaItens(
       {
         confidence: 91,
+        text: "3008",
         blocks: [{ paragraphs: [{ lines: [{ words: [{ text: "3008", confidence: 96, bbox: { x0: 20, y0: 40, x1: 100, y1: 60 } }] }] }] }],
       },
       400,
@@ -20,6 +21,8 @@ describe("OCR de PDF", () => {
 
   it("ignora palavras vazias ou sem caixa delimitadora", () => {
     const itens = palavrasOcrParaItens({
+      text: "",
+      confidence: 0,
       blocks: [{ paragraphs: [{ lines: [{ words: [
         { text: "", confidence: 90, bbox: { x0: 0, y0: 0, x1: 10, y1: 10 } },
         { text: "sem-caixa", confidence: 90 },
