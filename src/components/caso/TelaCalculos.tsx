@@ -42,7 +42,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
   };
 
   const gerar = async () => {
-    if (!pasta.trim()) { toast.error("Informe o número do processo"); return; }
+    if (!pasta.trim()) { toast.error("Informe o número do contrato"); return; }
     if (!formValido) { toast.error("Preencha todos os campos obrigatórios"); return; }
     setGenerating(true);
     const { error: updErr } = await supabase
@@ -139,7 +139,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
         <h2 className="font-semibold">Dados para geração dos documentos</h2>
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <Label htmlFor="pasta" className="text-sm font-semibold">Número do Processo *</Label>
+            <Label htmlFor="pasta" className="text-sm font-semibold">Número do Contrato *</Label>
             <Input id="pasta" className="mt-2" value={pasta} onChange={(e) => setPasta(e.target.value)} placeholder="ex: 2026/0123" />
           </div>
           <div>
