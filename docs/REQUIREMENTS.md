@@ -36,7 +36,7 @@ quando a intenção não é explícita, a classificação é INFERENCE.
   `lotes_extracao` e `lotes_contracheques`.
 - **REQ-011:** dados extraídos são apresentados para confirmação humana antes do
   avanço do fluxo, conforme o caminho implementado em `Caso.tsx`.
-- **REQ-012:** o sistema permite calcular/revisar valor do caso e número da pasta,
+- **REQ-012:** o sistema permite calcular/revisar valor do caso e número do processo,
   gerar documentos a partir de templates e disponibilizar os arquivos para download.
 - **REQ-013:** templates `.docx` são cadastrados por tipo na tabela `templates` e no
   bucket `templates`; documentos gerados e arquivos recebidos usam buckets separados.
