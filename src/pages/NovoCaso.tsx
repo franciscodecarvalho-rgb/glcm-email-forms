@@ -149,7 +149,14 @@ export default function NovoCaso() {
     setProgresso(5);
     setEtapa("Unificando contracheques");
     try {
-      const { unificado: contrachequeUnificado, lotes: lotesPdf } = await unificarPdfsEmLotes(contracheques);
+      const { unificado: contrachequeUnificado, lotes: lotesPdf } = await unificarPdfsEmLotes(
+        contracheques,
+        undefined,
+        ({ pagina, totalPaginas, confianca }) => {
+          setEtapa(`OCR local: página ${pagina}/${totalPaginas} (${Math.round(confianca)}% confiança)`);
+          setProgresso(Math.min(15, 5 + Math.round((pagina / totalPaginas) * 10)));
+        },
+      );
       const arquivos = [
         { file: contrachequeUnificado, tipo: "contracheque" },
         ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),

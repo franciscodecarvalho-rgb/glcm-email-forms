@@ -59,6 +59,34 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("0001", "Salário Básico", "")).toBeNull();
   });
 
+  it("aplica a classificação específica da Petrobras", () => {
+    expect(familia("1062", "Adicional HRA", "petrobras", "provento")).toBe("hra");
+    expect(familia("1062", "AdicionalHRA", "petrobras", "provento")).toBe("hra");
+    expect(familia("4208", "Dif AHRA Dobra", "petrobras", "provento")).toBe("ahra");
+    expect(familia("9999", "DI AHRA Dobra", "petrobras", "provento")).toBe("ahra");
+    expect(familia("0207", "Adic HRA Eventual", "petrobras", "provento")).toBe("adicional_hra");
+    expect(familia("1062", "Adicional HRA", "braskem", "provento")).toBe("adicional_hra");
+    expect(familia("4208", "Dif AHRA Dobra", "braskem", "provento")).toBe("dif_ahra");
+  });
+
+  it("classifica a rubrica 3217 da ECOLAB como hra sem tornar o código global", () => {
+    expect(familia("3217", "Adicional Repouso Alimentação", "ecolab", "provento")).toBe("hra");
+    expect(familia("3217", "Adicional Repouso Alimentação", "generico", "provento")).toBeNull();
+    expect(familia("3217", "Outra descrição", "ecolab", "provento")).toBe("hra");
+  });
+
+  it("classifica a rubrica 3453 da OXITENO como hra sem tornar o código global", () => {
+    expect(familia("3320", "HRA IR", "oxiteno", "provento")).toBe("hra");
+    expect(familia("3453", "HRA-Horas Rep. Alimentação", "oxiteno", "provento")).toBe("hra");
+    expect(familia("3320", "Salário Básico", "generico", "provento")).toBeNull();
+    expect(familia("3453", "Salário Básico", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica a rubrica 3331 da OXITENO como hra, apesar do texto de diferença", () => {
+    expect(familia("3331", "HRA-Dif. Dissídio", "oxiteno", "provento")).toBe("hra");
+    expect(familia("3331", "HRA-Dif. Dissídio", "generico", "provento")).toBe("dif_ahra");
+  });
+
 });
 
 describe("contribuição extraordinária PPSP (Petrobras)", () => {

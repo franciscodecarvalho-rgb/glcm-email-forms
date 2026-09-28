@@ -17,7 +17,7 @@ export type ContrachequePdf = {
 };
 
 type Linha = { y: number; itens: TextItemPdf[]; texto: string };
-const CODIGO = /^\/?[A-Z0-9]{3,6}$/i;
+const CODIGO = /^\/?[A-Z0-9]{1,6}$/i;
 const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-?(?:R\$)?\s*\d+,\d{2}$/i;
 const MESES: Record<string, string> = {
   janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
@@ -49,7 +49,7 @@ function linhasDaPagina(itens: TextItemPdf[]): Linha[] {
   });
   for (const item of expandidos.sort((a, b) => b.y - a.y || a.x - b.x)) {
     if (!item.str.trim()) continue;
-    const linha = linhas.find((l) => Math.abs(l.y - item.y) <= Math.max(2.5, item.height * 0.35));
+    const linha = linhas.find((l) => Math.abs(l.y - item.y) <= Math.max(4.5, item.height * 0.5));
     if (linha) linha.itens.push(item);
     else linhas.push({ y: item.y, itens: [item], texto: "" });
   }
@@ -64,6 +64,13 @@ function linhasDaPagina(itens: TextItemPdf[]): Linha[] {
 
 function detectarModelo(texto: string): string {
   const n = normalizar(texto);
+  if (n.includes("birla carbon")) return "birla_carbon";
+  if (n.includes("cetrel")) return "cetrel";
+  if (n.includes("deten quimica")) return "deten";
+  if (n.includes("ecolab quimica")) return "ecolab";
+  if (n.includes("moeve quimica")) return "moeve";
+  if (n.includes("oxiteno")) return "oxiteno";
+  if (n.includes("vopak brasil")) return "vopak";
   if (n.includes("companhia brasileira de estireno") || n.includes("unigel") || n.includes("proquigel")) return "unigel";
   if (n.includes("elekeiroz")) return "elekeiroz";
   if (n.includes("termobahia") || n.includes("termo bahia")) return "termo_bahia";
@@ -78,6 +85,8 @@ function detectarModelo(texto: string): string {
 }
 
 function extrairCompetencia(texto: string): string | null {  const n = normalizar(texto);
+  const referente = n.match(/referente\s+a\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(20\d{2})/);
+  if (referente) return `${MESES[referente[1]]}/${referente[2]}`;
   // 1) Nome do mês (mais específico): "Abril 2021", "SETEMBRO/2025", "abr/2026".
   //    Aceita espaços entre letras (PDFs com texto fragmentado, ex.: "mar c o 2021").
   //    Evita pegar a data de admissão (DD.MM.AAAA) como competência.
@@ -157,9 +166,11 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   const xDescricao = acharX(/descricao/);
   const xProvento = acharX(/provent|venciment|valor/);
   const xDesconto = acharX(/descont/);
+  const xInformativo = acharX(/informativ|outros/);
   const xReferencia = acharX(/referencia|quant|qtde/);
   let secao: TipoRubrica = "provento";
   let informativo = false;
+  let tabelaEncerrada = false;
   const rubricas: RubricaPdf[] = [];
   let totalProventos: number | null = null;
   let totalDescontos: number | null = null;
@@ -171,26 +182,35 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       if (linha === cabecalho) antesDoCabecalho = false;
       continue;
     }
+    if (tabelaEncerrada) continue;
     const n = normalizar(linha.texto);
     if (/base\s*\/\s*outros|custo\s+empresa.*informativo/.test(n)) informativo = true;
-    if (/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)) { totalProventos = totalNaLinha(linha); secao = "desconto"; continue; }
+    if (/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)) {
+      const valoresTotais = valoresDaLinha(linha);
+      totalProventos = valoresTotais[0] ? moedaBrasileiraParaNumero(valoresTotais[0].str) : null;
+      if (/total(?:\s+de)?\s+descontos/.test(n) && valoresTotais.length > 1) totalDescontos = moedaBrasileiraParaNumero(valoresTotais[valoresTotais.length - 1].str);
+      secao = "desconto"; if (modeloOrigem === "birla_carbon") tabelaEncerrada = true; continue;
+    }
     if (/total(?:\s+de)?\s+descontos/.test(n)) { totalDescontos = totalNaLinha(linha); continue; }
     if (/\btotais?\b/.test(n)) {
       const vals = valoresDaLinha(linha).map((i) => moedaBrasileiraParaNumero(i.str));
-      if (vals.length >= 2) { totalProventos ??= vals[0]; totalDescontos ??= vals[1]; liquido ??= vals[2] ?? null; }
+      if (vals.length >= 2) { totalProventos ??= vals[0]; totalDescontos ??= vals[1]; liquido ??= vals[2] ?? null; if (modeloOrigem === "birla_carbon") tabelaEncerrada = true; continue; }
     }
     if (/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)) {
       const vals = valoresDaLinha(linha);
       if (vals.length) liquido = moedaBrasileiraParaNumero(vals[vals.length - 1].str);
+      if (modeloOrigem === "birla_carbon") tabelaEncerrada = true;
     }
 
-    const codigoItem = modeloOrigem === "elekeiroz"
+    const permiteSemCodigo = modeloOrigem === "elekeiroz" || modeloOrigem === "birla_carbon";
+    const codigoItem = permiteSemCodigo
       ? undefined
       : linha.itens.find((i) => i.x < larguraLeitura * 0.22 && CODIGO.test(i.str.trim()));
-    if (!codigoItem && modeloOrigem !== "elekeiroz") continue;
+    if (!codigoItem && !permiteSemCodigo) continue;
     const candidatos = valoresDaLinha(linha).filter((i) => i.x > larguraLeitura * 0.28);
     if (!candidatos.length) continue;
-    const valorItem = candidatos[candidatos.length - 1];
+    const valoresNaoNulos = candidatos.filter((i) => Math.abs(moedaBrasileiraParaNumero(i.str)) > 0);
+    const valorItem = valoresNaoNulos[valoresNaoNulos.length - 1] ?? candidatos[candidatos.length - 1];
     // Unigel/Proquigel e Tronox: o rótulo "DESCRIÇÃO" é centralizado sobre a coluna,
     // então a descrição precisa começar logo após o código da rubrica para não ser truncada.
     const inicioDescricao = (modeloOrigem === "unigel" || modeloOrigem === "tronox") && codigoItem
@@ -208,7 +228,7 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       .sort((a, b) => a - b)[0] ?? larguraLeitura;
     const refItem = xReferencia == null ? null : linha.itens.find((i) => i.x >= xReferencia - larguraLeitura * 0.025 && i.x < fimReferencia);
     let tipo: TipoRubrica;
-    if (informativo) tipo = "informativo";
+    if (informativo || (["birla_carbon", "vopak"].includes(modeloOrigem) && xInformativo != null && valorItem.x >= xInformativo - larguraLeitura * 0.03)) tipo = "informativo";
     else if (modeloOrigem === "petrobras" || modeloOrigem === "unigel") tipo = secao;
     else if (modeloOrigem === "elekeiroz") tipo = valorItem.x >= larguraLeitura * 0.78 ? "desconto" : "provento";
     else if (xDesconto != null && Math.abs(valorItem.x - xDesconto) < Math.abs(valorItem.x - (xProvento ?? 0))) tipo = "desconto";
@@ -226,9 +246,114 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   if (!paginaContinua) {
     totalProventos ??= proventosCalculados || null;
     totalDescontos ??= descontosCalculados || null;
+    if (totalDescontos == null && ["birla_carbon", "cetrel", "vopak"].includes(modeloOrigem)) totalDescontos = descontosCalculados;
     liquido ??= totalProventos != null && totalDescontos != null ? totalProventos - totalDescontos : null;
   }
   return { competencia, modeloOrigem, totalProventos, totalDescontos, liquido, itens: rubricas };
+}
+
+function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number): ContrachequePdf {
+  const linhas = linhasDaPagina(itens);
+  const texto = linhas.map((linha) => linha.texto).join("\n");
+  const modeloOrigem = detectarModelo(texto);
+  const metade = largura * 0.45;
+  const cabecalho = linhas.find((linha) => {
+    const n = normalizar(linha.texto);
+    return /descricao/.test(n) && /desconto/.test(n) && /valor/.test(n);
+  });
+  if (!cabecalho) return parsePaginaContracheque(itens, largura);
+
+  const acharCabecalho = (padrao: RegExp, lado: "esquerdo" | "direito") => cabecalho.itens
+    .filter((item) => lado === "esquerdo" ? item.x < metade : item.x >= metade)
+    .find((item) => padrao.test(normalizar(item.str)))?.x ?? null;
+  const xCodigoE = acharCabecalho(/^cod/, "esquerdo");
+  const xDescricaoE = acharCabecalho(/descricao/, "esquerdo");
+  const xReferenciaE = acharCabecalho(/^ref/, "esquerdo");
+  const xValorE = acharCabecalho(/^valor$/, "esquerdo");
+  const xCodigoD = acharCabecalho(/^(codigo|cod)/, "direito");
+  const xDescricaoD = acharCabecalho(/desconto/, "direito");
+  const refs = cabecalho.itens.filter((item) => /^ref$/.test(normalizar(item.str))).sort((a, b) => a.x - b.x);
+  const valores = cabecalho.itens.filter((item) => /^valor$/.test(normalizar(item.str))).sort((a, b) => a.x - b.x);
+  const xReferenciaD = refs[1]?.x ?? null;
+  const xValorD = valores[1]?.x ?? null;
+  if (xCodigoE == null || xDescricaoE == null || xReferenciaE == null || xValorE == null || xCodigoD == null || xDescricaoD == null || xReferenciaD == null || xValorD == null) {
+    return parsePaginaContracheque(itens, largura);
+  }
+
+  const valorNaColuna = (linha: Linha, inicio: number, fim: number) => valoresDaLinha(linha)
+    .filter((item) => item.x >= inicio - 20 && item.x < fim - 8)
+    .sort((a, b) => a.x - b.x).pop();
+  const textoNaColuna = (linha: Linha, inicio: number, fim: number) => linha.itens
+    .filter((item) => item.x >= inicio - 8 && item.x < fim - 8 && !itemMonetario(item))
+    .map((item) => item.str).join(" ").replace(/\s+/g, " ").trim();
+  const referenciaNaColuna = (linha: Linha, inicio: number, fim: number) => {
+    const item = linha.itens.find((candidato) => candidato.x >= inicio - 20 && candidato.x < fim - 8 && /^\d+(?:[.,]\d+)?$/.test(candidato.str.trim()));
+    return item ? numeroReferencia(item) : null;
+  };
+  const rubricas: RubricaPdf[] = [];
+  let totalProventos: number | null = null;
+  let totalDescontos: number | null = null;
+  let liquido: number | null = null;
+  let linhaLiquido: Linha | null = null;
+  let candidatoTotais: { linha: Linha; esquerda: TextItemPdf; direita: TextItemPdf } | null = null;
+
+  for (const linha of linhas) {
+    if (linha === cabecalho) continue;
+    const n = normalizar(linha.texto);
+    const codigoE = linha.itens.find((item) => item.x < metade && item.x < xDescricaoE && CODIGO.test(item.str.trim()));
+    const codigoD = linha.itens.find((item) => item.x >= metade && item.x < xDescricaoD && CODIGO.test(item.str.trim()));
+    const valorE = valorNaColuna(linha, xValorE, xCodigoD);
+    const valorD = valorNaColuna(linha, xValorD, largura + 1);
+    if (codigoE && valorE) rubricas.push({ codigo: codigoE.str.trim().toUpperCase(), descricao: textoNaColuna(linha, xDescricaoE, xReferenciaE), referencia: referenciaNaColuna(linha, xReferenciaE, xValorE), valor: Math.abs(moedaBrasileiraParaNumero(valorE.str)), tipo: "provento" });
+    if (codigoD && valorD) rubricas.push({ codigo: codigoD.str.trim().toUpperCase(), descricao: textoNaColuna(linha, xDescricaoD, xReferenciaD), referencia: referenciaNaColuna(linha, xReferenciaD, xValorD), valor: Math.abs(moedaBrasileiraParaNumero(valorD.str)), tipo: "desconto" });
+    const valoresDaLinhaAtual = valoresDaLinha(linha);
+    if (/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n) && valoresDaLinhaAtual.length) {
+      liquido = moedaBrasileiraParaNumero(valoresDaLinhaAtual[valoresDaLinhaAtual.length - 1].str);
+      linhaLiquido = linha;
+    }
+    if (/(?:totais?|total de)/.test(n) && valoresDaLinhaAtual.length >= 2) {
+      totalProventos ??= moedaBrasileiraParaNumero(valoresDaLinhaAtual[0].str);
+      totalDescontos ??= moedaBrasileiraParaNumero(valoresDaLinhaAtual[valoresDaLinhaAtual.length - 1].str);
+    }
+    if (!codigoE && !codigoD && valoresDaLinhaAtual.length >= 2 && (!linhaLiquido || linha.y > linhaLiquido.y)) {
+      const esquerda = valorNaColuna(linha, xValorE, xCodigoD);
+      const direita = valorNaColuna(linha, xValorD, largura + 1);
+      if (esquerda && direita && (!candidatoTotais || (linhaLiquido && Math.abs(linha.y - linhaLiquido.y) < Math.abs(candidatoTotais.linha.y - linhaLiquido.y)))) candidatoTotais = { linha, esquerda, direita };
+    }
+  }
+  if (candidatoTotais) {
+    totalProventos ??= moedaBrasileiraParaNumero(candidatoTotais.esquerda.str);
+    totalDescontos ??= moedaBrasileiraParaNumero(candidatoTotais.direita.str);
+  }
+  totalProventos ??= rubricas.filter((item) => item.tipo === "provento").reduce((soma, item) => soma + item.valor, 0) || null;
+  totalDescontos ??= rubricas.filter((item) => item.tipo === "desconto").reduce((soma, item) => soma + item.valor, 0) || null;
+  liquido ??= totalProventos != null && totalDescontos != null ? totalProventos - totalDescontos : null;
+  return { competencia: extrairCompetencia(texto), modeloOrigem, totalProventos, totalDescontos, liquido, itens: rubricas };
+}
+
+function ehInicioDeContracheque(texto: string): boolean {
+  const n = normalizar(texto);
+  return n.includes("demonstrativo de pagamento") || n.includes("aviso de credito");
+}
+
+/**
+ * Alguns emissores colocam dois ou mais contracheques completos na mesma
+ * página. O parser tradicional continua responsável por cada bloco; esta
+ * função só recorta os blocos físicos antes de delegar a leitura.
+ */
+export function parsePaginasContracheque(itens: TextItemPdf[], largura: number): ContrachequePdf[] {
+  const linhas = linhasDaPagina(itens);
+  const inicios = linhas.filter((linha) => ehInicioDeContracheque(linha.texto));
+  const modeloPagina = detectarModelo(itens.map((item) => item.str).join(" "));
+  if (inicios.length <= 1 || !["deten", "moeve"].includes(modeloPagina)) {
+    return [parsePaginaContracheque(itens, largura)];
+  }
+  return inicios.map((inicio, indice) => {
+    const proximo = inicios[indice + 1];
+    const bloco = itens.filter((item) => item.y <= inicio.y + 4 && (!proximo || item.y > proximo.y + 4));
+    const resultado = parsePaginaDuasColunas(bloco, largura);
+    return resultado.modeloOrigem === "generico" ? { ...resultado, modeloOrigem: modeloPagina } : resultado;
+  });
 }
 
 export function consolidarPaginasContracheque(paginas: ContrachequePdf[]): ContrachequePdf[] {

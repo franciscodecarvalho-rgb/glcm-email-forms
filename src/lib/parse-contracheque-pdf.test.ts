@@ -3,6 +3,7 @@ import {
   consolidarPaginasContracheque,
   moedaBrasileiraParaNumero,
   parsePaginaContracheque,
+  parsePaginasContracheque,
   type ContrachequePdf,
   type TextItemPdf,
 } from "./parse-contracheque-pdf";
@@ -211,6 +212,79 @@ describe("parsePaginaContracheque", () => {
     expect(resultado.modeloOrigem).toBe("tronox");
     expect(resultado.competencia).toBe("05/2026");
     expect(resultado.itens.some((i) => i.codigo === "0603" && i.descricao === "HORAS REPOUSO ALIMENTACAO" && i.valor === 2273.48)).toBe(true);
+  });
+
+  it("lê Birla Carbon sem código e preserva informativas", () => {
+    const resultado = parsePaginaContracheque([
+      item("Birla Carbon Brasil Ltda.", 20, 520), item("Demonstrativo de pagamento de Salário - 01/2026", 20, 500),
+      item("Descrição", 100, 450), item("Referência", 340, 450), item("Proventos", 500, 450), item("Descontos", 620, 450), item("Informativas", 760, 450),
+      item("Adicional de Turno", 100, 420), item("26.00", 340, 420), item("R$ 890,33", 500, 420),
+      item("Base de cálculo FGTS", 100, 400), item("R$ 6.454,92", 760, 400),
+      item("Totais", 100, 360), item("R$ 890,33", 500, 360), item("-R$ 0,00", 620, 360),
+    ], 842);
+
+    expect(resultado.modeloOrigem).toBe("birla_carbon");
+    expect(resultado.competencia).toBe("01/2026");
+    expect(resultado.itens).toEqual([
+      { codigo: "", descricao: "Adicional de Turno", referencia: 26, valor: 890.33, tipo: "provento" },
+      { codigo: "", descricao: "Base de cálculo FGTS", referencia: null, valor: 6454.92, tipo: "informativo" },
+    ]);
+    expect(resultado.totalProventos).toBe(890.33);
+    expect(resultado.totalDescontos).toBe(0);
+  });
+
+  it("lê CETREL por prefixo de código e coluna", () => {
+    const resultado = parsePaginaContracheque([
+      item("CETREL SA", 20, 520), item("Mês/Ano", 500, 500), item("01/2025", 580, 500),
+      item("Código", 70, 450), item("Descrição", 155, 450), item("Quantidade", 430, 450), item("Proventos", 600, 450), item("Descontos", 800, 450),
+      item("P001", 70, 420), item("SALARIO BASE", 155, 420), item("30,000", 430, 420), item("5.791,52", 600, 420),
+      item("D106", 70, 400), item("BRADESCO COPART", 155, 400), item("15,44", 800, 400),
+      item("Total de Proventos", 600, 360), item("5.791,52", 600, 360), item("Total de Descontos", 800, 340), item("15,44", 800, 340),
+    ], 960);
+
+    expect(resultado.modeloOrigem).toBe("cetrel");
+    expect(resultado.competencia).toBe("01/2025");
+    expect(resultado.itens.map((item) => [item.codigo, item.tipo, item.valor])).toEqual([
+      ["P001", "provento", 5791.52], ["D106", "desconto", 15.44],
+    ]);
+  });
+
+  it("lê VOPAK e não soma a coluna OUTROS", () => {
+    const resultado = parsePaginaContracheque([
+      item("VOPAK BRASIL S.A.", 20, 520), item("REFERENTE A JANEIRO DE 2026", 20, 500),
+      item("CÓDIGO", 20, 450), item("DESCRIÇÃO", 100, 450), item("QUANTIDADE", 400, 450), item("VENCIMENTOS", 520, 450), item("DESCONTOS", 650, 450), item("OUTROS", 780, 450),
+      item("1", 20, 420), item("Salário", 100, 420), item("30,00", 400, 420), item("2.906,44", 520, 420), item("0,00", 650, 420), item("0,00", 780, 420),
+      item("1950", 20, 400), item("Base Rendimento Tributável", 100, 400), item("0,00", 400, 400), item("0,00", 520, 400), item("0,00", 650, 400), item("10.055,38", 780, 400),
+      item("TOTAL DE VENCIMENTOS", 400, 360), item("2.906,44", 520, 360), item("TOTAL DE DESCONTOS", 650, 360), item("0,00", 650, 360), item("VALOR LÍQUIDO", 650, 340), item("2.906,44", 650, 340),
+    ], 900);
+
+    expect(resultado.modeloOrigem).toBe("vopak");
+    expect(resultado.competencia).toBe("01/2026");
+    expect(resultado.itens).toEqual([
+      { codigo: "1", descricao: "Salário", referencia: 30, valor: 2906.44, tipo: "provento" },
+      { codigo: "1950", descricao: "Base Rendimento Tributável", referencia: 0, valor: 10055.38, tipo: "informativo" },
+    ]);
+    expect(resultado.totalProventos).toBe(2906.44);
+    expect(resultado.totalDescontos).toBe(0);
+  });
+
+  it("separa dois contracheques DETEN na mesma página", () => {
+    const resultado = parsePaginasContracheque([
+      item("DETEN QUIMICA S A", 20, 600), item("Demonstrativo de Pagamento de Salário", 560, 600), item("Referência FOLHA MENSAL 11/2017", 20, 580),
+      item("COD", 30, 540), item("DESCRIÇÃO", 80, 540), item("REF", 360, 540), item("VALOR", 420, 540), item("CODIGO", 520, 540), item("DESCONTO", 560, 540), item("REF", 820, 540), item("VALOR", 900, 540),
+      item("P003", 30, 510), item("H. R. A.", 80, 510), item("32,50", 360, 510), item("1.071,77", 420, 510), item("D101", 520, 510), item("I.N.S.S.", 560, 510), item("11,00", 820, 510), item("608,44", 900, 510),
+      item("14.611,58", 420, 480), item("12.102,61", 900, 480), item("Valor Líquido", 650, 460), item("2.508,97", 900, 460),
+      item("DETEN QUIMICA S A", 20, 350), item("Demonstrativo de Pagamento de Salário", 560, 350), item("Referência FOLHA MENSAL 12/2017", 20, 330),
+      item("COD", 30, 290), item("DESCRIÇÃO", 80, 290), item("REF", 360, 290), item("VALOR", 420, 290), item("CODIGO", 520, 290), item("DESCONTO", 560, 290), item("REF", 820, 290), item("VALOR", 900, 290),
+      item("P003", 30, 260), item("H. R. A.", 80, 260), item("32,50", 360, 260), item("1.071,77", 420, 260), item("D101", 520, 260), item("I.N.S.S.", 560, 260), item("11,00", 820, 260), item("621,04", 900, 260),
+      item("9.258,08", 420, 230), item("5.254,53", 900, 230), item("Valor Líquido", 650, 210), item("4.003,55", 900, 210),
+    ], 1000);
+
+    expect(resultado).toHaveLength(2);
+    expect(resultado.map((item) => item.competencia)).toEqual(["11/2017", "12/2017"]);
+    expect(resultado[0].itens.map((item) => item.tipo)).toEqual(["provento", "desconto"]);
+    expect(resultado[0].totalProventos).toBe(14611.58);
+    expect(resultado[0].totalDescontos).toBe(12102.61);
   });
 });
 

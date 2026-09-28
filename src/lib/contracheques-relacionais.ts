@@ -46,7 +46,7 @@ function ehProventoHra(item: ItemContrachequeRelacional): boolean {
 }
 
 function ehFamiliaAhra(item: ItemContrachequeRelacional): boolean {
-  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra";
+  return item.familia_hra === "ahra" || item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra";
 }
 
 function valorProvento(item: ItemContrachequeRelacional): number {

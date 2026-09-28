@@ -35,13 +35,14 @@ describe("contrachequesRelacionaisParaRevisao", () => {
         { codigo: "023", descricao: "Vlr Adicional HRA S Hextra", familia_hra: "adicional_hra", valor: 100 },
         { familia_hra: "hra", valor: 50 },
         { familia_hra: "ahra_dobra", valor: 25 },
+        { familia_hra: "ahra", valor: 10 },
         { familia_hra: null, valor: 900 },
       ],
     }])).toEqual([{
       id: "contra-1",
       label: "03/2026",
       valor_hra: 50,
-      valor_ahra: 125,
+      valor_ahra: 135,
     }]);
   });
 

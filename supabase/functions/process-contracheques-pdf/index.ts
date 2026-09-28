@@ -17,7 +17,7 @@ const TOOL_IA = { type:"function", function:{ name:"registrar_contracheques", pa
   competencia:{ type:["string","null"] }, modelo_origem:{ type:"string" }, total_proventos:{ type:["number","null"] }, total_descontos:{ type:["number","null"] }, liquido:{ type:["number","null"] },
   itens:{ type:"array", items:{ type:"object", properties:{ codigo:{ type:"string" }, descricao:{ type:"string" }, referencia:{ type:["number","null"] }, valor:{ type:"number" }, tipo:{ type:"string", enum:["provento","desconto","informativo"] } }, required:["codigo","descricao","referencia","valor","tipo"], additionalProperties:false } },
 }, required:["competencia","modelo_origem","total_proventos","total_descontos","liquido","itens"], additionalProperties:false } } }, required:["contracheques"], additionalProperties:false } } };
-const CODIGO = /^\/?[A-Z0-9]{3,6}$/i;
+const CODIGO = /^\/?[A-Z0-9]{1,6}$/i;
 const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-?(?:R\$)?\s*\d+,\d{2}$/i;
 const MESES: Record<string, string> = { janeiro:"01",fevereiro:"02",marco:"03",abril:"04",maio:"05",junho:"06",julho:"07",agosto:"08",setembro:"09",outubro:"10",novembro:"11",dezembro:"12",jan:"01",fev:"02",mar:"03",abr:"04",mai:"05",jun:"06",jul:"07",ago:"08",set:"09",out:"10",nov:"11",dez:"12" };
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
@@ -92,7 +92,7 @@ function linhas(itens: TextItem[]): Linha[] {
   const out: Linha[] = [];
   for (const item of expandir(itens).sort((a,b) => b.y-a.y || a.x-b.x)) {
     if (!item.str.trim()) continue;
-    const linha = out.find((l) => Math.abs(l.y-item.y) <= Math.max(2.5,item.height*.35));
+    const linha = out.find((l) => Math.abs(l.y-item.y) <= Math.max(4.5,item.height*.5));
     if (linha) linha.itens.push(item); else out.push({ y:item.y,itens:[item],texto:"" });
   }
   return out.sort((a,b)=>b.y-a.y).map((l) => {
@@ -104,6 +104,13 @@ function linhas(itens: TextItem[]): Linha[] {
 
 function modelo(texto: string) {
   const n=norm(texto);
+  if(n.includes("birla carbon"))return "birla_carbon";
+  if(n.includes("cetrel"))return "cetrel";
+  if(n.includes("deten quimica"))return "deten";
+  if(n.includes("ecolab quimica"))return "ecolab";
+  if(n.includes("moeve quimica"))return "moeve";
+  if(n.includes("oxiteno"))return "oxiteno";
+  if(n.includes("vopak brasil"))return "vopak";
   if(n.includes("companhia brasileira de estireno")||n.includes("unigel")||n.includes("proquigel"))return "unigel";
   if(n.includes("elekeiroz"))return "elekeiroz";
   if(n.includes("termobahia")||n.includes("termo bahia"))return "termo_bahia";
@@ -119,6 +126,8 @@ function modelo(texto: string) {
 
 function competencia(texto: string) {
   const n=norm(texto);
+  const referente=n.match(/referente\s+a\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(20\d{2})/);
+  if(referente)return `${MESES[referente[1]]}/${referente[2]}`;
   // 1) Nome do mês (mais específico). Aceita espaços entre letras (PDFs com
   //    texto fragmentado, ex.: "mar c o 2021"). Evita pegar a data de admissão
   //    (DD.MM.AAAA) como competência no BASF.
@@ -153,6 +162,12 @@ function competenciaBasf(ls: Linha[]): string | null {
 function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: Tipo) {
   const codigoNormalizado=codigo.trim().toUpperCase();
   if(modeloOrigem==="basf"&&codigoNormalizado==="3A20")return "hra";
+  if(["deten","moeve"].includes(modeloOrigem)&&codigoNormalizado==="P003")return "hra";
+  if(modeloOrigem==="ecolab"&&codigoNormalizado==="3217")return "hra";
+  if(["acelen","ecolab","oxiteno"].includes(modeloOrigem)&&["3008","3320"].includes(codigoNormalizado))return codigoNormalizado==="3008"?"ahra":"hra";
+  if(modeloOrigem==="oxiteno"&&codigoNormalizado==="2000")return "hra";
+  if(modeloOrigem==="oxiteno"&&codigoNormalizado==="3453")return "hra";
+  if(modeloOrigem==="oxiteno"&&codigoNormalizado==="3331")return "hra";
   const n=norm(descricao);
   // Braskem: "1004 — Hora Repouso Alimentação" (e suas diferenças) nem sempre tem o
   // modelo identificado no texto da página; a regra vale pelo par código+descrição.
@@ -170,8 +185,13 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
     if(codigoNormalizado==="1489"&&/contrib\W*extra\W*ppsp/.test(n))return "contrib_extra";
     if(["6060","6070"].includes(codigoNormalizado)&&/contrib\W*extraordinaria\W*ppsp/.test(n))return "contrib_extra";
   }
-  if(!/hra/.test(n))return null;
+  if(!/hra/.test(n.replace(/\s+/g,"")))return null;
 
+  // Petrobras: diferenças de AHRA pertencem à coluna/família AHRA.
+  if(modeloOrigem==="petrobras"&&(/\bdif/.test(n)||/\bdi\b/.test(n)))return "ahra";
+  // Petrobras: "Adicional HRA" é a rubrica-base da coluna/família HRA.
+  // Mantém "Adic HRA Eventual" na família adicional_hra para os demais casos.
+  if(modeloOrigem==="petrobras"&&/\badicional\s*hra\b/.test(n))return "hra";
   if(/\bdif/.test(n)||/\bdi\b/.test(n))return "dif_ahra";
   if(/dobra/.test(n))return "ahra_dobra";
   if(/adic/.test(n))return "adicional_hra";
@@ -185,22 +205,25 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   const ls=linhas(itensLeitura), texto=ls.map((l)=>l.texto).join("\n"), modelo_origem=modelo(texto);
   const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n));});
   const x=(r:RegExp)=>header?.itens.find((i)=>r.test(norm(i.str)))?.x??null;
-  const xdesc=x(/descricao/), xp=x(/provent|venciment|valor/), xd=x(/descont/), xr=x(/referencia|quant|qtde/);
-  let secao:Tipo="provento", info=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
+  const xdesc=x(/descricao/), xp=x(/provent|venciment|valor/), xd=x(/descont/), xi=x(/informativ|outros/), xr=x(/referencia|quant|qtde/);
+  let secao:Tipo="provento", info=false, tabelaEncerrada=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
   const rubricas:Rubrica[]=[];
   const valores=(l:Linha)=>l.itens.filter((i)=>VALOR.test(i.str.trim()));
   let antesHeader=header!=null;
   for(const l of ls){
     if(antesHeader){ if(l===header)antesHeader=false; continue; }
+    if(tabelaEncerrada)continue;
     const n=norm(l.texto), vs=valores(l);
     if(/base\s*\/\s*outros|custo\s+empresa.*informativo/.test(n))info=true;
-    if(/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)){total_proventos=vs[0]?moeda(vs[0].str):null;secao="desconto";continue;}
+    if(/total(?:\s+de)?\s+(?:proventos|vencimentos)/.test(n)){total_proventos=vs[0]?moeda(vs[0].str):null;if(/total(?:\s+de)?\s+descontos/.test(n)&&vs.length>1)total_descontos=moeda(vs[vs.length-1].str);secao="desconto";if(modelo_origem==="birla_carbon")tabelaEncerrada=true;continue;}
     if(/total(?:\s+de)?\s+descontos/.test(n)){total_descontos=vs[0]?moeda(vs[0].str):null;continue;}
-    if(/\btotais?\b/.test(n)&&vs.length>=2){total_proventos??=moeda(vs[0].str);total_descontos??=moeda(vs[1].str);liquido??=vs[2]?moeda(vs[2].str):null;}
-    if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length)liquido=moeda(vs[vs.length-1].str);
-    const cod=modelo_origem==="elekeiroz"?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&modelo_origem!=="elekeiroz")continue;
+    if(/\btotais?\b/.test(n)&&vs.length>=2){total_proventos??=moeda(vs[0].str);total_descontos??=moeda(vs[1].str);liquido??=vs[2]?moeda(vs[2].str):null;if(modelo_origem==="birla_carbon")tabelaEncerrada=true;continue;}
+    if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length){liquido=moeda(vs[vs.length-1].str);if(modelo_origem==="birla_carbon")tabelaEncerrada=true;}
+    const permiteSemCodigo=modelo_origem==="elekeiroz"||modelo_origem==="birla_carbon";
+    const cod=permiteSemCodigo?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&!permiteSemCodigo)continue;
     const candidatos=vs.filter((i)=>i.x>larguraLeitura*.28); if(!candidatos.length)continue;
-    const vi=candidatos[candidatos.length-1], inicio=(modelo_origem==="unigel"||modelo_origem==="tronox")&&cod?cod.x+cod.width:(xdesc??(cod?cod.x+cod.width:0));
+    const naoNulos=candidatos.filter((i)=>Math.abs(moeda(i.str))>0);
+    const vi=naoNulos[naoNulos.length-1]??candidatos[candidatos.length-1], inicio=(modelo_origem==="unigel"||modelo_origem==="tronox")&&cod?cod.x+cod.width:(xdesc??(cod?cod.x+cod.width:0));
     const limite=[xr,xp,xd,larguraLeitura*.82].filter((v):v is number=>v!=null&&v>inicio).sort((a,b)=>a-b)[0];
     const descricao=l.itens.filter((i)=>i.x>=inicio-larguraLeitura*.01&&i.x<limite&&i.str!=="|").map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
     if(!descricao)continue;
@@ -208,16 +231,55 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const ri=xr==null?null:l.itens.find((i)=>i.x>=xr-larguraLeitura*.025&&i.x<fimRef);
     const rs=ri?.str.trim()??"";
     const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
-    const tipo:Tipo=info?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
+    const tipo:Tipo=info||(modelo_origem==="vopak"&&xi!=null&&vi.x>=xi-larguraLeitura*.03)?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
     const codigo=cod?.str.trim().toUpperCase()??"";
     rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
   if(!/\bcontinua\b/.test(norm(texto))){
     total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;
     total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;
+    if(total_descontos==null&&["birla_carbon","cetrel","vopak"].includes(modelo_origem))total_descontos=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0);
     liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
   }
   return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
+}
+
+function parsePaginaDuasColunas(itens: TextItem[], largura: number): Contra {
+  const ls=linhas(itens), texto=ls.map((l)=>l.texto).join("\n"), modelo_origem=modelo(texto), metade=largura*.45;
+  const header=ls.find((l)=>{const n=norm(l.texto);return/descricao/.test(n)&&/desconto/.test(n)&&/valor/.test(n);});
+  if(!header)return parsePagina(itens,largura);
+  const achar=(r:RegExp,lado:"e"|"d")=>header.itens.filter((i)=>lado==="e"?i.x<metade:i.x>=metade).find((i)=>r.test(norm(i.str)))?.x??null;
+  const xce=achar(/^cod/,"e"), xde=achar(/descricao/,"e"), xre=achar(/^ref/,"e"), xve=achar(/^valor$/,"e"), xcd=achar(/^(codigo|cod)/,"d"), xdd=achar(/desconto/,"d");
+  const refs=header.itens.filter((i)=>/^ref$/.test(norm(i.str))).sort((a,b)=>a.x-b.x), vals=header.itens.filter((i)=>/^valor$/.test(norm(i.str))).sort((a,b)=>a.x-b.x);
+  const xrd=refs[1]?.x??null, xvd=vals[1]?.x??null;
+  if([xce,xde,xre,xve,xcd,xdd,xrd,xvd].some((x)=>x==null))return parsePagina(itens,largura);
+  const valor=(l:Linha,a:number,b:number)=>l.itens.filter((i)=>VALOR.test(i.str.trim())&&i.x>=a-20&&i.x<b-8).sort((a,b)=>a.x-b.x).pop();
+  const textoCol=(l:Linha,a:number,b:number)=>l.itens.filter((i)=>i.x>=a-8&&i.x<b-8&&!VALOR.test(i.str.trim())).map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
+  const ref=(l:Linha,a:number,b:number)=>{const i=l.itens.find((x)=>x.x>=a-20&&x.x<b-8&&/^\d+(?:[.,]\d+)?$/.test(x.str.trim()));if(!i)return null;const s=i.str.trim();return s.includes(",")?Number(s.replace(/\./g,"").replace(",",".")):Number(s);};
+  const rubricas:Rubrica[]=[];let total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null,linhaLiquido:Linha|null=null,candidato:{e:TextItem;d:TextItem;y:number}|null=null;
+  for(const l of ls){if(l===header)continue;const n=norm(l.texto), ce=l.itens.find((i)=>i.x<metade&&i.x<(xde as number)&&CODIGO.test(i.str.trim())), cd=l.itens.find((i)=>i.x>=metade&&i.x<(xdd as number)&&CODIGO.test(i.str.trim())), ve=valor(l,xve as number,xcd as number), vd=valor(l,xvd as number,largura+1), vs=l.itens.filter((i)=>VALOR.test(i.str.trim()));
+    if(ce&&ve)rubricas.push({codigo:ce.str.trim().toUpperCase(),descricao:textoCol(l,xde as number,xre as number),referencia:ref(l,xre as number,xve as number),valor:Math.abs(moeda(ve.str)),tipo:"provento",familia_hra:familia(ce.str,textoCol(l,xde as number,xre as number),modelo_origem,"provento")});
+    if(cd&&vd)rubricas.push({codigo:cd.str.trim().toUpperCase(),descricao:textoCol(l,xdd as number,xrd as number),referencia:ref(l,xrd as number,xvd as number),valor:Math.abs(moeda(vd.str)),tipo:"desconto",familia_hra:familia(cd.str,textoCol(l,xdd as number,xrd as number),modelo_origem,"desconto")});
+    if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length){liquido=moeda(vs[vs.length-1].str);linhaLiquido=l;}
+    if(/(?:totais?|total de)/.test(n)&&vs.length>=2){total_proventos??=moeda(vs[0].str);total_descontos??=moeda(vs[vs.length-1].str);}
+    if(!ce&&!cd&&vs.length>=2&&(!linhaLiquido||l.y>linhaLiquido.y)){const e=valor(l,xve as number,xcd as number),d=valor(l,xvd as number,largura+1);if(e&&d&&(!candidato||Math.abs(l.y-(linhaLiquido?.y??l.y))<Math.abs(candidato.y-(linhaLiquido?.y??l.y))))candidato={e,d,y:l.y};}
+  }
+  if(candidato){total_proventos??=moeda(candidato.e.str);total_descontos??=moeda(candidato.d.str);}
+  total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
+  return{competencia:competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
+}
+
+function inicioContracheque(texto:string){const n=norm(texto);return n.includes("demonstrativo de pagamento")||n.includes("aviso de credito");}
+
+function parsePaginas(itens: TextItem[], largura: number): Contra[] {
+  const ls=linhas(itens), inicios=ls.filter((l)=>inicioContracheque(l.texto)), modeloPagina=modelo(itens.map((i)=>i.str).join(" "));
+  if(inicios.length<=1||!["deten","moeve"].includes(modeloPagina))return [parsePagina(itens,largura)];
+  return inicios.map((inicio,indice)=>{
+    const proximo=inicios[indice+1];
+    const bloco=itens.filter((item)=>item.y<=inicio.y+4&&(!proximo||item.y>proximo.y+4));
+    const resultado=parsePaginaDuasColunas(bloco,largura);
+    return resultado.modelo_origem==="generico"?{...resultado,modelo_origem:modeloPagina}:resultado;
+  });
 }
 
 // ---------------- consolidação incremental (por lote, com estado entre lotes) ----------------
@@ -389,7 +451,10 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
 
       const itensPaginas = await extrairItensDoIntervalo(pdf, lote.pagina_inicio, lote.pagina_fim);
       // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
-      const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+      const paginasContra = itensPaginas.flatMap((itens) => parsePaginas(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+      const paginasSemTexto = itensPaginas
+        .map((itens, indice) => ({ itens, indice }))
+        .filter(({ itens }) => itens.length === 0);
 
       const { fechados, aberto } = consolidarLote(paginasContra, estado);
       const ehUltimoLote = lote.id === idUltimoLote;
@@ -404,7 +469,27 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
       }
       estado = ehUltimoLote ? null : aberto;
 
-      await supabase.from("lotes_contracheques").update({ status:"concluido", estado_saida: estado, erro:null, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
+      // Uma página sem camada de texto não pode invalidar as páginas textuais
+      // do mesmo lote. Usa o fallback autorizado somente nessas páginas.
+      let usouIa = false;
+      const apiKey = Deno.env.get("LOVABLE_API_KEY");
+      if (paginasSemTexto.length && apiKey) {
+        for (const pagina of paginasSemTexto) {
+          const numeroPagina = lote.pagina_inicio + pagina.indice;
+          const bytesPagina = await fatiarPaginas(bytes, numeroPagina, numeroPagina);
+          const contrachequesIa = await extrairComIa(bytesPagina, `${arq.nome}#pagina-${numeroPagina}`, apiKey);
+          usouIa = true;
+          for (const c of contrachequesIa) {
+            const assinatura = assinaturaContra(c);
+            if (assinaturasVistas.has(assinatura)) continue;
+            assinaturasVistas.add(assinatura);
+            await persistirContra(supabase, casoId, c, arq.nome);
+            fechadosTotal++;
+          }
+        }
+      }
+
+      await supabase.from("lotes_contracheques").update({ status:"concluido", estado_saida: estado, ia_status: usouIa ? "concluido" : null, erro:null, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
     }catch(loteError){
       const msg = loteError instanceof Error ? loteError.message : String(loteError);
       await supabase.from("lotes_contracheques").update({ status:"erro", erro:msg, atualizado_em:new Date().toISOString() }).eq("id", lote.id);
@@ -561,7 +646,7 @@ async function processarLoteFisico(supabase: any, casoId: string, loteId: string
     const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
 
     const itensPaginas = await extrairItensDoIntervalo(pdf, 1, pdf.numPages);
-    const paginasContra = itensPaginas.map((itens) => parsePagina(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+    const paginasContra = itensPaginas.flatMap((itens) => parsePaginas(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
 
     const assinaturasVistas = await assinaturasExistentes(supabase, casoId, arquivoNome);
     const estadoEntrada = (anterior?.estado_saida as Contra | null) ?? null;

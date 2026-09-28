@@ -168,12 +168,14 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     const itens = [
       { contracheque_id: "a", valor: 100, tipo: "provento", familia_hra: "adicional_hra" },
       { contracheque_id: "a", valor: 50, tipo: "provento", familia_hra: "hra" },
+      { contracheque_id: "a", valor: 25, tipo: "provento", familia_hra: "ahra" },
     ];
     const fonte = contrachequesRelacionaisParaRevisao([{
       ...contracheques[0],
       itens_contracheque: itens,
     }]);
     expect(edgeCalculos.montarContrasRelacionais(contracheques, itens)).toEqual(fonte);
+    expect(fonte).toEqual([{ id: "a", label: "04/2026", valor_hra: 50, valor_ahra: 125 }]);
   });
 
   it("ir_sobre_hra gera planilha complementar de contribuição extraordinária só quando há rubricas", () => {
