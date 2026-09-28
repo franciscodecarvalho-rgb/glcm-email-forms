@@ -42,6 +42,10 @@ function cpfValido(valor: unknown): string | null {
   };
   return digito(cpf.slice(0, 9), 10) === Number(cpf[9]) && digito(cpf.slice(0, 10), 11) === Number(cpf[10]) ? cpf : null;
 }
+function enderecoDaSecao(texto: string): string | null {
+  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}\s+[A-Z]{2}\b)?)/i);
+  return m?.[1]?.trim() || null;
+}
 async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
   const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
   const paginas = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => {
@@ -53,11 +57,12 @@ async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
   const cpf = cpfValido(texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0]);
   const nome = texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
   const rg = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i)?.[1] ?? null;
-  const comprovante = /COMPROVANTE DE RESIDENCIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/i.test(texto.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+  const comprovante = /COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/i.test(texto.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
   const cep = texto.match(/\b\d{5}-?\d{3}\b/)?.[0];
   // Sem preservar coordenadas do texto, só o CEP explícito é seguro para a
   // extração determinística; endereço completo permanece para o fallback.
-  const endereco = comprovante && cep ? { cep } : null;
+  const logradouro = enderecoDaSecao(texto);
+  const endereco = comprovante && cep ? { ...(logradouro ? { logradouro } : {}), cep } : null;
   if (comprovante ? !endereco : !(cpf && (nome || rg))) return null;
   return { nome_cliente: nome, cpf, rg, endereco, qualificacao: null, empregadores: [], contracheques: [] };
 }

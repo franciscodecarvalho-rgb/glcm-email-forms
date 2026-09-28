@@ -45,9 +45,13 @@ function tipoDocumento(texto: string) {
   if (/CARTEIRA NACIONAL DE HABILITACAO|PERMISSAO PARA DIRIGIR/.test(t)) return "cnh";
   if (/CARTEIRA DE IDENTIDADE NACIONAL|\bCIN\b/.test(t)) return "cin";
   if (/REGISTRO GERAL|CARTEIRA DE IDENTIDADE|\bIDENTIDADE\b/.test(t)) return "rg";
-  if (/COMPROVANTE DE RESIDENCIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/.test(t)) return "comprovante_residencia";
+  if (/COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/.test(t)) return "comprovante_residencia";
   if (/CADASTRO DE PESSOAS FISICAS|\bCPF\b/.test(t)) return "cpf";
   return "outro";
+}
+function enderecoDaSecao(texto: string): string | null {
+  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}\s+[A-Z]{2}\b)?)/i);
+  return m?.[1]?.trim() || null;
 }
 function extrairDeterministico(texto: string) {
   const tipo_documento = tipoDocumento(texto);
@@ -57,8 +61,9 @@ function extrairDeterministico(texto: string) {
   const cep = texto.match(/\b\d{5}-?\d{3}\b/)?.[0];
   // O texto de PDF é linearizado; sem coordenadas de endereço, persistir apenas
   // o CEP explícito é mais seguro do que gravar toda a linha como logradouro.
+  const logradouro = enderecoDaSecao(texto);
   const endereco = tipo_documento === "comprovante_residencia" && cep
-    ? { cep }
+    ? { ...(logradouro ? { logradouro } : {}), cep }
     : null;
   const suficiente = tipo_documento === "comprovante_residencia"
     ? Boolean(endereco)
