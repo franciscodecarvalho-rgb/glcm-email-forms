@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { PECA_LABELS } from "@/lib/status";
 import { toast } from "sonner";
 import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
+import { gerarDocumentosNoNavegador } from "@/lib/gerar-documentos-navegador";
 
 type Doc = { tipo: string; storage_path: string; nome: string };
 
@@ -20,25 +21,27 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
   const { state, errors, setField } = useRevisaoCalculos();
   const formValido = Object.keys(errors).length === 0;
 
-  // Regera as peças (após corrigir dados, atualizar template ou deploy novo).
-  // A Edge Function exige os mesmos campos da revisão de cálculos.
+  // Regera as peças no navegador autenticado, sem concentrar DOCX/ZIP na Edge Function.
   const regerar = async () => {
     if (!formValido) { toast.error("Preencha os dados obrigatórios para regerar"); return; }
     setRegerando(true);
-    const { data, error } = await supabase.functions.invoke("generate-documents", {
-      body: {
-        caso_id: caso.id,
+    try {
+      await gerarDocumentosNoNavegador(caso, {
         captador: state.captador.trim(),
         oab: state.oab.trim(),
         email_cliente: state.email.trim(),
         telefone_cliente: state.telefone.trim(),
         uf_comarca: state.ufComarca.trim(),
         endereco_uniao: state.enderecoUniao.trim(),
-      },
-    });
-    setRegerando(false);
-    if (error || (data as any)?.error) toast.error((data as any)?.error ?? "Falha ao regerar");
-    else toast.success("Documentos regerados");
+        valor_causa: Number(caso.valor_causa) || 0,
+      });
+      toast.success("Documentos regerados");
+    } catch (error) {
+      console.error("[gerar-documentos-navegador] Falha ao regerar:", error);
+      toast.error(error instanceof Error ? error.message : "Falha ao regerar documentos");
+    } finally {
+      setRegerando(false);
+    }
   };
   const docs: Doc[] = Array.isArray(caso.documentos_gerados) ? (caso.documentos_gerados as any) : [];
   const labelOf = (tipo: string) => PECA_LABELS[tipo] ?? tipo;
@@ -132,7 +135,7 @@ export function TelaDownload({ caso }: { caso: CasoData }) {
               className="mt-2"
               value={state.enderecoUniao}
               onChange={(e) => setField("enderecoUniao", e.target.value)}
-              placeholder="Informe o endereço da União"
+              placeholder="Endereço da União (opcional)"
             />
           </div>
         </div>

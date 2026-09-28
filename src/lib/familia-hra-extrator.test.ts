@@ -89,6 +89,24 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
 
 });
 
+describe("Petrobras — HRA/AHRA", () => {
+  it("classifica Dif/DI AHRA como ahra", () => {
+    expect(familia("4208", "Dif AHRA", "petrobras")).toBe("ahra");
+    expect(familia("4208", "DI AHRA", "petrobras")).toBe("ahra");
+  });
+
+  it("classifica Adicional HRA (exato) como hra e mantém Adic HRA Eventual", () => {
+    expect(familia("1062", "Adicional HRA", "petrobras")).toBe("hra");
+    expect(familia("1063", "Adic HRA Eventual", "petrobras")).toBe("adicional_hra");
+  });
+
+  it("não altera outras empresas", () => {
+    expect(familia("4208", "Dif AHRA Dobra", "")).toBe("dif_ahra");
+    expect(familia("1062", "Adicional HRA", "")).toBe("adicional_hra");
+    expect(familia("3A20", "Verba 3A20", "basf")).toBe("hra");
+  });
+});
+
 describe("contribuição extraordinária PPSP (Petrobras)", () => {
   it("classifica 1489 e 6060/6070 pelo par código + nomenclatura PPSP somente como desconto", () => {
     expect(familia("1489", "Contrib Extra PPSP", "petrobras", "desconto")).toBe("contrib_extra");
@@ -105,5 +123,35 @@ describe("contribuição extraordinária PPSP (Petrobras)", () => {
     expect(familia("1489", "Contribuição Sindical", "petrobras")).toBeNull();
     expect(familia("6050", "CONTRIB EXTRAORDINARIA PPSP", "petrobras")).toBeNull();
     expect(familia("6060", "Contrib Extra PPSP", "petrobras")).toBeNull();
+  });
+});
+
+describe("Petrobras — 062A Dif Adicional HRA", () => {
+  it("classifica 062A / Dif Adicional HRA como ahra, com variações de caixa e pontuação", () => {
+    expect(familia("062A", "Dif Adicional HRA", "petrobras")).toBe("ahra");
+    expect(familia(" 062a ", "DIF. ADICIONAL  HRA", "petrobras")).toBe("ahra");
+    expect(familia("", "Dif. Adicional HRA", "petrobras")).toBe("ahra");
+  });
+
+  it("preserva as demais regras Petrobras", () => {
+    expect(familia("1062", "Adicional HRA", "petrobras")).toBe("hra");
+    expect(familia("1063", "Adic HRA Eventual", "petrobras")).toBe("adicional_hra");
+    expect(familia("062A", "Dif Adicional HRA", "")).toBe("dif_ahra");
+  });
+});
+
+describe("Tronox — 0603 e 0350 Horas Repouso Alimentação", () => {
+  it("classifica os dois códigos como hra nos dois layouts", () => {
+    expect(familia("0603", "HORAS REPOUSO ALIMENTACAO", "tronox", "provento")).toBe("hra");
+    expect(familia("0350", "HORAS REPOUSO ALIMENTACAO", "tronox", "provento")).toBe("hra");
+    expect(familia("0350", "Horas de Repouso e Alimentação", "generico", "provento")).toBe("hra");
+    expect(familia(" 0603 ", "Hrs Repouso Aliment.", "", "provento")).toBe("hra");
+  });
+
+  it("não classifica desconto nem descrição diferente como HRA", () => {
+    expect(familia("0350", "HORAS REPOUSO ALIMENTACAO", "tronox", "desconto")).toBeNull();
+    expect(familia("0603", "HORAS REPOUSO ALIMENTACAO", "tronox", "desconto")).toBeNull();
+    expect(familia("0350", "HORAS REDUZIDA NOTURNA", "tronox", "provento")).toBeNull();
+    expect(familia("0003", "INSS", "tronox", "desconto")).toBeNull();
   });
 });

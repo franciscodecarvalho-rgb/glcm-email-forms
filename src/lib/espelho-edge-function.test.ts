@@ -183,7 +183,7 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
       resolve(process.cwd(), "supabase/functions/generate-documents/index.ts"),
       "utf8",
     );
-    expect(fonte).toContain('if (caso.tipo_acao === "ir_sobre_hra") {');
+    expect(fonte).toContain('if (gerarPlanilhaContribExtra && caso.tipo_acao === "ir_sobre_hra") {');
     expect(fonte).toContain("if (linhasCE.length > 0) {");
     expect(fonte).toContain('tipo: "planilha_contrib_extra"');
     // a ação exclusiva continua gerando apenas a planilha principal

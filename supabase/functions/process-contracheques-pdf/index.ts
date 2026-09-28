@@ -9,10 +9,12 @@ const corsHeaders = {
 type TextItem = { str: string; x: number; y: number; width: number; height: number };
 type Tipo = "provento" | "desconto" | "informativo";
 type Rubrica = { codigo: string; descricao: string; referencia: number | null; valor: number; tipo: Tipo; familia_hra: string | null };
-type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[] };
+// `continua`: a folha traz o marcador "CONTINUA..." — só SINALIZA que o recibo
+// PODE ter complemento na folha seguinte (ver regra de consolidação Unigel).
+type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
 type Linha = { y: number; itens: TextItem[]; texto: string };
 const MODELO_IA = "google/gemini-2.5-pro";
-const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas.`;
+const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas. Quando o documento for da Refinaria de Mataripe S.A. (Acelen), use obrigatoriamente modelo_origem "acelen" e informe a competência de cada contracheque no formato MM/AAAA (por exemplo 03/2023), convertendo datas completas como 31/03/2023, 2023-03-31 ou "Recibo de Pagamento de Março/2023"; se a competência não estiver legível, use null e nunca deduza o mês.`;
 const TOOL_IA = { type:"function", function:{ name:"registrar_contracheques", parameters:{ type:"object", properties:{ contracheques:{ type:"array", items:{ type:"object", properties:{
   competencia:{ type:["string","null"] }, modelo_origem:{ type:"string" }, total_proventos:{ type:["number","null"] }, total_descontos:{ type:["number","null"] }, liquido:{ type:["number","null"] },
   itens:{ type:"array", items:{ type:"object", properties:{ codigo:{ type:"string" }, descricao:{ type:"string" }, referencia:{ type:["number","null"] }, valor:{ type:"number" }, tipo:{ type:"string", enum:["provento","desconto","informativo"] } }, required:["codigo","descricao","referencia","valor","tipo"], additionalProperties:false } },
@@ -47,7 +49,15 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
-    return [{competencia:typeof contra.competencia==="string"?contra.competencia:null,modelo_origem:typeof contra.modelo_origem==="string"&&contra.modelo_origem?contra.modelo_origem:"ia_fallback",total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
+    // modelo_origem vindo da IA é normalizado (trim + caixa baixa) antes da
+    // comparação: "Acelen", "ACELEN" ou espaços não escapam da regra Acelen.
+    // Modelos diferentes de "acelen" seguem exatamente o fluxo anterior.
+    const modeloIa=typeof contra.modelo_origem==="string"&&contra.modelo_origem.trim()?contra.modelo_origem.trim().toLowerCase():"ia_fallback";
+    const competenciaBruta=typeof contra.competencia==="string"?contra.competencia:null;
+    // Acelen: a competência devolvida pela IA é normalizada para MM/AAAA ANTES
+    // de persistir; formato irreconhecível permanece null (nunca é inventado).
+    const competenciaIa=modeloIa==="acelen"?normalizarCompetenciaAcelen(competenciaBruta):competenciaBruta;
+    return [{competencia:competenciaIa,modelo_origem:modeloIa,total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
   });
 }
 
@@ -159,6 +169,31 @@ function competenciaBasf(ls: Linha[]): string | null {
   return null;
 }
 
+// Normalização de competência EXCLUSIVA do modelo "acelen" (Refinaria de
+// Mataripe S.A.). Converte formatos brutos vindos da leitura determinística ou
+// da IA (DD/MM/AAAA, AAAA-MM-DD, DD/MÊS/AAAA, "Recibo de Pagamento de MÊS/AAAA")
+// em MM/AAAA. Devolve null quando não há competência legível — nunca infere
+// mês anterior/seguinte. Não afeta nenhum outro modelo.
+function ehCompetenciaCanonica(valor: unknown): valor is string {
+  return typeof valor==="string" && /^(0[1-9]|1[0-2])\/20\d{2}$/.test(valor);
+}
+
+function normalizarCompetenciaAcelen(bruta: unknown): string | null {
+  if(typeof bruta!=="string"||!bruta.trim())return null;
+  const n=norm(bruta);
+  for(const [nome,numero] of Object.entries(MESES)){
+    const m=n.match(new RegExp(`(?:\\b\\d{1,2}\\s*[/.\\- ]\\s*)?\\b${nome}\\b\\s*(?:de\\s*)?[/.\\- ]\\s*(20\\d{2})\\b`));
+    if(m)return `${numero}/${m[1]}`;
+  }
+  const iso=n.match(/\b(20\d{2})-(0?[1-9]|1[0-2])-(\d{1,2})\b/);
+  if(iso)return `${iso[2].padStart(2,"0")}/${iso[1]}`;
+  const completa=n.match(/\b(\d{1,2})[/.-](0?[1-9]|1[0-2])[/.-](20\d{2})\b/);
+  if(completa)return `${completa[2].padStart(2,"0")}/${completa[3]}`;
+  const curta=n.match(/(?<![\d/.-])(0?[1-9]|1[0-2])\s*\/\s*(20\d{2})(?!\d)/);
+  if(curta)return `${curta[1].padStart(2,"0")}/${curta[2]}`;
+  return null;
+}
+
 function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: Tipo) {
   const codigoNormalizado=codigo.trim().toUpperCase();
   if(modeloOrigem==="basf"&&codigoNormalizado==="3A20")return "hra";
@@ -174,10 +209,12 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   if(codigoNormalizado==="1004"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // ITF: "1002 — HRA - Hora Repouso Alimentação".
   if(codigoNormalizado==="1002"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
-  // Tronox: "0603 — Horas Repouso Alimentação".
-  if(codigoNormalizado==="0603"&&/hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
+  // Tronox: "0603/0350 — Horas Repouso Alimentação" (dois layouts). Só provento vira HRA.
+  if(["0603","0350"].includes(codigoNormalizado)&&tipo!=="desconto"&&/\b(?:hrs?|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Unigel: "015 — Hrs/Horas de Repouso e Alimentação". O cabeçalho Unigel nem sempre é
   // detectado, então classificamos pelo par código + descrição, como na Braskem.
+  // 015 (HRA) e 023 (adicional HRA) só valem como HRA/AHRA em linhas de provento.
+  if(["015","023"].includes(codigoNormalizado)&&tipo==="desconto")return null;
   if(codigoNormalizado==="015"&&/\b(?:hrs|horas?)\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n))return "hra";
   // Petrobras: contribuição extraordinária PPSP (aceita pontuação e sufixo PPSP-R).
   // Só vale para o par código + nomenclatura PPSP, e apenas no modelo petrobras.
@@ -185,7 +222,16 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
     if(codigoNormalizado==="1489"&&/contrib\W*extra\W*ppsp/.test(n))return "contrib_extra";
     if(["6060","6070"].includes(codigoNormalizado)&&/contrib\W*extraordinaria\W*ppsp/.test(n))return "contrib_extra";
   }
-  if(!/hra/.test(n.replace(/\s+/g,"")))return null;
+  // Petrobras: "Dif AHRA"/"DI AHRA" e "062A — Dif Adicional HRA" integram AHRA;
+  // "Adicional HRA" (exato) é HRA; "Adic HRA Eventual" permanece em adicional_hra.
+  if(modeloOrigem==="petrobras"){
+    if(codigoNormalizado.replace(/[^A-Z0-9]/g,"")==="062A"&&/hra/.test(n))return "ahra";
+    if(/\bdif\w*\W*adicional\W*hra\b/.test(n))return "ahra";
+    if(/\b(?:dif|di)\b\s*\.?\s*ahra/.test(n))return "ahra";
+    if(n.replace(/\s+/g," ").trim()==="adicional hra")return "hra";
+  }
+
+  if(!/hra/.test(n))return null;
 
   // Petrobras: diferenças de AHRA pertencem à coluna/família AHRA.
   if(modeloOrigem==="petrobras"&&(/\bdif/.test(n)||/\bdi\b/.test(n)))return "ahra";
@@ -198,14 +244,38 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   return /ahra/.test(n)?"ahra":"hra";
 }
 
+// Layout de duas colunas (Tronox): cada metade da linha é uma rubrica, com o
+// tipo definido pela coluna (esquerda = rendimento, direita = desconto).
+type Segmento={itens:TextItem[];inicio:number;fim:number;tipo:Tipo};
+const soNumero=(i:TextItem)=>/^-?\d+(?:[.,]\d+)*$/.test(i.str.trim());
+function rubricaSegmento(s:Segmento, modelo_origem:string, info:boolean): Rubrica|null {
+  const w=s.fim-s.inicio;
+  const cod=s.itens.find((i)=>i.x<s.inicio+w*.25&&CODIGO.test(i.str.trim()));
+  if(!cod)return null;
+  const candidatos=s.itens.filter((i)=>VALOR.test(i.str.trim())&&i.x>s.inicio+w*.28);
+  if(!candidatos.length)return null;
+  const vi=candidatos[candidatos.length-1], inicio=cod.x+cod.width;
+  const faixa=s.itens.filter((i)=>i.x>=inicio&&i.x<vi.x&&i.str!=="|");
+  const descricao=faixa.filter((i)=>!soNumero(i)).map((i)=>i.str).join(" ").replace(/\s+/g," ").trim();
+  if(!descricao)return null;
+  const nums=faixa.filter(soNumero), rs=nums[nums.length-1]?.str.trim()??"";
+  const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
+  const codigo=cod.str.trim().toUpperCase(), tipo:Tipo=info?"informativo":s.tipo;
+  return{codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)};
+}
+
 function parsePagina(itens: TextItem[], largura: number): Contra {
   const modeloPagina=modelo(itens.map((i)=>i.str).join(" "));
   const larguraLeitura=modeloPagina==="termo_bahia"?largura/2:largura;
   const itensLeitura=modeloPagina==="termo_bahia"?itens.filter((i)=>i.x<larguraLeitura):itens;
   const ls=linhas(itensLeitura), texto=ls.map((l)=>l.texto).join("\n"), modelo_origem=modelo(texto);
-  const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n));});
+  const header=ls.find((l)=>{const n=norm(l.texto);return(/descricao/.test(n)&&/provent|venciment|valor/.test(n))||(/venciment/.test(n)&&/descont/.test(n))||(/rendiment/.test(n)&&/descont/.test(n));});
   const x=(r:RegExp)=>header?.itens.find((i)=>r.test(norm(i.str)))?.x??null;
   const xdesc=x(/descricao/), xp=x(/provent|venciment|valor/), xd=x(/descont/), xi=x(/informativ|outros/), xr=x(/referencia|quant|qtde/);
+  // Tronox (comprovante): duas colunas lado a lado — "CÓD. RENDIMENTOS" | "CÓD. DESCONTOS".
+  const colsCod=(header?.itens??[]).filter((i)=>/^cod/.test(norm(i.str)));
+  const duasColunas=colsCod.length>=2&&/rendiment/.test(norm(header?.texto??""));
+  const xCorte=duasColunas?colsCod[1].x:null;
   let secao:Tipo="provento", info=false, tabelaEncerrada=false, total_proventos:number|null=null,total_descontos:number|null=null,liquido:number|null=null;
   const rubricas:Rubrica[]=[];
   const valores=(l:Linha)=>l.itens.filter((i)=>VALOR.test(i.str.trim()));
@@ -220,6 +290,17 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     if(/\btotais?\b/.test(n)&&vs.length>=2){total_proventos??=moeda(vs[0].str);total_descontos??=moeda(vs[1].str);liquido??=vs[2]?moeda(vs[2].str):null;if(modelo_origem==="birla_carbon")tabelaEncerrada=true;continue;}
     if(/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)&&vs.length){liquido=moeda(vs[vs.length-1].str);if(modelo_origem==="birla_carbon")tabelaEncerrada=true;}
     const permiteSemCodigo=modelo_origem==="elekeiroz"||modelo_origem==="birla_carbon";
+    if(duasColunas&&xCorte!=null){
+      const segmentos=[
+        {itens:l.itens.filter((i)=>i.x<xCorte), inicio:0, fim:xCorte, tipo:"provento" as Tipo},
+        {itens:l.itens.filter((i)=>i.x>=xCorte), inicio:xCorte, fim:larguraLeitura, tipo:"desconto" as Tipo},
+      ];
+      for(const s of segmentos){
+        const r=rubricaSegmento(s,modelo_origem,info);
+        if(r)rubricas.push(r);
+      }
+      continue;
+    }
     const cod=permiteSemCodigo?undefined:l.itens.find((i)=>i.x<larguraLeitura*.22&&CODIGO.test(i.str.trim())); if(!cod&&!permiteSemCodigo)continue;
     const candidatos=vs.filter((i)=>i.x>larguraLeitura*.28); if(!candidatos.length)continue;
     const naoNulos=candidatos.filter((i)=>Math.abs(moeda(i.str))>0);
@@ -231,17 +312,31 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
     const ri=xr==null?null:l.itens.find((i)=>i.x>=xr-larguraLeitura*.025&&i.x<fimRef);
     const rs=ri?.str.trim()??"";
     const referencia=/^\d+(?:[.,]\d+)?$/.test(rs)?(rs.includes(",")?Number(rs.replace(/\./g,"").replace(",",".")):Number(rs)):null;
-    const tipo:Tipo=info||(modelo_origem==="vopak"&&xi!=null&&vi.x>=xi-larguraLeitura*.03)?"informativo":modelo_origem==="petrobras"||modelo_origem==="unigel"?secao:modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento"):(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
+    // Unigel/Estireno: quando o cabeçalho traz as duas colunas (Vencimentos e
+    // Descontos), a posição x do valor é mais confiável que a seção corrente —
+    // a seção vira "desconto" após "Total Vencimentos" e contaminava o recibo.
+    const porColuna=xd!=null&&xp!=null
+      ? (vi.x>=xd-larguraLeitura*.05?"desconto":"provento") as Tipo
+      : null;
+    const tipo:Tipo=info||(modelo_origem==="vopak"&&xi!=null&&vi.x>=xi-larguraLeitura*.03)?"informativo"
+      :modelo_origem==="unigel"?(porColuna??secao)
+      :modelo_origem==="petrobras"?secao
+      :modelo_origem==="elekeiroz"?(vi.x>=larguraLeitura*.78?"desconto":"provento")
+      :(xd!=null&&Math.abs(vi.x-xd)<Math.abs(vi.x-(xp??0))?"desconto":"provento");
     const codigo=cod?.str.trim().toUpperCase()??"";
     rubricas.push({codigo,descricao,referencia,valor:Math.abs(moeda(vi.str)),tipo,familia_hra:familia(codigo,descricao,modelo_origem,tipo)});
   }
-  if(!/\bcontinua\b/.test(norm(texto))){
+  const continua=/\bcontinua\b/.test(norm(texto));
+  if(!continua){
     total_proventos??=rubricas.filter((i)=>i.tipo==="provento").reduce((s,i)=>s+i.valor,0)||null;
     total_descontos??=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0)||null;
     if(total_descontos==null&&["birla_carbon","cetrel","vopak"].includes(modelo_origem))total_descontos=rubricas.filter((i)=>i.tipo==="desconto").reduce((s,i)=>s+i.valor,0);
     liquido??=total_proventos!=null&&total_descontos!=null?total_proventos-total_descontos:null;
   }
-  return{competencia:modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto)):competencia(texto),modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas};
+  const competenciaLida=modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto))
+    :modelo_origem==="acelen"?(normalizarCompetenciaAcelen(texto)??competencia(texto))
+    :competencia(texto);
+  return{competencia:modelo_origem==="acelen"?(ehCompetenciaCanonica(competenciaLida)?competenciaLida:normalizarCompetenciaAcelen(competenciaLida)):competenciaLida,modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas,continua};
 }
 
 function parsePaginaDuasColunas(itens: TextItem[], largura: number): Contra {
@@ -281,12 +376,72 @@ function parsePaginas(itens: TextItem[], largura: number): Contra[] {
     return resultado.modelo_origem==="generico"?{...resultado,modelo_origem:modeloPagina}:resultado;
   });
 }
+// Uma MESMA página física pode conter DOIS recibos (Companhia Brasileira de
+// Estireno / Unigel: fim de uma competência no topo e início da seguinte
+// embaixo). Cada recibo repete o título "Recibo de Pagamento de"; quando há
+// mais de um título, a página é fatiada verticalmente por coordenada (y) e
+// cada recibo é parseado separadamente, preservando a competência de cada um.
+// Com um único título (Petrobras, Braskem, Tronox, BASF...) nada muda.
+// A competência do recibo pode estar numa linha do cabeçalho ligeiramente ACIMA
+// do título "Recibo de Pagamento de" (y diferente), caindo fora da fatia. Por
+// isso ela também é procurada numa janela vertical ao redor do título.
+function competenciaDoCabecalho(ls: Linha[], y: number, acima = 20, abaixo = 40): string | null {
+  const texto = ls.filter((l) => l.y <= y + acima && l.y >= y - abaixo).map((l) => l.texto).join("\n");
+  return competencia(texto);
+}
+
+/**
+ * Regra de negócio confirmada:
+ * O processamento deve ler todo o conteúdo do PDF, identificar cada contracheque
+ * e sua competência, unir somente folhas que sejam complemento do mesmo
+ * contracheque, extrair e classificar as rubricas, salvar os dados estruturados
+ * no banco e exibir exatamente o que foi coletado.
+ *
+ * Página física é apenas uma unidade técnica de leitura; ela não define um
+ * contracheque nem pode determinar o resultado da extração.
+ */
+function parseRecibosDaPagina(itens: TextItem[], largura: number): Contra[] {
+  const ls = linhas(itens);
+  const texto = ls.map((l) => l.texto).join("\n");
+  // Regra EXCLUSIVA da Companhia Brasileira de Estireno (modelo "unigel"):
+  // qualquer outro modelo, mesmo com dois títulos "Recibo de Pagamento",
+  // não é fatiado.
+  if (modelo(texto) !== "unigel") return [parsePagina(itens, largura)];
+  const marcadores = ls.filter((l) => /recibo\s+de\s+pagamento/.test(norm(l.texto)));
+  if (marcadores.length < 2) return [parsePagina(itens, largura)];
+  const cortes = marcadores.map((l) => l.y);
+  const recibos: Contra[] = [];
+  for (let k = 0; k < cortes.length; k++) {
+    const topo = k === 0 ? Infinity : cortes[k] + 0.5;
+    const base = k === cortes.length - 1 ? -Infinity : cortes[k + 1] + 0.5;
+    const fatia = itens.filter((i) => i.y <= topo && i.y > base);
+    if (!fatia.length) continue;
+    const recibo = parsePagina(fatia, largura);
+    // Competência nunca é inferida: se o cabeçalho não for legível, permanece null
+    // e a regra de continuação impede mesclagem silenciosa.
+    if (recibo.competencia == null) recibo.competencia = competenciaDoCabecalho(ls, cortes[k]);
+    recibos.push(recibo);
+  }
+  return recibos.length ? recibos : [parsePagina(itens, largura)];
+}
 
 // ---------------- consolidação incremental (por lote, com estado entre lotes) ----------------
 // Mesmo critério que decidia, no consolidador original de arquivo inteiro,
 // quando uma página nova é a CONTINUAÇÃO do contracheque atual (mesma
 // competência/modelo, ainda sem os dois totais) em vez de iniciar um novo.
+// Companhia Brasileira de Estireno / Unigel — regra canônica e geral (sem meses
+// específicos): o recibo atual só recebe a folha seguinte quando ELE traz o
+// marcador "CONTINUA..." E a competência da folha seguinte é exatamente igual.
+// Competência diferente (ou ausente/nula) fecha o recibo atual e inicia outro,
+// mesmo com "CONTINUA..."; sem o marcador, o recibo fecha ao fim da folha.
+// A continuação encadeia quantas folhas forem necessárias, pois cada folha
+// intermediária precisa trazer o próprio "CONTINUA..." (ver `mesclarContra`).
+function continuaUnigel(atual: Contra, p: Contra): boolean {
+  return atual.continua===true && atual.competencia!=null && p.competencia===atual.competencia;
+}
+
 function continuaMesmoContra(atual: Contra, p: Contra): boolean {
+  if(atual.modelo_origem==="unigel"||p.modelo_origem==="unigel")return continuaUnigel(atual,p);
   const continuaElekeiroz = atual.modelo_origem==="elekeiroz" && p.modelo_origem==="elekeiroz" && atual.competencia===p.competencia;
   const novaCompetencia = atual.competencia!=null && p.competencia!=null && atual.competencia!==p.competencia;
   const novoModelo = atual.modelo_origem!=="generico" && p.modelo_origem!=="generico" && atual.modelo_origem!==p.modelo_origem;
@@ -296,7 +451,9 @@ function continuaMesmoContra(atual: Contra, p: Contra): boolean {
 }
 
 function mesclarContra(atual: Contra, p: Contra): Contra {
-  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens] };
+  // `continua` passa a ser o da ÚLTIMA folha anexada: o encadeamento só segue
+  // enquanto cada folha anterior mantiver o marcador "CONTINUA...".
+  const mesclado: Contra = { ...atual, itens: [...atual.itens, ...p.itens], continua: p.continua===true };
   if(p.total_proventos!=null) mesclado.total_proventos=p.total_proventos;
   if(p.total_descontos!=null) mesclado.total_descontos=p.total_descontos;
   if(p.liquido!=null) mesclado.liquido=p.liquido;
@@ -451,7 +608,12 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
 
       const itensPaginas = await extrairItensDoIntervalo(pdf, lote.pagina_inicio, lote.pagina_fim);
       // O conteúdo de texto não expõe a largura da página; usa o maior limite horizontal observado.
-      const paginasContra = itensPaginas.flatMap((itens) => parsePaginas(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+      const paginasContra = itensPaginas.flatMap((itens) => {
+        const largura = Math.max(...itens.map((x) => x.x + x.width), 595);
+        return modelo(itens.map((item) => item.str).join(" ")) === "unigel"
+          ? parseRecibosDaPagina(itens as TextItem[], largura)
+          : parsePaginas(itens as TextItem[], largura);
+      });
       const paginasSemTexto = itensPaginas
         .map((itens, indice) => ({ itens, indice }))
         .filter(({ itens }) => itens.length === 0);
@@ -646,7 +808,12 @@ async function processarLoteFisico(supabase: any, casoId: string, loteId: string
     const pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
 
     const itensPaginas = await extrairItensDoIntervalo(pdf, 1, pdf.numPages);
-    const paginasContra = itensPaginas.flatMap((itens) => parsePaginas(itens as TextItem[], Math.max(...itens.map((x)=>x.x+x.width), 595)));
+    const paginasContra = itensPaginas.flatMap((itens) => {
+      const largura = Math.max(...itens.map((x) => x.x + x.width), 595);
+      return modelo(itens.map((item) => item.str).join(" ")) === "unigel"
+        ? parseRecibosDaPagina(itens as TextItem[], largura)
+        : parsePaginas(itens as TextItem[], largura);
+    });
 
     const assinaturasVistas = await assinaturasExistentes(supabase, casoId, arquivoNome);
     const estadoEntrada = (anterior?.estado_saida as Contra | null) ?? null;

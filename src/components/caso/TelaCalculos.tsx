@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { calcularIrSobreHra } from "@/lib/calcular-ir-hra";
 import { contrachequesLegadoParaMotor } from "@/lib/contracheques-legado";
 import { formatarCpf } from "@/lib/cpf";
+import { gerarDocumentosNoNavegador } from "@/lib/gerar-documentos-navegador";
 import { useRevisaoCalculos } from "@/contexts/RevisaoCalculosContext";
 
 const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -48,20 +49,24 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
       .from("casos")
       .update({ numero_pasta: pasta, valor_causa: valorCausa })
       .eq("id", caso.id);
-    if (updErr) { setGenerating(false); toast.error("Erro ao salvar"); return; }
-    const { error } = await supabase.functions.invoke("generate-documents", {
-      body: {
-        caso_id: caso.id,
+    if (updErr) { setGenerating(false); toast.error(updErr.message || "Erro ao salvar"); return; }
+    try {
+      await gerarDocumentosNoNavegador(caso, {
         captador: state.captador.trim(),
         oab: state.oab.trim(),
         email_cliente: state.email.trim(),
         telefone_cliente: state.telefone.trim(),
         uf_comarca: state.ufComarca.trim(),
         endereco_uniao: state.enderecoUniao.trim(),
-      },
-    });
-    setGenerating(false);
-    if (error) toast.error("Erro ao gerar documentos"); else toast.success("Documentos gerados");
+        valor_causa: valorCausa,
+      });
+      toast.success("Documentos gerados");
+    } catch (error) {
+      console.error("[gerar-documentos-navegador] Falha:", error);
+      toast.error(error instanceof Error ? error.message : "Erro ao gerar documentos");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const e = caso.endereco ?? {};
@@ -201,7 +206,7 @@ export function TelaCalculos({ caso, onCancel }: { caso: CasoData; onCancel: () 
               className="mt-2"
               value={state.enderecoUniao}
               onChange={(e) => setField("enderecoUniao", e.target.value)}
-              placeholder="Informe o endereço da União"
+              placeholder="Endereço da União (opcional)"
             />
           </div>
         </div>

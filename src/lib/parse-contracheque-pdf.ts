@@ -145,6 +145,38 @@ function totalNaLinha(linha: Linha, posicao = 0): number | null {
   return valores[posicao] ? moedaBrasileiraParaNumero(valores[posicao].str) : null;
 }
 
+type SegmentoColuna = { itens: TextItemPdf[]; inicio: number; fim: number; tipo: TipoRubrica };
+
+function apenasNumero(item: TextItemPdf): boolean {
+  return /^-?\d+(?:[.,]\d+)*$/.test(item.str.trim());
+}
+
+function rubricaDoSegmento(segmento: SegmentoColuna): RubricaPdf | null {
+  const largura = segmento.fim - segmento.inicio;
+  const codigoItem = segmento.itens.find(
+    (item) => item.x < segmento.inicio + largura * 0.25 && CODIGO.test(item.str.trim()),
+  );
+  if (!codigoItem) return null;
+  const candidatos = segmento.itens.filter(
+    (item) => itemMonetario(item) && item.x > segmento.inicio + largura * 0.28,
+  );
+  if (!candidatos.length) return null;
+  const valorItem = candidatos[candidatos.length - 1];
+  const inicioDescricao = codigoItem.x + codigoItem.width;
+  const faixa = segmento.itens.filter((item) => item.x >= inicioDescricao && item.x < valorItem.x && item.str !== "|");
+  const descricao = faixa.filter((item) => !apenasNumero(item)).map((item) => item.str).join(" ").replace(/\s+/g, " ").trim();
+  if (!descricao) return null;
+  const numericos = faixa.filter(apenasNumero);
+  const refItem = numericos[numericos.length - 1] ?? null;
+  return {
+    codigo: codigoItem.str.trim().toUpperCase(),
+    descricao,
+    referencia: refItem ? numeroReferencia(refItem) : null,
+    valor: Math.abs(moedaBrasileiraParaNumero(valorItem.str)),
+    tipo: segmento.tipo,
+  };
+}
+
 export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): ContrachequePdf {
   const modeloPagina = detectarModelo(itens.map((i) => i.str).join(" "));
   const larguraLeitura = modeloPagina === "termo_bahia" ? largura / 2 : largura;
@@ -160,7 +192,9 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       : extrairCompetencia(texto);
   const cabecalho = linhas.find((l) => {
     const n = normalizar(l.texto);
-    return (/descricao/.test(n) && /provent|venciment|valor/.test(n)) || (/venciment/.test(n) && /descont/.test(n));
+    return (/descricao/.test(n) && /provent|venciment|valor/.test(n))
+      || (/venciment/.test(n) && /descont/.test(n))
+      || (/rendiment/.test(n) && /descont/.test(n));
   });
   const acharX = (padrao: RegExp) => cabecalho?.itens.find((i) => padrao.test(normalizar(i.str)))?.x ?? null;
   const xDescricao = acharX(/descricao/);
@@ -168,6 +202,9 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   const xDesconto = acharX(/descont/);
   const xInformativo = acharX(/informativ|outros/);
   const xReferencia = acharX(/referencia|quant|qtde/);
+  const colunasCodigo = (cabecalho?.itens ?? []).filter((item) => /^cod/.test(normalizar(item.str)));
+  const duasColunas = colunasCodigo.length >= 2 && /rendiment/.test(normalizar(cabecalho?.texto ?? ""));
+  const xCorte = duasColunas ? colunasCodigo[1].x : null;
   let secao: TipoRubrica = "provento";
   let informativo = false;
   let tabelaEncerrada = false;
@@ -203,6 +240,18 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     }
 
     const permiteSemCodigo = modeloOrigem === "elekeiroz" || modeloOrigem === "birla_carbon";
+    if (duasColunas && xCorte != null) {
+      const segmentos: SegmentoColuna[] = [
+        { itens: linha.itens.filter((item) => item.x < xCorte), inicio: 0, fim: xCorte, tipo: "provento" },
+        { itens: linha.itens.filter((item) => item.x >= xCorte), inicio: xCorte, fim: larguraLeitura, tipo: "desconto" },
+      ];
+      for (const segmento of segmentos) {
+        const rubrica = rubricaDoSegmento(segmento);
+        if (rubrica) rubricas.push(informativo ? { ...rubrica, tipo: "informativo" } : rubrica);
+      }
+      continue;
+    }
+
     const codigoItem = permiteSemCodigo
       ? undefined
       : linha.itens.find((i) => i.x < larguraLeitura * 0.22 && CODIGO.test(i.str.trim()));
@@ -227,9 +276,16 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       .filter((valor): valor is number => valor != null && xReferencia != null && valor > xReferencia)
       .sort((a, b) => a - b)[0] ?? larguraLeitura;
     const refItem = xReferencia == null ? null : linha.itens.find((i) => i.x >= xReferencia - larguraLeitura * 0.025 && i.x < fimReferencia);
+    // Unigel/Estireno: com as duas colunas no cabeçalho, a posição x do valor é
+    // mais confiável que a seção corrente (que vira "desconto" após os totais).
+    const porColuna: TipoRubrica | null =
+      xDesconto != null && xProvento != null
+        ? valorItem.x >= xDesconto - larguraLeitura * 0.05 ? "desconto" : "provento"
+        : null;
     let tipo: TipoRubrica;
     if (informativo || (["birla_carbon", "vopak"].includes(modeloOrigem) && xInformativo != null && valorItem.x >= xInformativo - larguraLeitura * 0.03)) tipo = "informativo";
-    else if (modeloOrigem === "petrobras" || modeloOrigem === "unigel") tipo = secao;
+    else if (modeloOrigem === "unigel") tipo = porColuna ?? secao;
+    else if (modeloOrigem === "petrobras") tipo = secao;
     else if (modeloOrigem === "elekeiroz") tipo = valorItem.x >= larguraLeitura * 0.78 ? "desconto" : "provento";
     else if (xDesconto != null && Math.abs(valorItem.x - xDesconto) < Math.abs(valorItem.x - (xProvento ?? 0))) tipo = "desconto";
     else tipo = "provento";
