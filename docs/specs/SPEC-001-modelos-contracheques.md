@@ -38,6 +38,9 @@ para um lote que não produza dados estruturados.
 Rubrica HRA específica da ECOLAB: código `3217` — `Adicional Repouso
 Alimentação`, quando estiver na coluna de vencimentos.
 
+Rubrica HRA específica da Birla Carbon: `Adic. Repouso Alimentação`, sem código
+numérico no PDF, quando estiver na coluna de proventos.
+
 Rubrica HRA específica da OXITENO: código `3453` — `HRA-Horas Rep.
 Alimentação`, quando estiver na coluna de vencimentos.
 

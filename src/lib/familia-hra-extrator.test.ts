@@ -87,6 +87,13 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("3331", "HRA-Dif. Dissídio", "generico", "provento")).toBe("dif_ahra");
   });
 
+  it("classifica Adic. Repouso Alimentação da Birla como hra somente em proventos", () => {
+    expect(familia("", "Adic. Repouso Alimentação", "birla_carbon", "provento")).toBe("hra");
+    expect(familia("", "Adic.RepousoAlimentação", "birla_carbon", "provento")).toBe("hra");
+    expect(familia("", "Adic. Repouso Alimentação", "birla_carbon", "desconto")).toBeNull();
+    expect(familia("", "Adic. Repouso Alimentação", "generico", "provento")).toBeNull();
+  });
+
 });
 
 describe("Petrobras — HRA/AHRA", () => {
