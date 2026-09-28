@@ -164,14 +164,15 @@ export async function gerarDocumentosNoNavegador(
     doc.render(variaveis);
     const nome = `${peca.tipoSaida}-${baseNome}.docx`;
     const path = `${caso.id}/${nome}`;
-    await subirArquivo(path, new Blob([doc.getZip().generate({ type: "uint8array" })], { type: MIME_DOCX }), MIME_DOCX);
+    const bytesDocx = doc.getZip().generate({ type: "uint8array" }) as unknown as BlobPart;
+    await subirArquivo(path, new Blob([bytesDocx], { type: MIME_DOCX }), MIME_DOCX);
     gerados.push({ tipo: peca.tipoSaida, storage_path: path, nome });
   }
 
   const criarXlsx = (partes: Record<string, string>) => {
     const zip = new PizZip();
     for (const [caminho, conteudo] of Object.entries(partes)) zip.file(caminho, conteudo);
-    return new Blob([zip.generate({ type: "uint8array" })], { type: MIME_XLSX });
+    return new Blob([zip.generate({ type: "uint8array" }) as unknown as BlobPart], { type: MIME_XLSX });
   };
   const linhasHra = (caso.contracheques ?? []).map((contra) => ({
     competencia: contra.label ?? "",

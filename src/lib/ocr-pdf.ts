@@ -92,7 +92,7 @@ export async function criarSessaoOcr(
 ): Promise<OcrSessao> {
   const worker = await criarWorker(onProgress);
   await worker.setParameters({
-    tessedit_pageseg_mode: "3",
+    tessedit_pageseg_mode: "3" as unknown as import("tesseract.js").PSM,
     preserve_interword_spaces: "1",
     user_defined_dpi: "200",
   });
@@ -101,7 +101,7 @@ export async function criarSessaoOcr(
     async reconhecerPagina(pagina: PDFPageProxy) {
       const viewport = pagina.getViewport({ scale: OCR_RENDER_SCALE });
       const canvas = criarCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-      const contexto = canvas.getContext("2d");
+      const contexto = canvas.getContext("2d") as CanvasRenderingContext2D | null;
       if (!contexto) throw new Error("Não foi possível criar o contexto Canvas para OCR");
       await pagina.render({ canvasContext: contexto, viewport }).promise;
       const resultado = await worker.recognize(canvas, {}, { blocks: true });
