@@ -1,44 +1,31 @@
-# Auditoria — caso a5af56d1-7c9a-4442-80cf-dcd90d6a1e01
+# Achados críticos de Segurança — transcrição e correção mínima proposta
 
-## Estado real no banco (leitura)
+## Origem
+Todos vêm do scanner de banco (`lov_pgscan`) do **banco principal do app (kaopnizsbkzxqdzmocwa)**. Nenhum vem da base histórica `pcquefluiltrvwjpndvw`: ela não é escaneada por este projeto.
+A consulta retornou **9** críticos ativos, não 8. Provavelmente o painel foi gerado antes do último scan. Controles: `LOV.DB.RLS_TAUTOLOGY_PERMISSIVE.V1` (7 tabelas) e `LOV.DB.STORAGE_OBJECTS_OWNER_UNBOUND.V1` (2 buckets).
 
-| ordem | páginas | status | ia_status | atualizado_em |
-|---|---|---|---|---|
-| 0 | 1–15 | concluido | concluido | 02:58:52 |
-| 1 | 16–30 | concluido | concluido | 03:01:23 |
-| 2 | 31–45 | pendente | — | 02:56:57 (criação) |
-| 3 | 46–60 | pendente | — | 02:56:57 |
-| 4 | 61–75 | pendente | — | 02:56:57 |
-| 5 | 76–90 | pendente | — | 02:56:57 |
-| 6 | 91–99 | pendente | — | 02:56:57 |
+## Achados
 
-O lote 2 (ordem 1) **não ficou travado**: ele concluiu às `03:01:23+00`, depois do horário observado pelo usuário. Os lotes 3 a 7 seguem `pendente` e nunca foram invocados.
+| # | ID interno (sufixo) | Objeto | Role | Policy/condição atual | Impacto | Menor correção compatível |
+|---|---|---|---|---|---|---|
+| 1 | `..._5993babc75ae0f4e` | tabela `casos` | authenticated | read/insert/update/delete com `USING(true)` / `WITH CHECK(true)` | Qualquer usuário altera ou apaga qualquer caso | Manter SELECT `true` (requisito). Manter INSERT/UPDATE para autenticados. Restringir DELETE a `has_role(auth.uid(),'admin')` |
+| 2 | `..._0cc251992fd059e4` | tabela `arquivos` | authenticated | CRUD `true` | Metadados de documentos apagados/alterados por qualquer um | SELECT/INSERT mantidos. UPDATE/DELETE só para admin |
+| 3 | `..._34ef069f6bc2c704` | tabela `contracheques` | authenticated | CRUD `true` | Pode apagar ou alterar dados de cálculo | Leitura mantida. Escrita e exclusão só para admin, pois as Edge Functions gravam com service role* |
+| 4 | `..._c88f712070afba42` | tabela `itens_contracheque` | authenticated | CRUD `true` | Mesmo impacto do item 3 (rubricas) | Mesma correção do item 3* |
+| 5 | `..._0eccdcc0f33badca` | tabela `lotes_extracao` | authenticated | CRUD `true` | Lotes de extração podem ser adulterados | Leitura mantida. Escrita só por service role/admin* |
+| 6 | `..._7a2029d7f15241b8` | tabela `lotes_contracheques` | authenticated | só SELECT `true` (escrita já negada) | Leitura ampla do andamento/erros dos lotes | Compatível com "casos legíveis por todos": aceitar como intencional. Não exige mudança |
+| 7 | `..._112ed133939c156c` | tabela `templates` | authenticated | CRUD `true` | Qualquer usuário troca ou apaga modelos de peças | Leitura mantida. INSERT/UPDATE/DELETE só para admin |
+| 8 | `..._6f7170a09a1d1fe1` | bucket `casos-arquivos` (storage.objects) | authenticated | policy "auth read casos-arquivos" sem vínculo a `auth.uid()` | Qualquer autenticado baixa documentos de qualquer cliente | Coerente com leitura global de casos: manter leitura. Revisar e restringir escrita/exclusão do bucket (estado não verificado) |
+| 9 | `..._9caa9f9476c5ceab` | bucket `casos-documentos` | authenticated | policy "auth read casos-documentos" sem vínculo ao dono | Qualquer autenticado baixa peças geradas | Igual ao item 8 |
 
-## Causa técnica
+*Antes de aplicar, é preciso confirmar no código quais telas gravam direto pelo navegador, como `Caso.tsx`, `NovoCaso.tsx` e `Templates.tsx`. Onde houver gravação feita pelo navegador, a restrição deve permitir o usuário comum. Nesses casos, fica só a limitação de DELETE.
 
-Logs da Edge Function `process-contracheques-pdf`:
+## Evidência
+Os dados vêm do resultado do scan (`get_scan_results`, 30/09/2026) e das policies atuais listadas no schema do projeto. Para os buckets, o scan cita apenas as policies de leitura. As policies de escrita do storage não foram consultadas e seguem **não verificadas**.
 
-```text
-02:58:52 / 02:58:53  booted
-03:00:13 / 03:00:15 / 03:00:17  shutdown
-03:01:23  ERROR Http: connection closed before message completed
-```
+## Próximos passos (só com autorização)
+1. Consultar em modo leitura as policies de `storage.objects` e mapear as gravações feitas pelo navegador.
+2. Criar uma nova migration restringindo UPDATE/DELETE conforme a tabela acima, com SELECT de `casos` inalterado.
+3. Rodar o scan de novo. Os itens 6, 8 e 9 continuariam como decisão de negócio (leitura global intencional). Só o usuário pode aceitá-los; nada será ignorado automaticamente.
 
-- A invocação do lote ordem 1 começou às 02:58:52 e só terminou às 03:01:23 — cerca de **150 segundos**.
-- O cliente (fetch do `supabase.functions.invoke` no navegador, via gateway) **encerrou a conexão antes da resposta**: `Http: connection closed before message completed`. Ou seja, timeout de rede do lado do chamador, não erro da IA e não erro de banco.
-- A função concluiu o trabalho e persistiu `status = concluido` mesmo assim (por isso o banco está consistente para esse lote).
-- Como o `invoke` no frontend recebeu erro de rede, o **loop sequencial de `processar_lote` foi interrompido** — não há nenhum `booted` após 02:58:53, confirmando que os lotes 3–7 nunca chegaram a ser chamados.
-
-Não há registro de erro da IA (Gemini), nem status HTTP 4xx/5xx da função: a resposta simplesmente não teve para quem ser entregue.
-
-## Conclusão
-
-Falha de duração: um lote de 15 páginas com fallback de IA leva ~2,5 min, acima do limite de espera do `functions.invoke`. O sintoma "segundo lote parado em processando" é o efeito colateral de o cliente perder a conexão e abandonar a fila.
-
-## Correções possíveis (não implementadas — apenas para decisão)
-
-1. Reduzir `TAMANHO_LOTE_PAGINAS` (por exemplo de 15 para 5) para manter cada invocação bem abaixo do timeout.
-2. Tornar a fila retomável no frontend: em erro de rede, reconsultar `lotes_contracheques` e continuar a partir do primeiro lote não concluído, em vez de abortar.
-3. Marcar `processando` com carimbo de início e permitir reprocessar lote preso após um tempo limite.
-
-Nenhuma alteração de código, banco, template ou deploy foi feita nesta auditoria.
+Nada foi alterado, ignorado ou publicado.
