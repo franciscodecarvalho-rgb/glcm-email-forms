@@ -19,6 +19,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
 import { documentoPessoalUsaIa, temDadosPessoaisUtilizaveis } from "../_shared/personal-extraction-policy.ts";
+import { partePdfParaGemini } from "../_shared/gemini-pdf-input.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,7 +98,7 @@ async function dadosPessoaisDoPdf(blob: Blob, nomeArquivo = ""): Promise<{ tipo_
   };
 }
 
-const SYSTEM_PROMPT = `Leia visualmente os documentos pessoais enviados (comprovante de residência, CNH, RG, CIN ou CPF) e extraia somente os dados pessoais que estiverem explicitamente impressos: nome do titular, CPF completo e legível, RG e endereço separado em logradouro, número/complemento, bairro, cidade, estado e CEP quando constarem. Nacionalidade, estado civil e profissão só se estiverem expressamente impressos. Não confunda dados da concessionária com os do titular. Não invente nem complete campos ausentes ou ilegíveis. Para campos ausentes, retorne texto vazio ou objeto vazio. Para documentos pessoais, retorne contracheques como array vazio. Use a ferramenta registrar_dados_caso.`;
+const SYSTEM_PROMPT = `Leia visualmente os documentos pessoais enviados (comprovante de residência, CNH, RG, CIN ou CPF) e extraia somente os dados pessoais que estiverem explicitamente impressos: nome do titular, CPF completo e legível, RG se impresso e endereço separado em logradouro, número/complemento, bairro, cidade, estado e CEP quando constarem. Em CNH, procure explicitamente o campo CPF mesmo quando o PDF não tiver camada de texto. CPF válido é o identificador prioritário; quando encontrado, RG pode ficar vazio e não é obrigatório nem substitui o CPF. Nacionalidade, estado civil e profissão só se estiverem expressamente impressos. Não confunda dados da concessionária com os do titular. Não invente nem complete campos ausentes ou ilegíveis. Para campos ausentes, retorne texto vazio ou objeto vazio. Para documentos pessoais, retorne contracheques como array vazio. Use a ferramenta registrar_dados_caso.`;
 
 const TOOLS = [
   {
@@ -443,7 +444,7 @@ async function finalizarCaso(supabase: any, casoId: string, lotes: any[], erroPr
   const rg = dados.rg ?? casoAtual.rg;
   const endereco = dados.endereco ?? casoAtual.endereco;
   const enderecoLogradouro = endereco && typeof endereco === "object" ? endereco.logradouro : null;
-  const faltaRevisaoManual = !nomeCliente?.trim() || !cpf?.trim() || !rg?.trim() || !enderecoLogradouro?.trim();
+  const faltaRevisaoManual = !nomeCliente?.trim() || !cpf?.trim() || !enderecoLogradouro?.trim();
   const erroRevisaoManual = erroProcessamento ?? (faltaRevisaoManual
     ? "A extração automática não encontrou todos os dados pessoais. Confira e preencha os campos manualmente; os PDFs continuam anexados ao caso."
     : null);
@@ -499,7 +500,7 @@ async function finalizarCaso(supabase: any, casoId: string, lotes: any[], erroPr
   console.log(`caso ${casoId} finalizado: ${contras.length} contracheques`);
 }
 
-// Baixa um arquivo do Storage como parte image_url (com 1 retry).
+// Baixa documentos do Storage como arquivo PDF ou imagem multimodal (com 1 retry).
 async function baixarParte(supabase: any, arq: any): Promise<any | null> {
   for (let t = 0; t < 2; t++) {
     const { data: blob, error } = await supabase.storage
@@ -511,8 +512,12 @@ async function baixarParte(supabase: any, arq: any): Promise<any | null> {
       const ch = 0x8000;
       for (let i = 0; i < buf.length; i += ch) b64 += String.fromCharCode(...buf.subarray(i, i + ch));
       b64 = btoa(b64);
-      const mime = arq.mime_type || "image/jpeg";
-      return { type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } };
+      const mime = arq.mime_type || "application/pdf";
+      const dataUrl = `data:${mime};base64,${b64}`;
+      if (mime === "application/pdf") {
+        return partePdfParaGemini(arq.nome ?? "documento.pdf", dataUrl)[1];
+      }
+      return { type: "image_url", image_url: { url: dataUrl } };
     }
     await sleep(400);
   }

@@ -18,7 +18,6 @@ export function dadosFaltantesParaCaso(caso: CasoParaValidacao): string[] {
 
   if (!caso.nome_cliente?.trim()) faltantes.push("nome completo");
   if (!cpfValido(caso.cpf)) faltantes.push("CPF válido");
-  if (!caso.rg?.trim()) faltantes.push("RG");
   if (typeof endereco.logradouro !== "string" || !endereco.logradouro.trim()) {
     faltantes.push("logradouro do comprovante");
   }

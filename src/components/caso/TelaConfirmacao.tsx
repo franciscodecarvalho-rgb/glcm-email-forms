@@ -120,7 +120,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2"><Label>Nome completo</Label><Input value={nome} onChange={(e) => setNome(e.target.value)} /></div>
           <div className="space-y-2"><Label>CPF</Label><Input value={cpf} onChange={(e) => setCpf(e.target.value)} /></div>
-          <div className="space-y-2"><Label>RG</Label><Input value={rg} onChange={(e) => setRg(e.target.value)} /></div>
+          <div className="space-y-2"><Label>RG (opcional quando o CPF é válido)</Label><Input value={rg} onChange={(e) => setRg(e.target.value)} /></div>
         </div>
       </section>
 

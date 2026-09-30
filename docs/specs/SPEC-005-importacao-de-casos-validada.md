@@ -16,7 +16,7 @@ confirmados.
    lotes, executa a extração pessoal e valida os dados persistidos.
 4. A confirmação de dados (automática completa ou manual) é a única etapa que
    promove o registro a Caso (`importacao_concluida = true`).
-5. Uma trigger valida CPF, nome, RG, logradouro, metadados dos dois tipos de PDF,
+5. Uma trigger valida CPF, nome, logradouro, metadados dos dois tipos de PDF,
    rubricas e conclusão de todos os lotes. O banco rejeita a promoção se faltar
    qualquer requisito.
 6. Em caso de falha de rede, o frontend informa a etapa correta e permite repetir
@@ -27,7 +27,8 @@ confirmados.
 
 - Um envio iniciado não surge como Caso no Dashboard antes da confirmação final.
 - Nenhum registro manual pode ser promovido sem comprovante pessoal e
-  contracheque anexados, dados pessoais válidos e rubricas persistidas.
+  contracheque anexados, nome, CPF válido, logradouro e rubricas persistidas;
+  RG é opcional quando o CPF é válido.
 - A promoção é recusada se algum lote ainda estiver pendente, processando ou em
   erro.
 - Uma extração pessoal incompleta conserva os PDFs e permite preenchimento

@@ -72,6 +72,21 @@ preexistentes em componentes afetados e não apontou erros nos novos trechos.
 Não foi possível executar a migration contra banco local/remoto nesta sessão;
 nenhum deploy remoto foi realizado.
 
+Correção local seguinte: documentos pessoais são enviados ao modelo Gemini como
+arquivo PDF no formato multimodal `file` do Chat Completions, em vez de `image_url`;
+a instrução pede leitura visual explícita do CPF na CNH. A correção cobre o fluxo
+de novo caso e o retry legado. CPF válido passa a bastar para identificação,
+deixando RG opcional no frontend, nas duas Edge Functions e na trigger via migration
+nova. Testes locais desta alteração e publicação ainda
+pendentes; não presumir que a migration ou Edge Function estejam ativas em produção.
+
+Base desta correção: `4a082b6` (`main` alinhada a `origin/main` antes das edições).
+Verificação local: 297 testes passaram, `npm run build`, `npx tsc --noEmit` e
+bundling sintático da Edge Function passaram. Não foi possível executar Deno ou
+chamar o gateway Gemini real, nem aplicar a migration; publicação/deploy pendente.
+ESLint seletivo reporta violações legadas nos arquivos grandes tocados (incluindo
+`any` existente), sem ocorrências nos novos trechos.
+
 Base do checkout antes desta correção: `fcb0fbb` (`main` sincronizada com
 `origin/main`). O fluxo padrão de criação chama
 `process-documentos-pessoais-pdf`; o retry legado usa `extract-case-data`.

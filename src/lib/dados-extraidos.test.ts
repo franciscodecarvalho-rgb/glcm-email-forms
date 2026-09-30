@@ -15,8 +15,16 @@ describe("dadosEsperadosForamExtraidos", () => {
     expect(dadosEsperadosForamExtraidos(casoBase as never)).toBe(true);
   });
 
-  it.each(["nome_cliente", "cpf", "rg"])("exige o campo %s", (campo) => {
+  it.each(["nome_cliente", "cpf"])("exige o campo %s", (campo) => {
     expect(dadosEsperadosForamExtraidos({ ...casoBase, [campo]: null } as never)).toBe(false);
+  });
+
+  it("não exige RG quando existe um CPF válido", () => {
+    expect(dadosEsperadosForamExtraidos({ ...casoBase, rg: null } as never)).toBe(true);
+  });
+
+  it("continua exigindo CPF válido mesmo quando há RG", () => {
+    expect(dadosEsperadosForamExtraidos({ ...casoBase, cpf: null, rg: "1234567" } as never)).toBe(false);
   });
 
   it("exige ao menos uma rubrica persistida", () => {

@@ -1,5 +1,25 @@
 # Worklog
 
+## 2026-09-30 — Gemini lê CPF da CNH; RG opcional com CPF válido
+
+- A CNH escaneada era enviada no Chat Completions como `image_url` contendo
+  `application/pdf`, não como entrada de arquivo PDF. Ajustado para a parte
+  multimodal `file` com nome, MIME/Base64 preservados e instrução explícita para
+  ler o campo CPF visualmente, inclusive sem camada de texto; a correção vale no
+  upload de novo caso e no retry legado `extract-case-data`.
+- A confirmação do caso agora exige nome, CPF válido, logradouro e rubricas;
+  RG continua disponível para extração/edição, mas não bloqueia o caso quando há
+  CPF válido. A mesma regra foi aplicada à finalização de reprocessamento e à
+  trigger SQL, preservando os demais requisitos de importação.
+- Adicionados testes de regressão para a forma de envio do PDF e para CPF válido
+  sem RG, além de CPF ausente/inválido com RG.
+- Validação: 297 testes passaram; `npm run build`, `npx tsc --noEmit` e bundling
+  sintático da Edge Function passaram. ESLint seletivo falha por violações legadas
+  (incluindo `any` preexistente), sem achados nos novos trechos.
+- Limite: não foi possível invocar o Gemini real (credencial/gateway não disponível),
+  executar Deno (CLI ausente) ou testar/aplicar a migration em banco local/remoto.
+  Migration, função Edge e deploy ainda não chegaram à produção.
+
 ## 2026-09-30 — Reconciliação pós-Lovable
 
 - Regra adicionada ao contrato do projeto e ao checklist de release: verificar os SHAs

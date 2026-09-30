@@ -455,3 +455,10 @@ empresa, página e evidência da origem do dado.
 **Origem:** Solicitação de Nodley em 30/09/2026, confirmando que, se a extração do Gemini falhar ou não retornar dados utilizáveis, o PDF original deve permanecer anexado e os campos devem ser preenchidos manualmente.
 **Aplicação:** Usar a leitura determinística somente como complemento à resposta do Gemini; não persistir respostas vazias ou CPF inválido. Se os dados essenciais ficarem incompletos ou a chamada falhar, abrir a confirmação editável, mostrar o aviso e conservar os PDFs no Storage e no registro de arquivos. Ao confirmar os campos manuais, limpar o erro de processamento.
 **Evitar:** Usar Gemini para contracheques, excluir/substituir o documento enviado em caso de falha, ou afirmar que houve extração completa sem dados úteis.
+
+### 2026-09 — CPF válido torna RG opcional na importação
+
+**Regra confirmada:** Um CPF válido extraído da CNH ou de outro documento é suficiente para a identificação do cliente; não exigir RG para confirmar ou concluir a importação.
+**Origem:** Solicitação de Nodley em 30/09/2026.
+**Aplicação:** Gemini deve ler a CNH visualmente e procurar o CPF mesmo em PDF escaneado; enviar PDFs como partes `file` multimodais. Preservar a validação de CPF e os demais requisitos (nome, logradouro, comprovantes, contracheques e rubricas). RG pode ser salvo se impresso, mas fica opcional.
+**Evitar:** Tratar RG como requisito quando o CPF está válido, ou usar RG como substituto de CPF.

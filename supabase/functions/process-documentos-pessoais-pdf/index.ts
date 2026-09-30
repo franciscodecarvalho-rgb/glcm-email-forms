@@ -2,10 +2,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
 import { documentoPessoalUsaIa, temDadosPessoaisUtilizaveis } from "../_shared/personal-extraction-policy.ts";
 import { mesclarEnderecos, mesclarLeituraDocumentoPessoal } from "../_shared/merge-personal-extraction.ts";
+import { partePdfParaGemini } from "../_shared/gemini-pdf-input.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODELO = "google/gemini-2.5-pro";
-const PROMPT = `Leia visualmente todas as páginas do documento pessoal enviado, seja comprovante de residência, CNH, RG, CIN ou CPF. Extraia somente os dados pessoais explicitamente impressos: nome completo do titular, CPF apenas se estiver completo e legível, RG se impresso, e endereço completo separado em logradouro, número/complemento, bairro, cidade, estado e CEP quando constarem. Nacionalidade, estado civil e profissão só devem ser preenchidos se estiverem expressamente impressos. Classifique tipo_documento como comprovante_residencia, cnh, rg, cin, cpf ou outro conforme o documento. Não confunda dados da concessionária com os do titular. Não deduza nem complete campos ausentes ou ilegíveis; nesses casos retorne string vazia. Se não conseguir identificar nenhum dado pessoal com segurança, retorne todos os campos vazios.`;
+const PROMPT = `Leia visualmente todas as páginas do documento pessoal enviado, incluindo elementos gráficos de CNH, RG, CIN, CPF ou comprovante de residência. Em CNH, procure explicitamente o campo CPF mesmo quando o PDF não tiver camada de texto. Extraia somente os dados pessoais explicitamente impressos: nome completo do titular, CPF apenas se estiver completo e legível, RG se impresso, e endereço completo separado em logradouro, número/complemento, bairro, cidade, estado e CEP quando constarem. O CPF válido é o identificador prioritário: se conseguir extraí-lo, RG pode ficar vazio e não deve ser tratado como dado obrigatório nem substituto do CPF. Nacionalidade, estado civil e profissão só devem ser preenchidos se estiverem expressamente impressos. Classifique tipo_documento como comprovante_residencia, cnh, rg, cin, cpf ou outro conforme o documento. Não confunda dados de órgão emissor/concessionária com os do titular. Não deduza nem complete campos ausentes ou ilegíveis; nesses casos retorne string vazia. Se não conseguir identificar nenhum dado pessoal com segurança, retorne todos os campos vazios.`;
 const TOOL = { type: "function", function: { name: "registrar_documento_pessoal", parameters: { type: "object", properties: {
   tipo_documento: { type: "string", enum: ["comprovante_residencia", "cnh", "rg", "cin", "cpf", "outro"] }, nome: { type: "string" }, cpf: { type: "string" }, rg: { type: "string" },
   nacionalidade: { type: "string" }, estado_civil: { type: "string" }, profissao: { type: "string" },
@@ -15,9 +16,9 @@ const TOOL = { type: "function", function: { name: "registrar_documento_pessoal"
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
 function base64(bytes: Uint8Array) { let value = ""; for (let i = 0; i < bytes.length; i += 0x8000) value += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(value); }
 async function extrairComIa(blob: Blob, nome: string, apiKey: string) {
-  const dataUrl = `data:${blob.type || "application/pdf"};base64,${base64(new Uint8Array(await blob.arrayBuffer()))}`;
+  const dataUrl = `data:application/pdf;base64,${base64(new Uint8Array(await blob.arrayBuffer()))}`;
   const resposta = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({
-    model: MODELO, messages: [{ role: "system", content: PROMPT }, { role: "user", content: [{ type: "text", text: `Arquivo: ${nome}` }, { type: "image_url", image_url: { url: dataUrl } }] }],
+    model: MODELO, messages: [{ role: "system", content: PROMPT }, { role: "user", content: partePdfParaGemini(nome, dataUrl) }],
     tools: [TOOL], tool_choice: { type: "function", function: { name: "registrar_documento_pessoal" } },
   }) });
   if (resposta.status === 402) throw new Error("Créditos de IA do Lovable esgotados");
@@ -177,7 +178,6 @@ Deno.serve(async (req) => {
     const camposCasoAusentes = [
       !nome?.trim() ? "nome" : null,
       !cpf ? "CPF" : null,
-      !rg?.trim() ? "RG" : null,
       typeof enderecoObjeto.logradouro !== "string" || !enderecoObjeto.logradouro.trim() ? "logradouro" : null,
     ].filter((campo): campo is string => Boolean(campo));
     if (camposCasoAusentes.length) revisao.push({ arquivo: "dados do caso", motivo: `campos_para_conferencia_manual:${camposCasoAusentes.join(",")}` });
