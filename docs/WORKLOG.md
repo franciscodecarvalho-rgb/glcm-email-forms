@@ -20,6 +20,19 @@
   executar Deno (CLI ausente) ou testar/aplicar a migration em banco local/remoto.
   Migration, função Edge e deploy ainda não chegaram à produção.
 
+### Release — 2026-09-30
+
+- Commit `b6633ee8b0a211e8248ce72e5029e5cd1161bb51` enviado para `origin/main`;
+  Lovable reconhece o mesmo SHA. A pasta `.omx/` foi preservada fora do commit.
+- O deploy de produção foi retido: o projeto configurado no checkout e no `.env`
+  é `kaopnizsbkzxqdzmocwa`, mas a conexão Supabase disponível não tem permissão
+  nele. O projeto acessível `pcquefluiltrvwjpndvw` não corresponde ao ref configurado
+  e não contém as Edge Functions chamadas por esta aplicação.
+- Não foi aplicada a migration, nem implantadas as Edge Functions ou a publicação
+  Lovable, para evitar alterar/publicar contra um backend diferente ou incompatível.
+  Retomar após restabelecer acesso ao projeto `kaopnizsbkzxqdzmocwa` e validar a
+  migration e os deploys de `process-documentos-pessoais-pdf` e `extract-case-data`.
+
 ## 2026-09-30 — Reconciliação pós-Lovable
 
 - Regra adicionada ao contrato do projeto e ao checklist de release: verificar os SHAs

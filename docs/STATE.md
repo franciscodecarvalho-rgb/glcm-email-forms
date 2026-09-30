@@ -83,9 +83,15 @@ pendentes; não presumir que a migration ou Edge Function estejam ativas em prod
 Base desta correção: `4a082b6` (`main` alinhada a `origin/main` antes das edições).
 Verificação local: 297 testes passaram, `npm run build`, `npx tsc --noEmit` e
 bundling sintático da Edge Function passaram. Não foi possível executar Deno ou
-chamar o gateway Gemini real, nem aplicar a migration; publicação/deploy pendente.
-ESLint seletivo reporta violações legadas nos arquivos grandes tocados (incluindo
-`any` existente), sem ocorrências nos novos trechos.
+chamar o gateway Gemini real. Commit `b6633ee8b0a211e8248ce72e5029e5cd1161bb51`
+está em `origin/main` e é reconhecido pelo Lovable.
+
+Deploy retido até recuperar acesso ao Supabase `kaopnizsbkzxqdzmocwa` (ref
+configurado no app). A conexão atual só tem acesso a `pcquefluiltrvwjpndvw`, que
+não corresponde ao backend configurado e não contém as Edge Functions usadas pelo
+fluxo. Migration e Edge Functions não foram aplicadas/publicadas; não declarar o
+deploy concluído. ESLint seletivo reporta violações legadas nos arquivos grandes
+tocados (incluindo `any` existente), sem ocorrências nos novos trechos.
 
 Base do checkout antes desta correção: `fcb0fbb` (`main` sincronizada com
 `origin/main`). O fluxo padrão de criação chama
