@@ -114,6 +114,33 @@ describe("contrachequesRelacionaisParaRevisao", () => {
 });
 
 describe("consolidação de competências duplicadas", () => {
+  it("usa o recibo BASF retificado na competência sem somar o original", () => {
+    expect(contrachequesRelacionaisParaRevisao([
+      {
+        id: "basf-original",
+        competencia: "09/2023",
+        modelo_origem: "basf",
+        retificado: false,
+        itens_contracheque: [{ familia_hra: "hra", valor: 100 }],
+      },
+      {
+        id: "basf-retificado",
+        competencia: "09/2023",
+        modelo_origem: "basf",
+        retificado: true,
+        itens_contracheque: [{ familia_hra: "hra", valor: 200 }],
+      },
+      {
+        id: "tronox",
+        competencia: "09/2023",
+        modelo_origem: "tronox",
+        itens_contracheque: [{ familia_hra: "hra", valor: 40 }],
+      },
+    ])).toEqual([
+      { id: "basf-retificado", label: "09/2023", valor_hra: 240, valor_ahra: 0 },
+    ]);
+  });
+
   it("soma HRA e AHRA de contracheques da mesma competência em uma única linha", () => {
     expect(contrachequesRelacionaisParaRevisao([
       {

@@ -347,3 +347,10 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Correção expressa de Nodley durante a implementação dos relatórios por tema.
 **Aplicação:** Fazer o ciclo local → validações → Git → Lovable, sem editar ou construir funcionalidades no Lovable.
 **Evitar:** Usar o Lovable para implementar, testar ou alterar o código-fonte do projeto.
+
+### 2026-09 — Recibos BASF retificados no cálculo HRA
+
+**Regra confirmada:** Na BASF, `Pagamento Referente a` iniciado por `R` antes do mês marca o recibo retificado. Se houver recibos retificado e original da mesma competência no mesmo caso, somente o retificado compõe o cálculo HRA/AHRA.
+**Origem:** PDF BASF enviado por Nodley em 29/09/2026, com pares original/retificado nas competências analisadas.
+**Aplicação:** Persistir o marcador em `contracheques.retificado`; manter ambos os recibos e aplicar a substituição somente na consolidação da revisão e da planilha HRA do caso.
+**Evitar:** Somar as duas versões, apagar o original ou aplicar a regra a outras empresas.

@@ -179,6 +179,7 @@ export type Database = {
           id: string
           liquido: number | null
           modelo_origem: string | null
+          retificado: boolean
           salario_base: number | null
           total_descontos: number | null
           total_proventos: number | null
@@ -191,6 +192,7 @@ export type Database = {
           id?: string
           liquido?: number | null
           modelo_origem?: string | null
+          retificado?: boolean
           salario_base?: number | null
           total_descontos?: number | null
           total_proventos?: number | null
@@ -203,6 +205,7 @@ export type Database = {
           id?: string
           liquido?: number | null
           modelo_origem?: string | null
+          retificado?: boolean
           salario_base?: number | null
           total_descontos?: number | null
           total_proventos?: number | null

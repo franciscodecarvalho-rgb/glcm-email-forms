@@ -157,6 +157,27 @@ describe("parsePaginaContracheque", () => {
     expect(resultado.competencia).toBe("11/2021");
   });
 
+  it("marca como retificado somente recibo BASF cujo Pagamento Referente começa com R", () => {
+    const itens = [
+      item("BASF", 20, 500), item("Funcionário", 20, 470), item("37031684", 120, 470),
+      item("Pagamento", 20, 430), item("Referente", 80, 430), item("a", 130, 430), item("Salario/Bolsa", 350, 430),
+      item("S-CP/SPAO3", 20, 410), item("BR100730", 120, 410), item("R Setembro", 300, 410), item("202", 360, 410),
+      item("Rubrica", 20, 380), item("Qtde.", 110, 380), item("Descrição", 180, 380),
+      item("Proventos", 580, 380), item("Descontos", 700, 380),
+      item("3A20", 20, 360), item("180,00", 110, 360), item("Adicional", 180, 360),
+      item("de", 220, 360), item("periculos.", 240, 360), item("1.693,26", 590, 360),
+      item("Data de", 20, 100), item("Crédito", 60, 100), item("30.09.2023", 60, 80),
+    ];
+
+    const retificado = parsePaginaContracheque(itens, 842);
+    const original = parsePaginaContracheque(itens.map((linha) =>
+      linha.str === "R Setembro" ? { ...linha, str: "Setembro" } : linha,
+    ), 842);
+
+    expect(retificado).toMatchObject({ modeloOrigem: "basf", competencia: "09/2023", retificado: true });
+    expect(original).not.toHaveProperty("retificado");
+  });
+
   it("ignora dados cadastrais e preserva descrições completas no layout PROQUIGEL/Unigel", () => {
     const resultado = parsePaginaContracheque([
       item("PROQUIGEL", 20, 560), item("QUIMICA", 90, 560), item("Competência", 400, 560), item("4/2026", 480, 560),

@@ -10,6 +10,7 @@ export type RubricaPdf = {
 export type ContrachequePdf = {
   competencia: string | null;
   modeloOrigem: string;
+  retificado?: boolean;
   totalProventos: number | null;
   totalDescontos: number | null;
   liquido: number | null;
@@ -125,6 +126,15 @@ function extrairCompetenciaBasf(linhas: Linha[]): string | null {
   return null;
 }
 
+function basfRetificado(linhas: Linha[]): boolean {
+  const indicePagamento = linhas.findIndex((linha) =>
+    /pagamento\s+referente\s+a/.test(normalizar(linha.texto)),
+  );
+  if (indicePagamento < 0) return false;
+  const valor = normalizar(linhas[indicePagamento + 1]?.texto ?? "");
+  return /\br\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/.test(valor);
+}
+
 function itemMonetario(item: TextItemPdf): boolean {
   return VALOR.test(item.str.trim());
 }
@@ -190,6 +200,7 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     modeloOrigem === "basf"
       ? extrairCompetenciaBasf(linhas) ?? extrairCompetencia(texto)
       : extrairCompetencia(texto);
+  const retificado = modeloOrigem === "basf" && basfRetificado(linhas);
   const cabecalho = linhas.find((l) => {
     const n = normalizar(l.texto);
     return (/descricao/.test(n) && /provent|venciment|valor/.test(n))
@@ -305,13 +316,14 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     if (totalDescontos == null && ["birla_carbon", "cetrel", "vopak"].includes(modeloOrigem)) totalDescontos = descontosCalculados;
     liquido ??= totalProventos != null && totalDescontos != null ? totalProventos - totalDescontos : null;
   }
-  return { competencia, modeloOrigem, totalProventos, totalDescontos, liquido, itens: rubricas };
+  return { competencia, modeloOrigem, ...(retificado ? { retificado: true } : {}), totalProventos, totalDescontos, liquido, itens: rubricas };
 }
 
 function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number): ContrachequePdf {
   const linhas = linhasDaPagina(itens);
   const texto = linhas.map((linha) => linha.texto).join("\n");
   const modeloOrigem = detectarModelo(texto);
+  const retificado = modeloOrigem === "basf" && basfRetificado(linhas);
   const metade = largura * 0.45;
   const cabecalho = linhas.find((linha) => {
     const n = normalizar(linha.texto);
@@ -384,7 +396,7 @@ function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number): Contrach
   totalProventos ??= rubricas.filter((item) => item.tipo === "provento").reduce((soma, item) => soma + item.valor, 0) || null;
   totalDescontos ??= rubricas.filter((item) => item.tipo === "desconto").reduce((soma, item) => soma + item.valor, 0) || null;
   liquido ??= totalProventos != null && totalDescontos != null ? totalProventos - totalDescontos : null;
-  return { competencia: extrairCompetencia(texto), modeloOrigem, totalProventos, totalDescontos, liquido, itens: rubricas };
+  return { competencia: extrairCompetencia(texto), modeloOrigem, ...(retificado ? { retificado: true } : {}), totalProventos, totalDescontos, liquido, itens: rubricas };
 }
 
 function ehInicioDeContracheque(texto: string): boolean {

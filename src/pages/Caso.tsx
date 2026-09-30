@@ -101,7 +101,7 @@ export default function Caso() {
     }
     const { data: contrachequesPersistidos, error: contrachequesError } = await supabase
       .from("contracheques")
-      .select("id, competencia, total_proventos, total_descontos, liquido, arquivo_origem, modelo_origem")
+      .select("id, competencia, total_proventos, total_descontos, liquido, arquivo_origem, modelo_origem, retificado")
       .eq("caso_id", id)
       .order("competencia", { ascending: true });
     if (contrachequesError) {

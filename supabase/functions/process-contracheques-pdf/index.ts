@@ -11,14 +11,14 @@ type Tipo = "provento" | "desconto" | "informativo";
 type Rubrica = { codigo: string; descricao: string; referencia: number | null; valor: number; tipo: Tipo; familia_hra: string | null };
 // `continua`: a folha traz o marcador "CONTINUA..." — só SINALIZA que o recibo
 // PODE ter complemento na folha seguinte (ver regra de consolidação Unigel).
-type Contra = { competencia: string | null; modelo_origem: string; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
+type Contra = { competencia: string | null; modelo_origem: string; retificado?: boolean; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
 type Linha = { y: number; itens: TextItem[]; texto: string };
 const MODELO_IA = "google/gemini-2.5-pro";
-const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por competência. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas. Quando o documento for da Refinaria de Mataripe S.A. (Acelen), use obrigatoriamente modelo_origem "acelen" e informe a competência de cada contracheque no formato MM/AAAA (por exemplo 03/2023), convertendo datas completas como 31/03/2023, 2023-03-31 ou "Recibo de Pagamento de Março/2023"; se a competência não estiver legível, use null e nunca deduza o mês.`;
+const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por contracheque. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas. Para documentos da BASF, use modelo_origem "basf". Na BASF, retificado=true somente quando o campo "Pagamento Referente a" começar com "R" antes do mês (por exemplo, "R Setembro 202"); caso contrário, retificado=false. Quando o documento for da Refinaria de Mataripe S.A. (Acelen), use obrigatoriamente modelo_origem "acelen" e informe a competência de cada contracheque no formato MM/AAAA (por exemplo 03/2023), convertendo datas completas como 31/03/2023, 2023-03-31 ou "Recibo de Pagamento de Março/2023"; se a competência não estiver legível, use null e nunca deduza o mês.`;
 const TOOL_IA = { type:"function", function:{ name:"registrar_contracheques", parameters:{ type:"object", properties:{ contracheques:{ type:"array", items:{ type:"object", properties:{
-  competencia:{ type:["string","null"] }, modelo_origem:{ type:"string" }, total_proventos:{ type:["number","null"] }, total_descontos:{ type:["number","null"] }, liquido:{ type:["number","null"] },
+  competencia:{ type:["string","null"] }, modelo_origem:{ type:"string" }, retificado:{ type:"boolean" }, total_proventos:{ type:["number","null"] }, total_descontos:{ type:["number","null"] }, liquido:{ type:["number","null"] },
   itens:{ type:"array", items:{ type:"object", properties:{ codigo:{ type:"string" }, descricao:{ type:"string" }, referencia:{ type:["number","null"] }, valor:{ type:"number" }, tipo:{ type:"string", enum:["provento","desconto","informativo"] } }, required:["codigo","descricao","referencia","valor","tipo"], additionalProperties:false } },
-}, required:["competencia","modelo_origem","total_proventos","total_descontos","liquido","itens"], additionalProperties:false } } }, required:["contracheques"], additionalProperties:false } } };
+}, required:["competencia","modelo_origem","retificado","total_proventos","total_descontos","liquido","itens"], additionalProperties:false } } }, required:["contracheques"], additionalProperties:false } } };
 const CODIGO = /^\/?[A-Z0-9]{1,6}$/i;
 const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-?(?:R\$)?\s*\d+,\d{2}$/i;
 const MESES: Record<string, string> = { janeiro:"01",fevereiro:"02",marco:"03",abril:"04",maio:"05",junho:"06",julho:"07",agosto:"08",setembro:"09",outubro:"10",novembro:"11",dezembro:"12",jan:"01",fev:"02",mar:"03",abr:"04",mai:"05",jun:"06",jul:"07",ago:"08",set:"09",out:"10",nov:"11",dez:"12" };
@@ -57,7 +57,7 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     // Acelen: a competência devolvida pela IA é normalizada para MM/AAAA ANTES
     // de persistir; formato irreconhecível permanece null (nunca é inventado).
     const competenciaIa=modeloIa==="acelen"?normalizarCompetenciaAcelen(competenciaBruta):competenciaBruta;
-    return [{competencia:competenciaIa,modelo_origem:modeloIa,total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
+    return [{competencia:competenciaIa,modelo_origem:modeloIa,...(modeloIa==="basf"&&contra.retificado===true?{retificado:true}:{}),total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
   });
 }
 
@@ -167,6 +167,13 @@ function competenciaBasf(ls: Linha[]): string | null {
     if(m)return `${m[2].padStart(2,"0")}/${m[3]}`;
   }
   return null;
+}
+
+function basfRetificado(ls: Linha[]): boolean {
+  const indicePagamento=ls.findIndex((linha)=>/pagamento\s+referente\s+a/.test(norm(linha.texto)));
+  if(indicePagamento<0)return false;
+  const valor=norm(ls[indicePagamento+1]?.texto??"");
+  return /\br\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/.test(valor);
 }
 
 // Normalização de competência EXCLUSIVA do modelo "acelen" (Refinaria de
@@ -341,7 +348,8 @@ function parsePagina(itens: TextItem[], largura: number): Contra {
   const competenciaLida=modelo_origem==="basf"?(competenciaBasf(ls)??competencia(texto))
     :modelo_origem==="acelen"?(normalizarCompetenciaAcelen(texto)??competencia(texto))
     :competencia(texto);
-  return{competencia:modelo_origem==="acelen"?(ehCompetenciaCanonica(competenciaLida)?competenciaLida:normalizarCompetenciaAcelen(competenciaLida)):competenciaLida,modelo_origem,total_proventos,total_descontos,liquido,itens:rubricas,continua};
+  const retificado=modelo_origem==="basf"&&basfRetificado(ls);
+  return{competencia:modelo_origem==="acelen"?(ehCompetenciaCanonica(competenciaLida)?competenciaLida:normalizarCompetenciaAcelen(competenciaLida)):competenciaLida,modelo_origem,...(retificado?{retificado:true}:{}),total_proventos,total_descontos,liquido,itens:rubricas,continua};
 }
 
 function parsePaginaDuasColunas(itens: TextItem[], largura: number): Contra {
@@ -481,9 +489,9 @@ function dedupItens(contra: Contra): Contra {
 // Assinatura para detectar um contracheque inteiro duplicado (ex.: página
 // repetida no PDF). Independente da ordem das rubricas para funcionar mesmo
 // quando o estado é reconstruído do banco numa retomada.
-function assinaturaContra(c: Pick<Contra,"competencia"|"total_proventos"|"total_descontos"|"itens">): string {
+function assinaturaContra(c: Pick<Contra,"competencia"|"total_proventos"|"total_descontos"|"itens"> & { retificado?: boolean }): string {
   const itens=c.itens.map((i)=>`${i.codigo}:${i.valor}`).sort().join(",");
-  return `${c.competencia}|${c.total_proventos}|${c.total_descontos}|${itens}`;
+  return `${c.competencia}|${c.total_proventos}|${c.total_descontos}|${c.retificado===true}|${itens}`;
 }
 
 // Consolida as páginas de UM lote a partir do estado (contracheque ainda
@@ -510,7 +518,7 @@ async function persistirContra(supabase: any, casoId: string, contra: Contra, ar
   const { data: row, error: ie } = await supabase.from("contracheques").insert({
     caso_id: casoId, competencia: contra.competencia, total_proventos: contra.total_proventos,
     total_descontos: contra.total_descontos, liquido: contra.liquido, arquivo_origem: arquivoNome,
-    modelo_origem: contra.modelo_origem,
+    modelo_origem: contra.modelo_origem, retificado: contra.retificado===true,
   }).select("id").single();
   if(ie) throw ie;
   if(contra.itens.length){
@@ -583,11 +591,11 @@ async function processarArquivo(supabase: any, casoId: string, arq: { id: string
   let fechadosTotal = 0;
   {
     const { data: existentes } = await supabase.from("contracheques")
-      .select("competencia, total_proventos, total_descontos, itens_contracheque(codigo, valor)")
+      .select("competencia, total_proventos, total_descontos, retificado, itens_contracheque(codigo, valor)")
       .eq("caso_id", casoId).eq("arquivo_origem", arq.nome);
     for(const c of existentes ?? []){
       const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
-      assinaturasVistas.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, itens }));
+      assinaturasVistas.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, retificado: c.retificado, itens }));
       fechadosTotal++;
     }
   }
@@ -691,11 +699,11 @@ async function processarArquivoComIa(supabase: any, casoId: string, arq: { id: s
   const assinaturasVistas = new Set<string>();
   {
     const { data: existentes } = await supabase.from("contracheques")
-      .select("competencia, total_proventos, total_descontos, itens_contracheque(codigo, valor)")
+      .select("competencia, total_proventos, total_descontos, retificado, itens_contracheque(codigo, valor)")
       .eq("caso_id", casoId).eq("arquivo_origem", arq.nome);
     for(const c of existentes ?? []){
       const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
-      assinaturasVistas.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, itens }));
+      assinaturasVistas.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, retificado: c.retificado, itens }));
     }
   }
 
@@ -736,11 +744,11 @@ const PREFIXO_LOTES = (casoId: string) => `${casoId}/contracheques-lotes/`;
 async function assinaturasExistentes(supabase: any, casoId: string, arquivoNome: string): Promise<Set<string>> {
   const vistos = new Set<string>();
   const { data: existentes } = await supabase.from("contracheques")
-    .select("competencia, total_proventos, total_descontos, itens_contracheque(codigo, valor)")
+    .select("competencia, total_proventos, total_descontos, retificado, itens_contracheque(codigo, valor)")
     .eq("caso_id", casoId).eq("arquivo_origem", arquivoNome);
   for(const c of existentes ?? []){
     const itens = Array.isArray(c.itens_contracheque) ? c.itens_contracheque : [];
-    vistos.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, itens }));
+    vistos.add(assinaturaContra({ competencia: c.competencia, total_proventos: c.total_proventos, total_descontos: c.total_descontos, retificado: c.retificado, itens }));
   }
   return vistos;
 }

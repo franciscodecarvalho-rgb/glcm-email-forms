@@ -2,7 +2,7 @@
 
 ## SDD Status
 
-SPEC-001 + SPEC-002 IMPLEMENTED LOCALLY
+SPEC-001 + SPEC-002 IMPLEMENTED LOCALLY; SPEC-003 IMPLEMENTED LOCALLY
 
 ## Current State
 
@@ -13,8 +13,8 @@ locais; o ambiente remoto não foi consultado.
 
 ## Active Spec
 
-SPEC-002 — OCR local para contracheques digitalizados (concluída localmente;
-publicação pendente)
+SPEC-003 — identificação de contracheques retificados BASF (implementada localmente;
+migration, Edge Function e frontend aguardam publicação)
 
 ## Next Spec
 
@@ -24,7 +24,8 @@ NONE
 
 - working tree já estava sujo antes do retrofit, com alterações em implementação e
   `estrutura-joins-temas.html` não rastreado;
-- `npm run lint` falha com 230 erros e 23 avisos no estado validado;
+- `npm run lint` falha com erros legados; lint seletivo das áreas alteradas ainda
+  aponta usos preexistentes de `any` na Edge Function;
 - `arquivos.processado` é usado pela implementação, mas não aparece nas migrations
   nem nos tipos locais;
 - o schema e o deploy remotos não foram verificados;
@@ -48,7 +49,9 @@ NONE
 
 ## Last Verified
 
-Working tree local verificado em 2026-09-28. `npm run test` passou (175 testes);
+Worktree isolada verificada em 2026-09-29. `npm run test` passou (272 testes);
 `npm run build` passou; `npm run lint` continua falhando pelos problemas legados
-registrados acima. A inspeção dos PDFs de referência confirmou os perfis legíveis e
-as páginas sem camada de texto que seguem para o fallback autorizado.
+registrados acima. A SPEC-003 foi validada com teste da marca BASF `R` e teste de
+agregação que confirma substituição do recibo original pela versão retificada na
+mesma competência, sem descartar valores de outras empresas. Migration, Edge Function
+e frontend ainda precisam ser publicados; casos antigos precisam ser reprocessados.
