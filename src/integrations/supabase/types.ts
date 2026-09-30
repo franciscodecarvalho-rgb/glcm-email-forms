@@ -58,7 +58,6 @@ export type Database = {
       casos: {
         Row: {
           cliente_recorrente_ref: string | null
-          importacao_concluida: boolean
           contracheques: Json | null
           cpf: string | null
           cpf_pre_extraido: string | null
@@ -89,7 +88,6 @@ export type Database = {
         }
         Insert: {
           cliente_recorrente_ref?: string | null
-          importacao_concluida?: boolean
           contracheques?: Json | null
           cpf?: string | null
           cpf_pre_extraido?: string | null
@@ -120,7 +118,6 @@ export type Database = {
         }
         Update: {
           cliente_recorrente_ref?: string | null
-          importacao_concluida?: boolean
           contracheques?: Json | null
           cpf?: string | null
           cpf_pre_extraido?: string | null
