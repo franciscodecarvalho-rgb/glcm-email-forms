@@ -40,6 +40,9 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Templates `.docx` e planilha gerada são mecanismos distintos.
 - O fluxo implementado termina em `concluido` após geração dos documentos.
 - O deploy do projeto será realizado pelo Lovable.
+- Um upload manual só vira Caso depois de comprovantes pessoais e contracheques
+  serem enviados, processados, persistidos e confirmados; registros provisórios
+  ficam fora da listagem operacional até cumprir esses requisitos.
 
 ## Divergências conhecidas
 

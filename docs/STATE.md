@@ -3,7 +3,7 @@
 ## SDD Status
 
 SPEC-001 + SPEC-002 IMPLEMENTED; SPEC-003 BASF RETIFICAÇÃO EM PRODUÇÃO PARCIAL;
-SPEC-004 IMPLEMENTED LOCALLY, RELEASE PENDING
+SPEC-004 + SPEC-005 IMPLEMENTED LOCALLY, RELEASE PENDING
 
 ## Current State
 
@@ -14,8 +14,8 @@ Lovable; publicação do frontend ainda requer confirmação.
 
 ## Active Spec
 
-SPEC-004 — Gemini em todos os documentos pessoais, com revisão manual quando os
-campos necessários não forem extraídos. Contracheques permanecem determinísticos.
+SPEC-005 — importações manuais só são promovidas a Casos após o envio,
+processamento, persistência e confirmação dos comprovantes e contracheques.
 
 ## Next Spec
 
@@ -29,6 +29,9 @@ NONE
   preexistentes de `any` em `TelaConfirmacao.tsx` e `Caso.tsx`;
 - `arquivos.processado` é usado pela implementação, mas não aparece nas migrations
   nem nos tipos locais;
+- importações manuais iniciadas ficam como registros técnicos provisórios até a
+  confirmação final; a trigger e a nova coluna ainda dependem da migration no
+  banco remoto;
 - a migration `20260930115916_harden_authenticated_data_access.sql` foi criada
   para substituir políticas tautológicas por verificação de papel e restringir
   mutações administrativas/de workers; ainda não foi aplicada ao banco publicado;
@@ -55,17 +58,19 @@ NONE
 
 ## Last Verified
 
-Na correção local de 30/09/2026, todos os PDFs pessoais passam pelo Gemini; a
+Na correção local de 30/09/2026, o fluxo manual só promove o registro a Caso após
+a confirmação. PDFs pessoais passam pelo Gemini; a
 leitura determinística complementa os dados sem substituir valores válidos por
 respostas vazias. Falha ou resposta inutilizável conserva os arquivos anexados e
 abre confirmação manual; após a confirmação, o erro de processamento é limpo.
 Contracheques continuam fora do Gemini. A família AHRA Birla Carbon também
 reconhece `Adic.Rep.Aliment.s/Fer` somente como provento e nesse modelo.
 
-Validação local: 289 testes passaram; `npm run build` passou com avisos
-preexistentes de Browserslist/chunk; esbuild aceitou sintaticamente as três Edge
-Functions alteradas. Deno não está instalado e não houve chamada real ao Gemini.
-Nenhum deploy remoto foi realizado.
+Validação local: 295 testes passaram; `npm run build` passou com avisos
+preexistentes de Browserslist/chunk. Lint seletivo continua mostrando `any`
+preexistentes em componentes afetados e não apontou erros nos novos trechos.
+Não foi possível executar a migration contra banco local/remoto nesta sessão;
+nenhum deploy remoto foi realizado.
 
 Base do checkout antes desta correção: `fcb0fbb` (`main` sincronizada com
 `origin/main`). O fluxo padrão de criação chama

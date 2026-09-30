@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { dadosEsperadosForamExtraidos } from "./dados-extraidos";
+import { cpfValido } from "./cpf";
 
 const casoBase = {
   nome_cliente: "Cliente Teste",
-  cpf: "12345678901",
+  cpf: "52998224725",
   rg: "1234567",
   endereco: { logradouro: "Rua de Teste, 10" },
   contracheques_extraidos: [{ id: "contra-1", itens_contracheque: [{ id: "item-1" }] }],
@@ -29,4 +30,16 @@ describe("dadosEsperadosForamExtraidos", () => {
     expect(dadosEsperadosForamExtraidos({ ...casoBase, endereco: null } as never)).toBe(false);
     expect(dadosEsperadosForamExtraidos({ ...casoBase, endereco: { logradouro: " " } } as never)).toBe(false);
   });
+});
+
+describe("cpfValido", () => {
+  it("valida CPFs com dígitos verificadores corretos, com ou sem pontuação", () => {
+    expect(cpfValido("52998224725")).toBe(true);
+    expect(cpfValido("529.982.247-25")).toBe(true);
+  });
+
+  it.each([null, "", "12345678901", "11111111111", "52998224724"])(
+    "rejeita CPF inválido: %s",
+    (cpf) => expect(cpfValido(cpf)).toBe(false),
+  );
 });

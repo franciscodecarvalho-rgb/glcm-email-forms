@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ContrachequesExtraidos } from "@/components/caso/ContrachequesExtraidos";
 import { toast } from "sonner";
-import { normalizarCpf } from "@/lib/cpf";
+import { cpfValido, normalizarCpf } from "@/lib/cpf";
+import { dadosFaltantesParaCaso } from "@/lib/dados-extraidos";
 
 
 type Empreg = { id: string; razao_social: string; cnpj: string };
@@ -41,6 +42,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
       : [],
   );
   const [saving, setSaving] = useState(false);
+  const [erroValidacao, setErroValidacao] = useState<string | null>(null);
   const contrachequesExtraidos = caso.contracheques_extraidos ?? [];
 
   const addEmp = () => setEmpregs((p) => [...p, { id: crypto.randomUUID(), razao_social: "", cnpj: "" }]);
@@ -50,7 +52,25 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
 
   const confirmar = async () => {
     const cpfLimpo = normalizarCpf(cpf);
-    if (!nome.trim() || !cpfLimpo) { toast.error("Informe o nome e um CPF válido (11 dígitos)"); return; }
+    const faltantes = dadosFaltantesParaCaso({
+      nome_cliente: nome,
+      cpf: cpfLimpo,
+      rg,
+      endereco: end,
+      contracheques_extraidos: contrachequesExtraidos,
+    });
+    if (!cpfValido(cpfLimpo)) {
+      setErroValidacao("CPF inválido. Confira os 11 dígitos verificadores.");
+      toast.error("Informe um CPF válido");
+      return;
+    }
+    if (faltantes.length) {
+      const mensagem = `Importação incompleta. Falta: ${faltantes.join(", ")}.`;
+      setErroValidacao(mensagem);
+      toast.error(mensagem);
+      return;
+    }
+    setErroValidacao(null);
     setSaving(true);
     const { error } = await supabase
       .from("casos")
@@ -61,12 +81,16 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         endereco: end,
         qualificacao: qual,
         empregadores: empregs.map((em) => ({ razao_social: em.razao_social, cnpj: em.cnpj })),
+        importacao_concluida: true,
         status: "aguardando_pasta",
         erro_processamento: null,
       })
       .eq("id", caso.id);
     setSaving(false);
-    if (error) toast.error("Erro ao salvar"); else toast.success("Dados confirmados");
+    if (error) {
+      setErroValidacao(error.message);
+      toast.error(`Não foi possível concluir a importação: ${error.message}`);
+    } else toast.success("Dados confirmados; importação concluída");
   };
 
   return (
@@ -77,6 +101,16 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         {caso.erro_processamento && (
           <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             A extração automática não encontrou todos os dados. Confira e preencha manualmente os campos abaixo. Os PDFs enviados continuam anexados ao caso.
+          </p>
+        )}
+        {erroValidacao && (
+          <p role="alert" className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {erroValidacao}
+          </p>
+        )}
+        {!contrachequesExtraidos.some((contra) => (contra.itens_contracheque ?? []).length > 0) && (
+          <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Os contracheques ainda não geraram rubricas. Esta importação não pode virar um caso até que os documentos sejam processados e os dados salvos.
           </p>
         )}
       </div>

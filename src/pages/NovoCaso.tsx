@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeStorageName } from "@/lib/storage";
 import { unificarPdfsEmLotes } from "@/lib/unificar-pdfs";
 import { mensagemErroFuncao } from "@/lib/edge-function-error";
+import { dadosFaltantesParaCaso } from "@/lib/dados-extraidos";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,8 +90,6 @@ async function processarLoteComRetomada(casoId: string, loteId: string): Promise
     await aguardarConclusaoLote(casoId, loteId);
     return;
   }
-  if (statusAtual.status === "erro") throw new Error(statusAtual.erro || "Falha ao processar o lote");
-
   const { data, error } = await supabase.functions.invoke("process-contracheques-pdf", {
     body: { caso_id: casoId, acao: "processar_lote", lote_id: loteId },
   });
@@ -126,6 +125,13 @@ export default function NovoCaso() {
   const [loading, setLoading] = useState(false);
   const [progresso, setProgresso] = useState(0);
   const [etapa, setEtapa] = useState("");
+  const etapaRef = useRef("");
+  const importacaoIdRef = useRef<string | null>(null);
+
+  const atualizarEtapa = (valor: string) => {
+    etapaRef.current = valor;
+    setEtapa(valor);
+  };
 
   const toggleEscritorio = (id: string) =>
     setEscritorios((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]));
@@ -165,13 +171,13 @@ export default function NovoCaso() {
     }
     setLoading(true);
     setProgresso(5);
-    setEtapa("Unificando contracheques");
+    atualizarEtapa("Unificando contracheques");
     try {
       const { unificado: contrachequeUnificado, lotes: lotesPdf } = await unificarPdfsEmLotes(
         contracheques,
         undefined,
         ({ pagina, totalPaginas, confianca }) => {
-          setEtapa(`OCR local: página ${pagina}/${totalPaginas} (${Math.round(confianca)}% confiança)`);
+          atualizarEtapa(`OCR local: página ${pagina}/${totalPaginas} (${Math.round(confianca)}% confiança)`);
           setProgresso(Math.min(15, 5 + Math.round((pagina / totalPaginas) * 10)));
         },
       );
@@ -180,12 +186,34 @@ export default function NovoCaso() {
         ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
       ];
       setProgresso(15);
-      setEtapa("Criando caso");
-      const { data: caso, error } = await supabase
+      atualizarEtapa("Preparando importação provisória");
+      let casoId = importacaoIdRef.current;
+      if (!casoId) {
+        const { data: caso, error } = await supabase
+          .from("casos")
+          .insert({
+            status: "novo",
+            origem: "manual",
+            importacao_concluida: false,
+            nome_cliente: nomeCliente || null,
+            tipo_acao: tipoAcao,
+            escritorios,
+            honorarios_pct: honorarios ? Number(honorarios) : null,
+            limite_viabilidade: limite,
+            numero_pasta: numeroPasta || null,
+          })
+          .select("id")
+          .single();
+        if (error) throw error;
+        casoId = caso.id;
+        importacaoIdRef.current = casoId;
+      }
+
+      // Mantém os mesmos caminhos se houver falha de rede e o usuário retomar.
+      // O upsert evita duplicar objetos que já foram enviados na tentativa anterior.
+      const { error: casoAtualizacaoError } = await supabase
         .from("casos")
-        .insert({
-          status: "novo",
-          origem: "manual",
+        .update({
           nome_cliente: nomeCliente || null,
           tipo_acao: tipoAcao,
           escritorios,
@@ -193,25 +221,35 @@ export default function NovoCaso() {
           limite_viabilidade: limite,
           numero_pasta: numeroPasta || null,
         })
-        .select()
-        .single();
-      if (error) throw error;
+        .eq("id", casoId);
+      if (casoAtualizacaoError) throw casoAtualizacaoError;
 
       for (let indice = 0; indice < arquivos.length; indice++) {
         const { file: f, tipo } = arquivos[indice];
-        setEtapa(`Enviando arquivos (${indice + 1}/${arquivos.length})`);
-        const path = `${caso.id}/${crypto.randomUUID()}-${safeStorageName(f.name)}`;
+        atualizarEtapa(`Enviando arquivos (${indice + 1}/${arquivos.length})`);
+        const path = `${casoId}/importacao/${tipo}-${indice}-${safeStorageName(f.name)}`;
         const { error: upErr } = await supabase.storage.from("casos-arquivos").upload(path, f, {
+          upsert: true,
           contentType: f.type || "application/octet-stream",
         });
         if (upErr) throw upErr;
-        await supabase.from("arquivos").insert({
-          caso_id: caso.id,
-          nome: f.name,
-          tipo,
-          storage_path: path,
-          mime_type: f.type,
-        });
+        const { data: metadadoExistente, error: consultaMetadadoError } = await supabase
+          .from("arquivos")
+          .select("id")
+          .eq("caso_id", casoId)
+          .eq("storage_path", path)
+          .maybeSingle();
+        if (consultaMetadadoError) throw consultaMetadadoError;
+        if (!metadadoExistente) {
+          const { error: metadadoError } = await supabase.from("arquivos").insert({
+            caso_id: casoId,
+            nome: f.name,
+            tipo,
+            storage_path: path,
+            mime_type: f.type,
+          });
+          if (metadadoError) throw metadadoError;
+        }
         setProgresso(20 + Math.round(((indice + 1) / arquivos.length) * 25));
       }
 
@@ -219,8 +257,8 @@ export default function NovoCaso() {
       const lotesComPath = [];
       for (let indice = 0; indice < lotesPdf.length; indice++) {
         const lote = lotesPdf[indice];
-        setEtapa(`Enviando lotes de contracheques (${indice + 1}/${lotesPdf.length})`);
-        const path = `${caso.id}/contracheques-lotes/${lote.file.name}`;
+        atualizarEtapa(`Enviando lotes de contracheques (${indice + 1}/${lotesPdf.length})`);
+        const path = `${casoId}/contracheques-lotes/${lote.file.name}`;
         const { error: upErr } = await supabase.storage
           .from("casos-arquivos")
           .upload(path, lote.file, { contentType: "application/pdf", upsert: true });
@@ -234,10 +272,10 @@ export default function NovoCaso() {
         setProgresso(45 + Math.round(((indice + 1) / lotesPdf.length) * 10));
       }
 
-      setEtapa("Planejando lotes de contracheques");
+      atualizarEtapa("Planejando lotes de contracheques");
       const { data: plano, error: planoError } = await supabase.functions.invoke(
         "process-contracheques-pdf",
-        { body: { caso_id: caso.id, acao: "planejar_lotes", lotes: lotesComPath } },
+        { body: { caso_id: casoId, acao: "planejar_lotes", lotes: lotesComPath } },
       );
       if (planoError) {
         throw new Error(await mensagemErroFuncao(planoError, "Falha ao planejar lotes de contracheques"));
@@ -247,16 +285,16 @@ export default function NovoCaso() {
 
       const lotesPlanejados: Array<{ id: string }> = plano?.lotes ?? [];
       for (let indice = 0; indice < lotesPlanejados.length; indice++) {
-        setEtapa(`Extraindo contracheques (lote ${indice + 1}/${lotesPlanejados.length})`);
-        await processarLoteComRetomada(caso.id, lotesPlanejados[indice].id);
+        atualizarEtapa(`Extraindo contracheques (lote ${indice + 1}/${lotesPlanejados.length})`);
+        await processarLoteComRetomada(casoId, lotesPlanejados[indice].id);
         setProgresso(55 + Math.round(((indice + 1) / lotesPlanejados.length) * 25));
       }
 
 
-      setEtapa("Extraindo dados pessoais");
+      atualizarEtapa("Extraindo dados pessoais com Gemini");
       setProgresso(85);
       const { data: pessoais, error: pessoaisError } = await supabase.functions.invoke("process-documentos-pessoais-pdf", {
-        body: { caso_id: caso.id },
+        body: { caso_id: casoId },
       });
       if (pessoaisError) {
         throw new Error(await mensagemErroFuncao(pessoaisError, "Falha ao extrair dados pessoais"));
@@ -267,13 +305,48 @@ export default function NovoCaso() {
         toast.warning(`${pessoais.revisao.length} documento(s) pessoal(is) precisam de revisão manual`);
       }
 
-      setEtapa("Processamento concluído");
+      atualizarEtapa("Validando dados e etapas da importação");
+      const { data: dadosCaso, error: validacaoError } = await supabase
+        .from("casos")
+        .select("nome_cliente, cpf, rg, endereco, contracheques_extraidos:contracheques(itens_contracheque(id))")
+        .eq("id", casoId)
+        .single();
+      if (validacaoError) throw validacaoError;
+      const dadosFaltantes = dadosFaltantesParaCaso(dadosCaso);
+      if (dadosFaltantes.includes("rubricas extraídas dos contracheques")) {
+        throw new Error("Nenhuma rubrica foi persistida. Confira os PDFs e tente importar novamente.");
+      }
+
+      const { error: revisaoError } = await supabase
+        .from("casos")
+        .update({
+          status: "aguardando_confirmacao",
+          erro_processamento: dadosFaltantes.length ? `Preencha na confirmação: ${dadosFaltantes.join(", ")}` : null,
+        })
+        .eq("id", casoId);
+      if (revisaoError) throw revisaoError;
+
+      atualizarEtapa("Importação concluída");
       setProgresso(100);
-      toast.success("Caso criado e documentos processados");
-      nav(`/casos/${caso.id}`);
+      importacaoIdRef.current = null;
+      toast.success(dadosFaltantes.length
+        ? "Extração concluída; revise os dados antes de concluir a importação"
+        : "Extração concluída; confirme os dados para concluir a importação");
+      nav(`/casos/${casoId}`);
     } catch (e: unknown) {
-      const mensagem = e instanceof Error ? e.message : "Falha ao criar caso";
-      toast.error(etapa ? `${etapa}: ${mensagem}` : mensagem, { duration: 10000 });
+      const erro = e && typeof e === "object" ? e as Record<string, unknown> : {};
+      const mensagemOriginal = e instanceof Error
+        ? e.message
+        : typeof erro.message === "string"
+          ? erro.message
+          : typeof erro.error === "string"
+            ? erro.error
+            : "Falha inesperada na importação";
+      const mensagem = /^failed to fetch$/i.test(mensagemOriginal.trim())
+        ? "Falha de rede: o servidor não retornou resposta. Os arquivos enviados até aqui foram preservados; tente novamente."
+        : mensagemOriginal;
+      const etapaAtual = etapaRef.current || "Importação";
+      toast.error(`${etapaAtual}: ${mensagem}`, { duration: 15000 });
     } finally {
       setLoading(false);
     }

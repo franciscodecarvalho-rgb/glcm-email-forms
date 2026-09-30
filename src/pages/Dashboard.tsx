@@ -18,6 +18,7 @@ import { encontrarRubricasAlerta } from "@/lib/alertas-rubricas";
 
 type Caso = {
   id: string;
+  importacao_concluida: boolean;
   created_at: string;
   status: string;
   origem: string;
@@ -41,7 +42,8 @@ export default function Dashboard() {
     let ignore = false;
     supabase
       .from("casos")
-      .select("id, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref, contracheques(id, itens_contracheque(codigo, descricao, referencia, valor))")
+      .select("id, importacao_concluida, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref, contracheques(id, itens_contracheque(codigo, descricao, referencia, valor))")
+      .eq("importacao_concluida", true)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error("Erro ao carregar casos");
@@ -53,6 +55,7 @@ export default function Dashboard() {
       .on("postgres_changes", { event: "*", schema: "public", table: "casos" }, (payload) => {
         if (payload.eventType === "INSERT") {
           const novo = payload.new as Caso;
+          if (novo.importacao_concluida === false) return;
           setCasos((prev) => [novo, ...prev.filter((c) => c.id !== novo.id)]);
           if (novo.origem === "n8n") {
             toast.message("Novo caso recebido por email", {
@@ -62,7 +65,16 @@ export default function Dashboard() {
           }
         } else if (payload.eventType === "UPDATE") {
           const upd = payload.new as Caso;
-          setCasos((prev) => prev.map((c) => (c.id === upd.id ? { ...c, ...upd } : c)));
+          if (upd.importacao_concluida === false) {
+            setCasos((prev) => prev.filter((c) => c.id !== upd.id));
+          } else {
+            setCasos((prev) => {
+              const existe = prev.some((c) => c.id === upd.id);
+              return existe
+                ? prev.map((c) => (c.id === upd.id ? { ...c, ...upd } : c))
+                : [upd, ...prev];
+            });
+          }
         } else if (payload.eventType === "DELETE") {
           setCasos((prev) => prev.filter((c) => c.id !== (payload.old as any).id));
         }

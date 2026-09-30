@@ -9,3 +9,5 @@ do sistema e seus critérios de validação.
   páginas digitalizadas.
 - [`SPEC-004`](./SPEC-004-gemini-documentos-pessoais.md) — Gemini em documentos
   pessoais e confirmação manual quando a extração não for suficiente.
+- [`SPEC-005`](./SPEC-005-importacao-de-casos-validada.md) — manter importações
+  provisórias fora dos Casos até a conclusão e validação do fluxo.

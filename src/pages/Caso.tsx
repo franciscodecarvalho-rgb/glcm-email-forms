@@ -38,6 +38,7 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export type CasoData = {
   id: string;
+  importacao_concluida: boolean;
   status: string;
   tipo_acao: string;
   nome_cliente: string | null;
