@@ -1,5 +1,25 @@
 # AGENTS.md — Projeto GLCM
 
+## Contrato SDD — Marco zero
+
+Este repositório está em **SDD RETROFIT**. O baseline documental em `PROJECT.md` e
+`docs/` descreve o estado validado no marco zero; não representa um histórico completo
+nem substitui a implementação.
+
+Antes de trabalhar:
+
+1. leia `PROJECT.md` e `docs/STATE.md`;
+2. consulte `docs/SCOPE.md` e `docs/ARCHITECTURE.md` quando forem relevantes;
+3. localize e leia a SPEC ativa em `docs/specs/` antes de implementar;
+4. trate código, schema e testes como prevalentes sobre a documentação em divergências
+   factuais;
+5. atualize a documentação quando uma divergência relevante for descoberta.
+
+Mudanças estruturais exigem decisão explícita. Não expanda o escopo silenciosamente,
+atualize `docs/STATE.md` após mudanças relevantes e faça nascer novas funcionalidades
+relevantes de uma SPEC. As SPECS existentes devem ser lidas antes de alterar o fluxo
+de extração relacionado.
+
 ## Identidade e missão
 
 Você é o agente de desenvolvimento do GLCM, sistema jurídico interno para cadastro,
@@ -30,11 +50,13 @@ implemente sem autorização.
 No início de cada tarefa, leia somente o necessário nesta ordem:
 
 1. `AGENTS.md`;
-2. `MEMORY.md`;
-3. `context/SCOPE.md`;
-4. `context/PROJECT.md`;
-5. documento específico aplicável em `context/`;
-6. código e testes diretamente envolvidos.
+2. `PROJECT.md`;
+3. `docs/STATE.md`;
+4. `MEMORY.md`;
+5. `docs/SCOPE.md` e `docs/ARCHITECTURE.md`, quando aplicáveis;
+6. SPEC ativa em `docs/specs/`, quando houver;
+7. documento específico aplicável em `context/`;
+8. código e testes diretamente envolvidos.
 
 Não carregue todo o repositório sem necessidade.
 
@@ -99,6 +121,16 @@ Execute, conforme o impacto:
 - revisão de migration, RLS e contratos quando houver mudança de dados.
 
 Se um teste não puder ser executado, informe exatamente qual e por quê.
+
+## Regra obrigatória de release
+
+Commit enviado ao repositório não encerra a demanda. Toda alteração que deva chegar
+à aplicação publicada precisa ser acompanhada até a confirmação do deploy pelo
+Lovable. Siga o checklist em `docs/RELEASE-PROCESS.md` e não declare a demanda
+concluída enquanto o commit publicado e o status do deploy não estiverem confirmados.
+Se a publicação bloquear ou ficar pendente, mantenha a demanda explicitamente aberta,
+registre o SHA, o motivo e a próxima ação; nunca deixe um commit sem deploy registrado
+como concluído.
 
 ## Critério de conclusão
 

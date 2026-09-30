@@ -48,6 +48,12 @@ O modelo também contém a rubrica `3320 — HRA IR`, igualmente classificada
 como HRA para OXITENO, e a rubrica `3331 — HRA-Dif. Dissídio`, que também
 deve permanecer na família HRA para esse modelo.
 
+Rubrica HRA específica da CETREL: código `P368` — `ADIC HR REM ALIM
+SUPLEM(HRAS)`, quando estiver na coluna de proventos.
+
+Rubrica HRA específica da VOPAK: código `2000` — `H.R.A`, quando estiver
+na coluna de vencimentos.
+
 ## Critérios de aceitação
 
 1. O detector identifica cada empresa pelo texto do próprio documento.
@@ -81,8 +87,12 @@ sendo acionado; isso será verificado no ambiente publicado separadamente.
 
 ## Implementação
 
-Implementada localmente no parser do frontend e na Edge Function de processamento.
-Não houve migration, deploy ou alteração no ambiente remoto.
+Os perfis e mapeamentos desta SPEC estão na Edge Function versionada. As regras
+HRA específicas CETREL/P368 e VOPAK/2000 foram integradas ao `main` no commit
+`0604de3` e a publicação da função foi confirmada pelo Lovable em 28/09/2026.
+Os testes locais também verificam que essas classificações só valem para
+proventos e para os respectivos modelos.
 
-Validação local: 173 testes passaram e o build passou. O lint permanece bloqueado
-por erros preexistentes fora do escopo desta SPEC.
+O estado de validação mais recente está em `docs/STATE.md`; não usar a contagem
+histórica de testes deste documento como evidência de validação atual. O lint
+permanece bloqueado por erros preexistentes fora do escopo desta SPEC.

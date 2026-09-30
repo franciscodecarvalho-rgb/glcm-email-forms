@@ -42,9 +42,22 @@ function cpfValido(valor: unknown): string | null {
   };
   return digito(cpf.slice(0, 9), 10) === Number(cpf[9]) && digito(cpf.slice(0, 10), 11) === Number(cpf[10]) ? cpf : null;
 }
-function enderecoDaSecao(texto: string): string | null {
-  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i);
-  return m?.[1]?.trim() || null;
+function enderecoDoComprovante(texto: string) {
+  const compacto = texto.replace(/\s+/g, " ").trim();
+  const secoes = [...compacto.matchAll(/ENDERE[CÇ]O\s*:?\s*(.*?)(?=\s+(?:NOSSO N[ÚU]MERO|BENEFICI[ÁA]RIO|DANFE|$))/gi)].map((m) => m[1]);
+  const candidatos = [...secoes, compacto];
+  const enderecoComCep = /\b(?:RUA|R\.|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b.+?\b(\d{5}-?\d{3})\s+.+?\s+[A-Z]{2}\b/i;
+  const enderecoComCepSemUf = /\b(?:RUA|R\.|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b.+?\b(\d{5}-?\d{3})\b/i;
+  for (const candidato of candidatos) {
+    const completo = candidato.match(enderecoComCep)?.[0] ?? candidato.match(enderecoComCepSemUf)?.[0];
+    if (!completo) continue;
+    const cep = completo.match(/\b\d{5}-?\d{3}\b/)?.[0];
+    return { logradouro: completo.replace(/\s+/g, " ").trim(), ...(cep ? { cep: cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : cep } : {}) };
+  }
+  const cep = compacto.match(/\b\d{5}-?\d{3}\b/)?.[0];
+  const secaoAnterior = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i)?.[1]?.trim();
+  if (secaoAnterior && cep) return { logradouro: secaoAnterior, cep };
+  return cep ? { cep } : null;
 }
 async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
   const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
@@ -58,11 +71,7 @@ async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
   const nome = texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
   const rg = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i)?.[1] ?? null;
   const comprovante = /COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/i.test(texto.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
-  const cep = texto.match(/\b\d{5}-?\d{3}\b/)?.[0];
-  // Sem preservar coordenadas do texto, só o CEP explícito é seguro para a
-  // extração determinística; endereço completo permanece para o fallback.
-  const logradouro = enderecoDaSecao(texto);
-  const endereco = comprovante && cep ? { ...(logradouro ? { logradouro } : {}), cep } : null;
+  const endereco = comprovante ? enderecoDoComprovante(texto) : null;
   if (comprovante ? !endereco : !(cpf && (nome || rg))) return null;
   return { nome_cliente: nome, cpf, rg, endereco, qualificacao: null, empregadores: [], contracheques: [] };
 }

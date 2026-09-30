@@ -34,27 +34,45 @@ export function classificarDocumentoPessoal(texto: string): TipoDocumentoPessoal
 function nomeAssociado(texto: string): string | null {
   const linhas = texto.split(/\r?\n/).map((linha) => linha.trim()).filter(Boolean);
   for (const linha of linhas) {
-    const match = linha.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i);
+    const match = linha.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i);
     if (match) return match[1].replace(/\s+/g, " ").trim();
   }
   return null;
 }
 
 function rgAssociado(texto: string): string | null {
-  const match = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i);
+  const match = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:-]?\s*([A-Z0-9.-]{5,20})/i);
   return match?.[1]?.trim() || null;
 }
 
 export function enderecoDaSecao(texto: string): string | null {
-  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:\-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i);
+  const m = texto.replace(/\s+/g, " ").match(/ENDERE[CÇ]O\s*(?:DO CLIENTE|DE ENTREGA|DE COBRAN[CÇ]A)?\s*[:-]?\s*(.{5,240}?\b\d{5}-?\d{3}\b(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+(?:\s+[A-ZÀ-Ú][A-ZÀ-Ú]+){0,3}?\s+(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b)?)/i);
   return m?.[1]?.trim() || null;
 }
 function enderecoDoComprovante(texto: string, tipo: TipoDocumentoPessoal): Record<string, string> | null {
   if (tipo !== "comprovante_residencia") return null;
-  const cep = texto.match(/\b(\d{5}-?\d{3})\b/)?.[1];
-  const secao = enderecoDaSecao(texto);
-  if (secao && cep) return { logradouro: secao, cep };
-  const linha = texto.split(/\r?\n/).map((v) => v.trim()).find((v) => /\b(RUA|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b/i.test(v));
+  const compacto = texto.replace(/\s+/g, " ").trim();
+  const secoes = [...compacto.matchAll(/ENDERE[CÇ]O\s*:?\s*(.*?)(?=\s+(?:NOSSO N[ÚU]MERO|BENEFICI[ÁA]RIO|DANFE|$))/gi)].map((m) => m[1]);
+  const candidatos = [...secoes, compacto];
+  const inicioLogradouro = /\b(?:RUA|R\.|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b/i;
+  const enderecoComCep = /\b(?:RUA|R\.|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b.+?\b(\d{5}-?\d{3})\s+.+?\s+[A-Z]{2}\b/i;
+  const enderecoComCepSemUf = /\b(?:RUA|R\.|AV(?:ENIDA)?|ALAMEDA|TRAVESSA|ESTRADA|RODOVIA)\b.+?\b(\d{5}-?\d{3})\b/i;
+
+  for (const candidato of candidatos) {
+    const completo = candidato.match(enderecoComCep)?.[0] ?? candidato.match(enderecoComCepSemUf)?.[0];
+    if (completo) {
+      const cep = completo.match(/\b\d{5}-?\d{3}\b/)?.[0];
+      return {
+        logradouro: completo.replace(/\s+/g, " ").trim(),
+        ...(cep ? { cep: cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : cep } : {}),
+      };
+    }
+  }
+
+  const cep = compacto.match(/\b(\d{5}-?\d{3})\b/)?.[1];
+  const secaoAnterior = enderecoDaSecao(texto);
+  if (secaoAnterior && cep) return { logradouro: secaoAnterior, cep };
+  const linha = texto.split(/\r?\n/).map((v) => v.trim()).find((v) => inicioLogradouro.test(v));
   if (!linha && !cep) return null;
   return { ...(linha ? { logradouro: linha } : {}), ...(cep ? { cep } : {}) };
 }

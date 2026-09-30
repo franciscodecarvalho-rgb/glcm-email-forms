@@ -87,6 +87,18 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("3331", "HRA-Dif. Dissídio", "generico", "provento")).toBe("dif_ahra");
   });
 
+  it("classifica P368 da CETREL como hra somente em proventos", () => {
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "provento")).toBe("hra");
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "desconto")).toBeNull();
+    expect(familia("P368", "Salário Básico", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica 2000 da VOPAK como hra somente em proventos", () => {
+    expect(familia("2000", "H.R.A", "vopak", "provento")).toBe("hra");
+    expect(familia("2000", "H.R.A", "vopak", "desconto")).toBeNull();
+    expect(familia("2000", "H.R.A", "generico", "provento")).toBeNull();
+  });
+
   it("classifica Adic. Repouso Alimentação da Birla como hra somente em proventos", () => {
     expect(familia("", "Adic. Repouso Alimentação", "birla_carbon", "provento")).toBe("hra");
     expect(familia("", "Adic.RepousoAlimentação", "birla_carbon", "provento")).toBe("hra");

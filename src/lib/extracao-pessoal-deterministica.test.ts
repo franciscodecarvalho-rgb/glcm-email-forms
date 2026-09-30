@@ -17,9 +17,19 @@ describe("extração pessoal determinística", () => {
     expect(dados.endereco?.cep).toBe("22000-000");
     expect(dadosPessoaisSuficientes(dados)).toBe(true);
   });
-  it("captura endereço linearizado de nota fiscal de energia", () => {
-    const dados = extrairDadosPessoaisDeterministicos("NOTA FISCAL DE ENERGIA ELÉTRICA ENDEREÇO AV OCTAVIO MANGABEIRA 3551 AP-621 EDF BAHIA SUITES RESIDENCE ARMACAO/SALVADOR 41750-240 SALVADOR BA CÓDIGO DO CLIENTE 123");
+  it("captura o endereço completo de uma fatura com texto linearizado", () => {
+    const dados = extrairDadosPessoaisDeterministicos([
+      "DANFE - DOCUMENTO AUXILIAR DA NOTA FISCAL DE ENERGIA ELÉTRICA ELETRÔNICA",
+      "PAGADOR | CPF/CNPJ | ENDEREÇO",
+      "DANIEL RICARDO SIMOES DE MENEZES 928.3**.***-**",
+      "AV OCTAVIO MANGABEIRA 3551 AP-621 EDF BAHIA SUITES RESIDENCE ARMACAO/SALVADOR 41750-240 SALVADOR BA",
+      "NOSSO NÚMERO 175093039909",
+    ].join(" "));
+    expect(dados.endereco).toEqual({
+      logradouro: "AV OCTAVIO MANGABEIRA 3551 AP-621 EDF BAHIA SUITES RESIDENCE ARMACAO/SALVADOR 41750-240 SALVADOR BA",
+      cep: "41750-240",
+    });
     expect(dados.tipo_documento).toBe("comprovante_residencia");
-    expect(dados.endereco).toEqual({ logradouro: "AV OCTAVIO MANGABEIRA 3551 AP-621 EDF BAHIA SUITES RESIDENCE ARMACAO/SALVADOR 41750-240 SALVADOR BA", cep: "41750-240" });
+    expect(dadosPessoaisSuficientes(dados)).toBe(true);
   });
 });
