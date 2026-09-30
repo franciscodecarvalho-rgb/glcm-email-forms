@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mesclarLeituraComprovante } from "../../supabase/functions/_shared/merge-personal-extraction";
+import { mesclarLeituraDocumentoPessoal } from "../../supabase/functions/_shared/merge-personal-extraction";
 
 const cpfValido = (value: unknown) => value === "529.982.247-25" || value === "52998224725"
   ? "52998224725"
@@ -7,7 +7,7 @@ const cpfValido = (value: unknown) => value === "529.982.247-25" || value === "5
 
 describe("mesclagem da leitura de comprovantes", () => {
   it("preserva nome e CPF do texto quando Gemini só retorna endereço", () => {
-    const dados = mesclarLeituraComprovante(
+    const dados = mesclarLeituraDocumentoPessoal(
       { tipo_documento: "comprovante_residencia", nome: "MARIA APARECIDA", cpf: "529.982.247-25", endereco: { cep: "41750-240" } },
       { tipo_documento: "comprovante_residencia", nome: "", cpf: "", rg: "", endereco: { logradouro: "AV OCTAVIO MANGABEIRA", numero: "3551 AP-621", bairro: "ARMACAO", cidade: "SALVADOR", estado: "BA" } },
       cpfValido,
@@ -26,7 +26,7 @@ describe("mesclagem da leitura de comprovantes", () => {
   });
 
   it("prioriza campos legíveis pelo Gemini e rejeita CPF inválido antes do fallback", () => {
-    const dados = mesclarLeituraComprovante(
+    const dados = mesclarLeituraDocumentoPessoal(
       { nome: "NOME DO TEXTO", cpf: "111.111.111-11", rg: null, endereco: { cidade: "SALVADOR", cep: "41750-240" } },
       { nome: "NOME DO TITULAR", cpf: "529.982.247-25", endereco: { cidade: "LAURO DE FREITAS" } },
       cpfValido,
@@ -38,7 +38,7 @@ describe("mesclagem da leitura de comprovantes", () => {
   });
 
   it("não inventa dados pessoais ausentes e ainda preserva o endereço determinístico", () => {
-    const dados = mesclarLeituraComprovante(
+    const dados = mesclarLeituraDocumentoPessoal(
       { nome: null, cpf: null, rg: null, endereco: { logradouro: "RUA DAS FLORES, 10", cep: "22000-000" } },
       { nome: "", cpf: "", rg: "", endereco: {} },
       cpfValido,
@@ -47,5 +47,18 @@ describe("mesclagem da leitura de comprovantes", () => {
     expect(dados.nome).toBe("");
     expect(dados.cpf).toBe("");
     expect(dados.endereco).toEqual({ logradouro: "RUA DAS FLORES, 10", cep: "22000-000" });
+  });
+
+  it("preserva o tipo de documento pessoal retornado pela IA", () => {
+    const dados = mesclarLeituraDocumentoPessoal(
+      { tipo_documento: "rg", nome: "", cpf: null, rg: null },
+      { tipo_documento: "cnh", nome: "ANA MARIA", cpf: "529.982.247-25", rg: "1234567" },
+      cpfValido,
+    );
+
+    expect(dados.tipo_documento).toBe("cnh");
+    expect(dados.nome).toBe("ANA MARIA");
+    expect(dados.cpf).toBe("52998224725");
+    expect(dados.rg).toBe("1234567");
   });
 });

@@ -1,0 +1,52 @@
+# SPEC-004 — Gemini para documentos pessoais e revisão manual
+
+## Objetivo
+
+Usar Gemini para ler todos os PDFs enviados como documentos pessoais, salvar
+somente dados extraídos com segurança e conduzir para revisão manual quando a
+extração falhar ou ficar incompleta.
+
+## Escopo
+
+- Aplicar o fluxo à CNH, RG, CIN, CPF, comprovante de residência e documento
+  pessoal ainda não classificado.
+- Manter a extração dos contracheques determinística; nenhum contracheque pode
+  ser enviado ao Gemini por esta política.
+- Preservar os PDFs originais no Storage e seus metadados em `arquivos`, inclusive
+  quando a chamada do Gemini falhar ou não retornar dados utilizáveis.
+- Salvar dados extraídos no caso sem substituir valores existentes por campos
+  vazios ou CPF inválido.
+- Abrir a tela editável de confirmação quando nome, CPF, RG ou logradouro não
+  forem extraídos, ou quando algum lote não puder ser processado. Mostrar ao
+  usuário que os arquivos originais permanecem anexados.
+- Aplicar a mesma política ao fluxo de reprocessamento `extract-case-data`.
+
+## Critérios de aceitação
+
+1. Todos os tipos de documentos pessoais passam pelo Gemini no fluxo de upload.
+2. A resposta estruturada identifica o tipo e pode fornecer nome, CPF, RG,
+   qualificação e campos do endereço sem inferir conteúdo ausente.
+3. CPF só é salvo quando completo e validado; valores ausentes não apagam dados
+   já registrados.
+4. Timeout, erro do gateway e resposta sem dados úteis não descartam o PDF e
+   conduzem o caso à confirmação manual.
+5. Extração parcial conserva os campos válidos, sinaliza revisão e deixa os
+   campos editáveis.
+6. Contracheques permanecem fora da IA generativa e mantêm seu parser e regras
+   de empresa existentes.
+7. Testes cobrem política de roteamento, mesclagem, resposta vazia e revisão
+   manual por falta de endereço.
+
+## Fora do escopo
+
+- mudanças no schema, RLS, buckets ou políticas de acesso;
+- reprocessamento automático de casos já concluídos;
+- extração generativa de contracheques;
+- publicar ou alterar dados de produção diretamente.
+
+## Estado
+
+Implementação local validada: 289 testes passaram, build de produção passou e o
+esbuild analisou sintaticamente as três Edge Functions alteradas. A execução
+real com Deno/Gemini e a publicação ainda não foram feitas; publicação segue
+`docs/RELEASE-PROCESS.md`.

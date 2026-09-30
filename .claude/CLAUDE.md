@@ -306,7 +306,7 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `src/lib/unificar-pdfs.ts` calcula a competência de cada página (`competenciasPorPagina`), agrupa páginas consecutivas da mesma competência em blocos (`agruparPaginasPorCompetencia`, página sem competência reconhecida vira continuação do bloco anterior) e ordena os blocos com `ordenarPorCompetencia` (`ordenarUnidades`), não mais os arquivos inteiros — `prepararArquivos`/`montarUnificado`/`unificarPdfsEmLotes` usam esse fluxo. Só confia no agrupamento por página quando a extração via pdf.js enxerga o mesmo número de páginas que o pdf-lib real; senão mantém o arquivo inteiro como um bloco único (fallback de segurança para não perder páginas).
 **Evitar:** Voltar a tratar o arquivo inteiro como uma única unidade de ordenação, ou confiar no agrupamento por página quando a contagem de páginas da extração não bate com a do PDF real.
 
-### 2026-09 — Extração pessoal determinística antes de IA
+### 2026-09 — Extração pessoal determinística antes de IA (superada em 30/09/2026)
 
 **Regra confirmada:** Documentos pessoais em PDF devem tentar extração determinística validada antes de qualquer chamada ao Gemini; a IA é fallback individual apenas para o arquivo insuficiente ou escaneado.
 **Origem:** Especificação `Extracao_Pdf - V2` aprovada por Nodley.
@@ -364,9 +364,16 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Persistir o marcador em `contracheques.retificado`; manter ambos os recibos e aplicar a substituição somente na consolidação da revisão e da planilha HRA do caso.
 **Evitar:** Somar as duas versões, apagar o original ou aplicar a regra a outras empresas.
 
-### 2026-09 — IA exclusiva para comprovantes de residência
+### 2026-09 — IA exclusiva para comprovantes de residência (superada em 30/09/2026)
 
 **Regra confirmada:** O Gemini deve ser usado exclusivamente para comprovantes de residência, com foco no endereço completo. CNH, RG, CIN e CPF permanecem na extração determinística/revisão manual; contracheques nunca são enviados à IA generativa.
 **Origem:** Correção expressa de Nodley após identificar que a extração determinística passou a dispensar a IA ao encontrar apenas o CEP.
 **Aplicação:** Nos fluxos de extração pessoal e de reprocessamento, encaminhar ao gateway somente arquivos reconhecidos como comprovantes de residência. Não considerar a presença isolada de CEP como substituto da extração do endereço pela IA.
 **Evitar:** Enviar identidade ou contracheques ao Gemini, ou marcar endereço como plenamente extraído apenas porque o CEP foi localizado.
+
+### 2026-09 — Gemini obrigatório em documentos pessoais; confirmação manual em caso de falha
+
+**Regra confirmada:** PDFs enviados como documentos pessoais (comprovante de residência, CNH, RG, CIN, CPF ou outro documento pessoal) devem ser lidos pelo Gemini. Contracheques continuam fora do Gemini e seguem o fluxo específico de contracheques.
+**Origem:** Solicitação de Nodley em 30/09/2026, confirmando que, se a extração do Gemini falhar ou não retornar dados utilizáveis, o PDF original deve permanecer anexado e os campos devem ser preenchidos manualmente.
+**Aplicação:** Usar a leitura determinística somente como complemento à resposta do Gemini; não persistir respostas vazias ou CPF inválido. Se os dados essenciais ficarem incompletos ou a chamada falhar, abrir a confirmação editável, mostrar o aviso e conservar os PDFs no Storage e no registro de arquivos. Ao confirmar os campos manuais, limpar o erro de processamento.
+**Evitar:** Usar Gemini para contracheques, excluir/substituir o documento enviado em caso de falha, ou afirmar que houve extração completa sem dados úteis.

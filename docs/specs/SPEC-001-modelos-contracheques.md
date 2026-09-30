@@ -41,6 +41,10 @@ Alimentação`, quando estiver na coluna de vencimentos.
 Rubrica HRA específica da Birla Carbon: `Adic. Repouso Alimentação`, sem código
 numérico no PDF, quando estiver na coluna de proventos.
 
+Rubrica AHRA específica da Birla Carbon: `Adic.Rep.Aliment.s/Fer`, sem código
+numérico no PDF, quando estiver na coluna de proventos. A regra não se aplica a
+descontos nem a outros modelos de empresa.
+
 Rubrica HRA específica da OXITENO: código `3453` — `HRA-Horas Rep.
 Alimentação`, quando estiver na coluna de vencimentos.
 

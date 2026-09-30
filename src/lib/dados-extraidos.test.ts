@@ -5,6 +5,7 @@ const casoBase = {
   nome_cliente: "Cliente Teste",
   cpf: "12345678901",
   rg: "1234567",
+  endereco: { logradouro: "Rua de Teste, 10" },
   contracheques_extraidos: [{ id: "contra-1", itens_contracheque: [{ id: "item-1" }] }],
 };
 
@@ -22,5 +23,10 @@ describe("dadosEsperadosForamExtraidos", () => {
       ...casoBase,
       contracheques_extraidos: [{ id: "contra-1", itens_contracheque: [] }],
     } as never)).toBe(false);
+  });
+
+  it("abre a confirmação manual quando o endereço não foi extraído", () => {
+    expect(dadosEsperadosForamExtraidos({ ...casoBase, endereco: null } as never)).toBe(false);
+    expect(dadosEsperadosForamExtraidos({ ...casoBase, endereco: { logradouro: " " } } as never)).toBe(false);
   });
 });

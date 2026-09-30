@@ -106,6 +106,13 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("", "Adic. Repouso Alimentação", "generico", "provento")).toBeNull();
   });
 
+  it("classifica Adic.Rep.Aliment.s/Fer da Birla como ahra somente em proventos", () => {
+    expect(familia("", "Adic.Rep.Aliment.s/Fer", "birla_carbon", "provento")).toBe("ahra");
+    expect(familia("", "Adic. Rep. Aliment. s/Fer", "birla_carbon", "provento")).toBe("ahra");
+    expect(familia("", "Adic.Rep.Aliment.s/Fer", "birla_carbon", "desconto")).toBeNull();
+    expect(familia("", "Adic.Rep.Aliment.s/Fer", "generico", "provento")).toBeNull();
+  });
+
   it("classifica CETREL P368 e VOPAK 2000 como hra somente em proventos, sem globalizar", () => {
     expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "provento")).toBe("hra");
     expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "desconto")).toBeNull();

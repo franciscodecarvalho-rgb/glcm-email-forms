@@ -213,6 +213,9 @@ function familia(codigo: string, descricao: string, modeloOrigem: string, tipo: 
   // CETREL P368 "ADIC HR REM ALIM SUPLEM(HRAS)" e VOPAK 2000 "H.R.A": hra somente em proventos.
   if((modeloOrigem==="cetrel"&&codigoNormalizado==="P368")||(modeloOrigem==="vopak"&&codigoNormalizado==="2000"))return tipo==="provento"?"hra":null;
   const n=norm(descricao);
+  // Birla Carbon: "Adic.Rep.Aliment.s/Fer" é AHRA (sem código), só como provento.
+  const descricaoNormalizada=n.replace(/[^a-z0-9]+/g," ").trim();
+  if(modeloOrigem==="birla_carbon"&&tipo==="provento"&&/\badic\s+rep\s+aliment\s+s\s+fer\b/.test(descricaoNormalizada))return "ahra";
   // Birla Carbon: "Adic. Repouso Alimentação" não traz a sigla HRA no PDF.
   // A regra é exclusiva do modelo e só vale quando está em proventos.
   if(modeloOrigem==="birla_carbon"&&tipo==="provento"&&/\badic(?:ional)?\.?\s*repouso\s*aliment/.test(n))return "hra";

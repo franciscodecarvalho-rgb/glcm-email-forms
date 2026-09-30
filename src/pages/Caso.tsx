@@ -253,7 +253,7 @@ export default function Caso() {
 
         {(caso.status === "novo" || caso.status === "em_analise") && <TelaProcessando caso={caso} />}
         {caso.status === "aguardando_confirmacao" && (
-          extracaoCompleta
+          extracaoCompleta && !caso.erro_processamento
             ? <TelaDadosExtraidos caso={caso} onCancel={cancelar} />
             : <TelaConfirmacao caso={caso} onCancel={cancelar} />
         )}

@@ -2,7 +2,8 @@
 
 ## SDD Status
 
-SPEC-001 + SPEC-002 IMPLEMENTED; SPEC-003 BASF RETIFICAÇÃO EM PRODUÇÃO PARCIAL
+SPEC-001 + SPEC-002 IMPLEMENTED; SPEC-003 BASF RETIFICAÇÃO EM PRODUÇÃO PARCIAL;
+SPEC-004 IMPLEMENTED LOCALLY, RELEASE PENDING
 
 ## Current State
 
@@ -13,9 +14,8 @@ Lovable; publicação do frontend ainda requer confirmação.
 
 ## Active Spec
 
-Restaurar a extração por IA exclusivamente para comprovantes de residência, sem
-alterar a extração determinística de contracheques nem encaminhar documentos de
-identidade ao Gemini.
+SPEC-004 — Gemini em todos os documentos pessoais, com revisão manual quando os
+campos necessários não forem extraídos. Contracheques permanecem determinísticos.
 
 ## Next Spec
 
@@ -25,8 +25,8 @@ NONE
 
 - um stash de segurança preserva o estado local anterior à sincronização com
   `origin/main`;
-- `npm run lint` falha com erros legados; lint seletivo das áreas alteradas ainda
-  aponta usos preexistentes de `any` na Edge Function;
+- `npm run lint` falha com erros legados; lint seletivo também aponta usos
+  preexistentes de `any` em `TelaConfirmacao.tsx` e `Caso.tsx`;
 - `arquivos.processado` é usado pela implementação, mas não aparece nas migrations
   nem nos tipos locais;
 - a migration `20260930115916_harden_authenticated_data_access.sql` foi criada
@@ -55,17 +55,19 @@ NONE
 
 ## Last Verified
 
-Na correção local de 30/09/2026 do fluxo de documentos pessoais, os comprovantes
-reconhecidos continuam sendo enviados obrigatoriamente ao Gemini; o prompt agora
-solicita todos os dados pessoais e campos de endereço visíveis, e a resposta é
-mesclada com a leitura determinística sem descartar campos que a IA não retornou.
-A gravação também preserva valores anteriores quando a nova leitura não fornece
-um campo válido. Validação local: 284 testes passaram, build passou com avisos
-preexistentes de Browserslist/chunk e o parser TypeScript do esbuild aceitou a
-Edge Function. Deno não está instalado; não foi feito teste com chamada real ao
-gateway nem deploy remoto nesta validação.
+Na correção local de 30/09/2026, todos os PDFs pessoais passam pelo Gemini; a
+leitura determinística complementa os dados sem substituir valores válidos por
+respostas vazias. Falha ou resposta inutilizável conserva os arquivos anexados e
+abre confirmação manual; após a confirmação, o erro de processamento é limpo.
+Contracheques continuam fora do Gemini. A família AHRA Birla Carbon também
+reconhece `Adic.Rep.Aliment.s/Fer` somente como provento e nesse modelo.
 
-Base do checkout antes desta correção: `a8fbcd6` (`main` sincronizada com
+Validação local: 289 testes passaram; `npm run build` passou com avisos
+preexistentes de Browserslist/chunk; esbuild aceitou sintaticamente as três Edge
+Functions alteradas. Deno não está instalado e não houve chamada real ao Gemini.
+Nenhum deploy remoto foi realizado.
+
+Base do checkout antes desta correção: `fcb0fbb` (`main` sincronizada com
 `origin/main`). O fluxo padrão de criação chama
 `process-documentos-pessoais-pdf`; o retry legado usa `extract-case-data`.
 `npm run test -- --run` passou (281 testes) e `npm run build` passou, com avisos

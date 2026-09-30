@@ -62,6 +62,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         qualificacao: qual,
         empregadores: empregs.map((em) => ({ razao_social: em.razao_social, cnpj: em.cnpj })),
         status: "aguardando_pasta",
+        erro_processamento: null,
       })
       .eq("id", caso.id);
     setSaving(false);
@@ -73,6 +74,11 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
       <div>
         <h1 className="text-2xl font-bold">Confirmação dos Dados</h1>
         <p className="text-sm text-muted-foreground">Revise os dados extraídos dos documentos e ajuste o que for necessário.</p>
+        {caso.erro_processamento && (
+          <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            A extração automática não encontrou todos os dados. Confira e preencha manualmente os campos abaixo. Os PDFs enviados continuam anexados ao caso.
+          </p>
+        )}
       </div>
 
       <section className="space-y-4 rounded-lg border bg-card p-6">
@@ -86,7 +92,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
 
       <section className="space-y-4 rounded-lg border bg-card p-6">
         <h2 className="font-semibold">Qualificação</h2>
-        <p className="text-xs text-muted-foreground">Estado civil e profissão não vêm dos documentos — preencha manualmente.</p>
+        <p className="text-xs text-muted-foreground">Confira e complete manualmente os dados que não estiverem impressos ou não tiverem sido extraídos.</p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="space-y-2"><Label>Nacionalidade</Label><Input value={qual.nacionalidade} onChange={(e) => setQual({ ...qual, nacionalidade: e.target.value })} /></div>
           <div className="space-y-2"><Label>Estado civil</Label><Input value={qual.estado_civil} onChange={(e) => setQual({ ...qual, estado_civil: e.target.value })} placeholder="ex: solteiro(a)" /></div>

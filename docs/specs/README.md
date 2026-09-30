@@ -7,3 +7,5 @@ do sistema e seus critérios de validação.
   contracheques;
 - [`SPEC-002`](./SPEC-002-ocr-local-contracheques.md) — OCR local gratuito para
   páginas digitalizadas.
+- [`SPEC-004`](./SPEC-004-gemini-documentos-pessoais.md) — Gemini em documentos
+  pessoais e confirmação manual quando a extração não for suficiente.

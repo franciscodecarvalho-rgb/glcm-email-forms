@@ -18,7 +18,7 @@ export function mesclarEnderecos(deterministico: Endereco, ia: Endereco): Record
 }
 
 /** Combina a leitura do Gemini com o texto PDF, sem perder campos já localizados. */
-export function mesclarLeituraComprovante(
+export function mesclarLeituraDocumentoPessoal(
   deterministico: DadosPessoais,
   ia: DadosPessoais,
   normalizarCpf: (valor: unknown) => string | null,
@@ -27,6 +27,9 @@ export function mesclarLeituraComprovante(
     primeiroTexto(ia?.[campo], alias ? ia?.[alias] : null, deterministico?.[campo], alias ? deterministico?.[alias] : null);
 
   const nome = texto("nome", "nome_cliente");
+  const tiposAceitos = new Set(["comprovante_residencia", "cnh", "cin", "rg", "cpf", "documento_pessoal", "outro"]);
+  const tipoIa = primeiroTexto(ia?.tipo_documento);
+  const tipoDeterministico = primeiroTexto(deterministico?.tipo_documento);
   const endereco = mesclarEnderecos(
     (deterministico?.endereco as Endereco) ?? null,
     (ia?.endereco as Endereco) ?? null,
@@ -35,7 +38,11 @@ export function mesclarLeituraComprovante(
   return {
     ...deterministico,
     ...ia,
-    tipo_documento: "comprovante_residencia",
+    tipo_documento: tipoIa && tiposAceitos.has(tipoIa)
+      ? tipoIa
+      : tipoDeterministico && tiposAceitos.has(tipoDeterministico)
+        ? tipoDeterministico
+        : "outro",
     nome: nome ?? "",
     nome_cliente: nome ?? "",
     cpf: normalizarCpf(ia?.cpf) ?? normalizarCpf(deterministico?.cpf) ?? "",

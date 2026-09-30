@@ -18,7 +18,7 @@
 //   idade (atualizado_em > 10 min).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
-import { documentoPessoalUsaIa } from "../_shared/personal-extraction-policy.ts";
+import { documentoPessoalUsaIa, temDadosPessoaisUtilizaveis } from "../_shared/personal-extraction-policy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -81,10 +81,13 @@ async function dadosPessoaisDoPdf(blob: Blob, nomeArquivo = ""): Promise<{ tipo_
     return (conteudo.items as Array<{ str?: string }>).map((item) => item.str ?? " ").join(" ");
   }));
   const texto = paginas.join("\n");
+  const textoNormalizado = `${texto}\n${nomeArquivo}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/CONTRACHEQUE|HOLERITE|DEMONSTRATIVO DE PAGAMENTO|RECIBO DE PAGAMENTO MENSAL/i.test(textoNormalizado)) {
+    return { tipo_documento: "contracheque", dados: null };
+  }
   const cpf = cpfValido(texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0]);
   const nome = texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
   const rg = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i)?.[1] ?? null;
-  const textoNormalizado = `${texto}\n${nomeArquivo}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const comprovante = /COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA|COMPROVANTE|RESIDENCIA|ENERGIA/i.test(textoNormalizado);
   if (comprovante) return { tipo_documento: "comprovante_residencia", dados: null };
   if (!(cpf && (nome || rg))) return { tipo_documento: "outro", dados: null };
@@ -94,7 +97,7 @@ async function dadosPessoaisDoPdf(blob: Blob, nomeArquivo = ""): Promise<{ tipo_
   };
 }
 
-const SYSTEM_PROMPT = `Extraia somente os dados visíveis no comprovante de residência enviado, com prioridade para o endereço completo: logradouro, número, bairro, cidade, estado e CEP quando impressos. Não invente nem complete campos ausentes ou ilegíveis. Ignore qualquer dado que não pertença ao comprovante. Retorne os campos extraídos usando a ferramenta registrar_dados_caso.`;
+const SYSTEM_PROMPT = `Leia visualmente os documentos pessoais enviados (comprovante de residência, CNH, RG, CIN ou CPF) e extraia somente os dados pessoais que estiverem explicitamente impressos: nome do titular, CPF completo e legível, RG e endereço separado em logradouro, número/complemento, bairro, cidade, estado e CEP quando constarem. Nacionalidade, estado civil e profissão só se estiverem expressamente impressos. Não confunda dados da concessionária com os do titular. Não invente nem complete campos ausentes ou ilegíveis. Para campos ausentes, retorne texto vazio ou objeto vazio. Para documentos pessoais, retorne contracheques como array vazio. Use a ferramenta registrar_dados_caso.`;
 
 const TOOLS = [
   {
@@ -399,15 +402,6 @@ async function verificarConclusao(supabase: any, casoId: string) {
   if (lotes.some((l: any) => l.status === "pendente" || l.status === "processando")) return;
 
   const comErro = lotes.filter((l: any) => l.status !== "concluido");
-  if (comErro.length > 0) {
-    await supabase
-      .from("casos")
-      .update({
-        erro_processamento: `${comErro.length} de ${lotes.length} lote(s) falharam. Clique em "Reprocessar pendentes" — o que já deu certo é mantido.`,
-      })
-      .eq("id", casoId);
-    return;
-  }
 
   let venceu = true;
   const { data: claim, error: cErr } = await supabase
@@ -420,7 +414,11 @@ async function verificarConclusao(supabase: any, casoId: string) {
   if (!venceu) return;
 
   try {
-    await finalizarCaso(supabase, casoId, lotes);
+    const lotesConcluidos = lotes.filter((l: any) => l.status === "concluido");
+    const erroProcessamento = comErro.length
+      ? `${comErro.length} de ${lotes.length} lote(s) não puderam ser extraídos automaticamente. Confira ou preencha os dados manualmente; os PDFs continuam anexados ao caso.`
+      : null;
+    await finalizarCaso(supabase, casoId, lotesConcluidos, erroProcessamento);
   } catch (e) {
     // Erro de finalização é do CASO, não do lote — e libera o claim p/ retry.
     const msg = e instanceof Error ? e.message : String(e);
@@ -431,7 +429,7 @@ async function verificarConclusao(supabase: any, casoId: string) {
 }
 
 // Tudo concluído: mescla os resultados salvos e finaliza o caso.
-async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
+async function finalizarCaso(supabase: any, casoId: string, lotes: any[], erroProcessamento: string | null = null) {
   const dados = mesclarResultados(lotes.map((l: any) => l.resultado).filter(Boolean));
   const { data: casoAtual, error: casoAtualError } = await supabase
     .from("casos")
@@ -439,6 +437,16 @@ async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
     .eq("id", casoId)
     .single();
   if (casoAtualError || !casoAtual) throw casoAtualError ?? new Error("Caso não encontrado ao finalizar extração");
+
+  const nomeCliente = dados.nome_cliente ?? casoAtual.nome_cliente;
+  const cpf = dados.cpf ?? casoAtual.cpf;
+  const rg = dados.rg ?? casoAtual.rg;
+  const endereco = dados.endereco ?? casoAtual.endereco;
+  const enderecoLogradouro = endereco && typeof endereco === "object" ? endereco.logradouro : null;
+  const faltaRevisaoManual = !nomeCliente?.trim() || !cpf?.trim() || !rg?.trim() || !enderecoLogradouro?.trim();
+  const erroRevisaoManual = erroProcessamento ?? (faltaRevisaoManual
+    ? "A extração automática não encontrou todos os dados pessoais. Confira e preencha os campos manualmente; os PDFs continuam anexados ao caso."
+    : null);
 
   const { data: estruturados, error: estruturadosError } = await supabase
     .from("contracheques")
@@ -478,14 +486,14 @@ async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
     .from("casos")
     .update({
       status: "aguardando_confirmacao",
-      nome_cliente: dados.nome_cliente ?? casoAtual.nome_cliente,
-      cpf: dados.cpf ?? casoAtual.cpf,
-      rg: dados.rg ?? casoAtual.rg,
-      endereco: dados.endereco ?? casoAtual.endereco,
+      nome_cliente: nomeCliente,
+      cpf,
+      rg,
+      endereco,
       qualificacao: dados.qualificacao ?? casoAtual.qualificacao,
       empregadores: dados.empregadores?.length ? dados.empregadores : casoAtual.empregadores ?? [],
       contracheques: contras,
-      erro_processamento: null,
+      erro_processamento: erroRevisaoManual,
     })
     .eq("id", casoId);
   console.log(`caso ${casoId} finalizado: ${contras.length} contracheques`);
@@ -511,9 +519,9 @@ async function baixarParte(supabase: any, arq: any): Promise<any | null> {
   return null;
 }
 
-// A extração determinística trata documentos pessoais com camada de texto;
-// somente comprovantes de residência seguem para IA. LANÇA erro em falha
-// persistente (nunca retorna vazio em silêncio).
+// Todo PDF pessoal segue ao Gemini; o texto local complementa a leitura.
+// Contracheques nunca seguem a este fluxo. Falhas persistentes não retornam
+// silenciosamente: são preservadas para revisão manual no caso.
 async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY?: string): Promise<any> {
   // Cada PDF é avaliado antes do fan-out. Só os pendentes seguem ao gateway;
   // isso preserva os resultados determinísticos e evita reenviar o lote inteiro.
@@ -527,14 +535,14 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY?: strin
     try {
       const { data: blob, error } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
       if (error || !blob) {
-        if (nomeIndicaComprovante(arq.nome ?? "")) pendentes.push(arq);
+        pendentes.push(arq);
         continue;
       }
       const resultado = await dadosPessoaisDoPdf(blob, arq.nome);
       if (documentoPessoalUsaIa(resultado.tipo_documento)) pendentes.push(arq);
       else if (resultado.dados) resultadosDeterministicos.push(resultado.dados);
     } catch {
-      if (nomeIndicaComprovante(arq.nome ?? "")) pendentes.push(arq);
+      pendentes.push(arq);
     }
   }
   if (pendentes.length === 0) return mesclarResultados(resultadosDeterministicos);
@@ -581,11 +589,14 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY?: strin
       const aiJson = await aiResp.json();
       const call = aiJson.choices?.[0]?.message?.tool_calls?.[0];
       if (!call) throw new Error("IA não retornou tool call");
-      return mesclarResultados([...resultadosDeterministicos, JSON.parse(call.function.arguments)]);
+      const dadosIa = JSON.parse(call.function.arguments);
+      if (!temDadosPessoaisUtilizaveis(dadosIa)) throw new Error("Resposta sem dados pessoais úteis");
+      // Este worker é de documentos pessoais: a saída nunca cria contracheques.
+      return mesclarResultados([...resultadosDeterministicos, { ...dadosIa, contracheques: [] }]);
     } catch (e) {
       ultimoErro = e instanceof Error ? e.message : String(e);
       console.error(`processarLote tentativa ${tentativa}:`, ultimoErro);
-      if (ultimoErro.includes("Créditos")) throw e; // não adianta repetir
+      if (ultimoErro.includes("Créditos") || ultimoErro.includes("Resposta sem dados pessoais úteis")) throw e; // não adianta repetir
       // 429/503 (rate limit do gateway com o fan-out): espera mais antes de repetir.
       const espera = /IA (429|503)/.test(ultimoErro) ? 5000 * tentativa : 800 * tentativa;
       await sleep(espera);
