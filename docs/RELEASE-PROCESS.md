@@ -26,6 +26,45 @@ automaticamente o seguinte.
    Se houver falha ou estado pendente, registrar a demanda como **deploy pendente** com
    SHA, evidência, motivo e próxima ação; continuar o acompanhamento até resolver.
 
+## Reconciliação local, Git e Lovable
+
+O Lovable pode criar ou sincronizar commits durante a análise, aplicação de migrations
+ou publicação. Um push bem-sucedido não garante que `origin/main` continuará apontando
+para o SHA enviado pelo agente.
+
+1. Antes de iniciar o fluxo no Lovable, registre `git rev-parse HEAD`, atualize as
+   referências com `git fetch origin` e registre `git rev-parse origin/main` e o SHA
+   reconhecido pelo Lovable.
+2. Depois de cada interação do Lovable que possa alterar/sincronizar o projeto, execute
+   novamente `git fetch origin` e compare `HEAD`, `origin/main` e o SHA do Lovable.
+3. Se `origin/main` avançou, inspecione os commits (`git log --oneline HEAD..origin/main`)
+   e o diff antes de prosseguir. Não presuma que commits automáticos são inofensivos.
+4. Se as alterações remotas forem esperadas e a árvore de trabalho estiver preservada,
+   sincronize por fast-forward (`git pull --ff-only origin main`) e confirme que
+   `HEAD` e `origin/main` apontam para o mesmo SHA. Se houver mudanças locais, conflito,
+   commit inesperado ou divergência não compreendida, pare e resolva/registre a situação
+   antes de editar, fazer novo push ou publicar.
+5. Nunca use `git reset --hard`, force-push ou sobrescrita para esconder divergências.
+   Preserve arquivos locais não rastreados e alterações do usuário; não os apague para
+   obter uma árvore limpa.
+6. Antes de declarar o deploy concluído, confirme qual SHA está publicado e registre
+   juntos os SHAs local, remoto, reconhecido pelo Lovable e publicado. Se não forem o
+   mesmo commit (ou não houver evidência da equivalência), relate a diferença e deixe a
+   demanda pendente.
+
+Comandos mínimos de conferência:
+
+```powershell
+git status -sb
+git rev-parse HEAD
+git fetch origin
+git rev-parse origin/main
+git log --oneline HEAD..origin/main
+```
+
+Só execute `git pull --ff-only origin main` depois de revisar o log/diff e confirmar que
+preservará o trabalho local.
+
 ## Registro mínimo da entrega
 
 - SHA de origem e SHA reconhecido pelo Lovable;

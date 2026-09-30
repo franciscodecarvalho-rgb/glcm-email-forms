@@ -40,6 +40,10 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Templates `.docx` e planilha gerada são mecanismos distintos.
 - O fluxo implementado termina em `concluido` após geração dos documentos.
 - O deploy do projeto será realizado pelo Lovable.
+- Após cada interação do Lovable que possa sincronizar código, comparar o SHA local,
+  `origin/main`, o SHA reconhecido pelo Lovable e o SHA publicado; inspecionar qualquer
+  avanço remoto e sincronizá-lo por fast-forward somente após revisar o diff e preservar
+  o trabalho local. Nunca esconder divergências com reset ou force-push.
 - Um upload manual só vira Caso depois de comprovantes pessoais e contracheques
   serem enviados, processados, persistidos e confirmados; registros provisórios
   ficam fora da listagem operacional até cumprir esses requisitos.

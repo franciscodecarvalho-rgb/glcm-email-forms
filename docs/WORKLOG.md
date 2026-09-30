@@ -1,5 +1,18 @@
 # Worklog
 
+## 2026-09-30 — Reconciliação pós-Lovable
+
+- Regra adicionada ao contrato do projeto e ao checklist de release: verificar os SHAs
+  local, remoto, reconhecido pelo Lovable e publicado antes e depois de cada etapa do
+  Lovable que possa sincronizar commits.
+- Se o remoto avançar, inspecionar commits/diff antes de sincronizar; usar somente
+  fast-forward quando seguro, preservando alterações locais e sem reset ou force-push.
+- O deploy só pode ser declarado concluído quando houver evidência do SHA publicado e
+  os SHAs relevantes estiverem alinhados; divergências inesperadas mantêm a demanda
+  pendente e devem ser comunicadas.
+- Atualizados `AGENTS.md`, `docs/RELEASE-PROCESS.md`, `MEMORY.md` e o espelho
+  `.claude/CLAUDE.md`.
+
 ## 2026-09-30 — Importação de casos só após validação
 
 - A causa do alerta genérico na tela de upload incluía uso de `etapa` capturado

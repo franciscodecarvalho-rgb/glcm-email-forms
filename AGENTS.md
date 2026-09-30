@@ -132,6 +132,15 @@ Se a publicação bloquear ou ficar pendente, mantenha a demanda explicitamente 
 registre o SHA, o motivo e a próxima ação; nunca deixe um commit sem deploy registrado
 como concluído.
 
+Após cada interação com o Lovable que possa sincronizar código, gerar commit ou
+publicar, confira imediatamente o SHA de `origin/main` e compare com o SHA local e o
+SHA reconhecido pelo Lovable. Se o remoto avançar, inspecione os commits e o diff antes
+de continuar; incorpore alterações legítimas localmente por fast-forward (`git pull
+--ff-only origin main`) somente com a árvore de trabalho preservada. Não use force-push,
+reset ou sobrescrita para fazer os SHAs coincidirem. Se houver alterações inesperadas,
+pare e informe a divergência antes de editar ou publicar. No fechamento, registre os
+SHAs local, remoto e publicado e confirme se estão alinhados.
+
 ## Critério de conclusão
 
 A tarefa só termina quando:
