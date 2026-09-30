@@ -425,3 +425,10 @@ empresa, página e evidência da origem do dado.
 **Origem:** PDF BASF enviado por Nodley em 29/09/2026, com pares original/retificado nas competências analisadas.
 **Aplicação:** Persistir o marcador em `contracheques.retificado`; manter ambos os recibos e aplicar a substituição somente na consolidação da revisão e da planilha HRA do caso.
 **Evitar:** Somar as duas versões, apagar o original ou aplicar a regra a outras empresas.
+
+### 2026-09 — IA exclusiva para comprovantes de residência
+
+**Regra confirmada:** O Gemini deve ser usado exclusivamente para comprovantes de residência, com foco no endereço completo. CNH, RG, CIN e CPF permanecem na extração determinística/revisão manual; contracheques nunca são enviados à IA generativa.
+**Origem:** Correção expressa de Nodley após identificar que a extração determinística passou a dispensar a IA ao encontrar apenas o CEP.
+**Aplicação:** Nos fluxos de extração pessoal e de reprocessamento, encaminhar ao gateway somente arquivos reconhecidos como comprovantes de residência. Não considerar a presença isolada de CEP como substituto da extração do endereço pela IA.
+**Evitar:** Enviar identidade ou contracheques ao Gemini, ou marcar endereço como plenamente extraído apenas porque o CEP foi localizado.

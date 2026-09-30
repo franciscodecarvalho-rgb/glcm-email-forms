@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
+import { documentoPessoalUsaIa } from "../_shared/personal-extraction-policy.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODELO = "google/gemini-2.5-pro";
-const PROMPT = `Extraia somente dados pessoais visíveis em documentos brasileiros (CNH, RG, CIN, CPF e comprovante de residência). Não invente nem complete dados ausentes; use strings vazias quando ilegíveis. O campo rg pode receber RG ou CIN, nunca o registro da CNH. Endereço só pode vir de comprovante de residência ou se estiver explicitamente impresso. Classifique tipo_documento como cnh, rg, cin, cpf, comprovante_residencia ou outro.`;
+const PROMPT = `Extraia somente dados visíveis no comprovante de residência. Priorize o endereço completo (logradouro, número, bairro, cidade, estado e CEP quando impressos). Não invente nem complete dados ausentes; use strings vazias quando ilegíveis. Classifique tipo_documento como comprovante_residencia.`;
 const TOOL = { type: "function", function: { name: "registrar_documento_pessoal", parameters: { type: "object", properties: {
   tipo_documento: { type: "string" }, nome: { type: "string" }, cpf: { type: "string" }, rg: { type: "string" },
   nacionalidade: { type: "string" }, estado_civil: { type: "string" }, profissao: { type: "string" },
@@ -40,12 +41,12 @@ const normalizarCpf = (valor: unknown): string | null => {
   return digito(digitos.slice(0, 9), 10) === Number(digitos[9]) && digito(digitos.slice(0, 10), 11) === Number(digitos[10]) ? digitos : null;
 };
 
-function tipoDocumento(texto: string) {
-  const t = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+function tipoDocumento(texto: string, nomeArquivo = "") {
+  const t = `${texto}\n${nomeArquivo}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
   if (/CARTEIRA NACIONAL DE HABILITACAO|PERMISSAO PARA DIRIGIR/.test(t)) return "cnh";
   if (/CARTEIRA DE IDENTIDADE NACIONAL|\bCIN\b/.test(t)) return "cin";
   if (/REGISTRO GERAL|CARTEIRA DE IDENTIDADE|\bIDENTIDADE\b/.test(t)) return "rg";
-  if (/COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/.test(t)) return "comprovante_residencia";
+  if (/COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA|COMPROVANTE|RESIDENCIA|ENERGIA|CONTA DE LUZ|CONTA DE AGUA/.test(t)) return "comprovante_residencia";
   if (/CADASTRO DE PESSOAS FISICAS|\bCPF\b/.test(t)) return "cpf";
   return "outro";
 }
@@ -67,8 +68,8 @@ function enderecoDoComprovante(texto: string, tipo: string) {
   if (secaoAnterior && cep) return { logradouro: secaoAnterior, cep };
   return cep ? { cep } : null;
 }
-function extrairDeterministico(texto: string) {
-  const tipo_documento = tipoDocumento(texto);
+function extrairDeterministico(texto: string, nomeArquivo = "") {
+  const tipo_documento = tipoDocumento(texto, nomeArquivo);
   const nome = texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
   const cpf = normalizarCpf(texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0]);
   const rg = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i)?.[1] ?? null;
@@ -110,13 +111,17 @@ Deno.serve(async (req) => {
       if (arquivo.size > 10 * 1024 * 1024) return json({ error: "O PDF excede o limite de 10 MB" }, 400);
       let texto = "";
       let deterministico: ReturnType<typeof extrairDeterministico> | null = null;
-      try { texto = await textoPdf(arquivo); deterministico = extrairDeterministico(texto); } catch { /* scan ou PDF inválido segue ao fallback */ }
-      const metodo = deterministico?.suficiente ? "deterministico" : "ia_fallback";
-      const dados = deterministico?.suficiente
-        ? deterministico.dados
-        : await extrairComIa(arquivo, arquivo.name, Deno.env.get("LOVABLE_API_KEY") ?? (() => { throw new Error("LOVABLE_API_KEY não configurada"); })());
-      const camposAusentes = [!dados.nome && "nome", !normalizarCpf(dados.cpf) && "cpf", !dados.rg && "rg"].filter(Boolean);
-      return json({ ok: metodo === "deterministico" ? true : camposAusentes.length === 0, diagnostico: { arquivo: arquivo.name, tipo_documento: dados.tipo_documento, linhas_texto: texto ? texto.split(/\r?\n/).length : 0, metodo, motivo: metodo === "deterministico" ? null : "campos_ausentes_ou_sem_texto" }, dados, campos_ausentes: camposAusentes });
+      try { texto = await textoPdf(arquivo); deterministico = extrairDeterministico(texto, arquivo.name); } catch { /* PDF escaneado ou inválido segue à revisão se não for comprovante identificável pelo nome */ }
+      deterministico ??= extrairDeterministico("", arquivo.name);
+      const usaIa = documentoPessoalUsaIa(deterministico.dados.tipo_documento);
+      const apiKey = Deno.env.get("LOVABLE_API_KEY");
+      const dados = usaIa
+        ? await extrairComIa(arquivo, arquivo.name, apiKey ?? (() => { throw new Error("LOVABLE_API_KEY não configurada"); })())
+        : deterministico.dados;
+      const camposAusentes = usaIa
+        ? [!dados.endereco || !Object.values(dados.endereco).some((v) => String(v ?? "").trim()) ? "endereco" : null].filter(Boolean)
+        : [!dados.nome && "nome", !normalizarCpf(dados.cpf) && "cpf", !dados.rg && "rg"].filter(Boolean);
+      return json({ ok: usaIa ? camposAusentes.length === 0 : deterministico.suficiente, diagnostico: { arquivo: arquivo.name, tipo_documento: dados.tipo_documento, linhas_texto: texto ? texto.split(/\r?\n/).length : 0, metodo: usaIa ? "ia_comprovante" : deterministico.suficiente ? "deterministico" : "revisao_manual", motivo: camposAusentes.length ? "campos_ausentes" : null }, dados, campos_ausentes: camposAusentes });
     }
 
     const { caso_id } = await req.json();
@@ -136,13 +141,16 @@ Deno.serve(async (req) => {
         if (error || !blob) throw error ?? new Error("falha_no_download");
         let texto = "";
         let deterministico: ReturnType<typeof extrairDeterministico> | null = null;
-        try { texto = await textoPdf(blob); deterministico = extrairDeterministico(texto); } catch { /* PDF escaneado ou inválido: fallback */ }
-        if (deterministico?.suficiente) {
-          documentos.push({ arquivo: arquivo.nome, ...deterministico.dados });
-        } else {
+        try { texto = await textoPdf(blob); } catch { /* comprovante escaneado pode ser identificado pelo nome do arquivo */ }
+        deterministico = extrairDeterministico(texto, arquivo.nome);
+        if (documentoPessoalUsaIa(deterministico.dados.tipo_documento)) {
           const apiKey = Deno.env.get("LOVABLE_API_KEY");
           if (!apiKey) throw new Error("LOVABLE_API_KEY não configurada");
           documentos.push({ arquivo: arquivo.nome, ...await extrairComIa(blob, arquivo.nome, apiKey) });
+        } else if (deterministico.suficiente) {
+          documentos.push({ arquivo: arquivo.nome, ...deterministico.dados });
+        } else {
+          revisao.push({ arquivo: arquivo.nome, motivo: texto ? "documento_pessoal_sem_campos_deterministicos_suficientes" : "pdf_sem_texto_ou_comprovante_nao_identificado" });
         }
       } catch (error) { revisao.push({ arquivo: arquivo.nome, motivo: error instanceof Error ? error.message : "falha_na_extracao" }); }
     }

@@ -18,6 +18,7 @@
 //   idade (atualizado_em > 10 min).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
+import { documentoPessoalUsaIa } from "../_shared/personal-extraction-policy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +43,19 @@ function cpfValido(valor: unknown): string | null {
   };
   return digito(cpf.slice(0, 9), 10) === Number(cpf[9]) && digito(cpf.slice(0, 10), 11) === Number(cpf[10]) ? cpf : null;
 }
+function nomeIndicaComprovante(nome = ""): boolean {
+  const normalizado = nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /COMPROVANTE|RESIDENCIA|ENERGIA|CONTA[-_ ]?(DE[-_ ]?)?(LUZ|AGUA)|FATURA/i.test(normalizado);
+}
+type DadosPessoaisExtraidos = {
+  nome_cliente: string | null;
+  cpf: string | null;
+  rg: string | null;
+  endereco: Record<string, string> | null;
+  qualificacao: Record<string, unknown> | null;
+  empregadores: unknown[];
+  contracheques: unknown[];
+};
 function enderecoDoComprovante(texto: string) {
   const compacto = texto.replace(/\s+/g, " ").trim();
   const secoes = [...compacto.matchAll(/ENDERE[CÇ]O\s*:?\s*(.*?)(?=\s+(?:NOSSO N[ÚU]MERO|BENEFICI[ÁA]RIO|DANFE|$))/gi)].map((m) => m[1]);
@@ -59,7 +73,7 @@ function enderecoDoComprovante(texto: string) {
   if (secaoAnterior && cep) return { logradouro: secaoAnterior, cep };
   return cep ? { cep } : null;
 }
-async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
+async function dadosPessoaisDoPdf(blob: Blob, nomeArquivo = ""): Promise<{ tipo_documento: string; dados: DadosPessoaisExtraidos | null }> {
   const pdf = await getDocumentProxy(new Uint8Array(await blob.arrayBuffer()));
   const paginas = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => {
     const pagina = await pdf.getPage(i + 1);
@@ -70,25 +84,17 @@ async function dadosPessoaisDoPdf(blob: Blob): Promise<any | null> {
   const cpf = cpfValido(texto.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/)?.[0]);
   const nome = texto.match(/(?:NOME(?:\s+COMPLETO)?|NOME DO TITULAR)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú' ]{5,})/i)?.[1]?.replace(/\s+/g, " ").trim() ?? null;
   const rg = texto.match(/(?:\bRG\b|REGISTRO GERAL|IDENTIDADE|\bCIN\b)\s*(?:N[Oº°.]*)?\s*[:\-]?\s*([A-Z0-9.\-]{5,20})/i)?.[1] ?? null;
-  const comprovante = /COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA/i.test(texto.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
-  const endereco = comprovante ? enderecoDoComprovante(texto) : null;
-  if (comprovante ? !endereco : !(cpf && (nome || rg))) return null;
-  return { nome_cliente: nome, cpf, rg, endereco, qualificacao: null, empregadores: [], contracheques: [] };
+  const textoNormalizado = `${texto}\n${nomeArquivo}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const comprovante = /COMPROVANTE DE RESIDENCIA|NOTA FISCAL DE ENERGIA|CONTA DE (LUZ|AGUA|ENERGIA|TELEFONE)|FATURA|COMPROVANTE|RESIDENCIA|ENERGIA/i.test(textoNormalizado);
+  if (comprovante) return { tipo_documento: "comprovante_residencia", dados: null };
+  if (!(cpf && (nome || rg))) return { tipo_documento: "outro", dados: null };
+  return {
+    tipo_documento: "documento_pessoal",
+    dados: { nome_cliente: nome, cpf, rg, endereco: null, qualificacao: null, empregadores: [], contracheques: [] },
+  };
 }
 
-const SYSTEM_PROMPT = `Você é um assistente jurídico que extrai dados de documentos brasileiros (RG, CNH, CPF, comprovante de residência e contracheques) para uma ação de restituição de IR sobre HRA.
-
-DADOS PESSOAIS (do RG/CNH/CPF e do comprovante): nome completo, CPF, RG e endereço completo. Se constar, capture também nacionalidade, estado civil e profissão (em geral NÃO constam nesses documentos — deixe em branco se não aparecerem).
-
-EMPREGADOR(ES): do cabeçalho dos contracheques, capture a razão social e o CNPJ de cada empresa empregadora (deduplique).
-
-CONTRACHEQUES — para CADA contracheque:
-1. TRANSCREVA TODAS as linhas da folha em itens[]: código, descrição, valor e tipo ("provento" ou "desconto") — salário, adicionais, HRA, INSS, IR, empréstimos, planos, TUDO, na ordem em que aparecem. Não pule linha nenhuma.
-2. Capture também: salario_base, total_proventos, total_descontos e liquido (quando visíveis).
-3. Rubricas HRA (a parte mais importante do cálculo): identifique TODAS as linhas de PROVENTO cuja DESCRIÇÃO indique Hora de Repouso e Alimentação, em qualquer variação ou erro de OCR. NÃO se baseie no código numérico — baseie-se na descrição conter "HRA"/"AHRA". Exemplos que CONTAM: "Adicional HRA", "Adic HRA Eventual", "AHRA", "AHRA/Dobra de Turno", "Dif AHRA Dobra", "Dif Adicional HRA", "HRA", e grafias com ruído ("AdiconalHRA", "Dobra de Tumo", "Adicionál HRA"). EXCLUA da soma: linhas de DESCONTO (ex: "Desc. Adicional HRA") e variantes "Sem IR"/"s/IRRF"/"SEM IRRF" (sem retenção). Some: valor_hra = rubricas "Adicional HRA"; valor_ahra = demais rubricas HRA/AHRA (AHRA, Dobra de Turno, diferenças, HRA avulso).
-4. Use a competência (mês/ano) como label e informe em "arquivo" o nome do arquivo indicado no texto imediatamente antes de cada documento.
-
-Alguns documentos enviados podem não ser contracheques (ex: identidade, comprovante) — ignore-os para a lista de contracheques. Retorne SEMPRE via tool call.`;
+const SYSTEM_PROMPT = `Extraia somente os dados visíveis no comprovante de residência enviado, com prioridade para o endereço completo: logradouro, número, bairro, cidade, estado e CEP quando impressos. Não invente nem complete campos ausentes ou ilegíveis. Ignore qualquer dado que não pertença ao comprovante. Retorne os campos extraídos usando a ferramenta registrar_dados_caso.`;
 
 const TOOLS = [
   {
@@ -427,6 +433,12 @@ async function verificarConclusao(supabase: any, casoId: string) {
 // Tudo concluído: mescla os resultados salvos e finaliza o caso.
 async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
   const dados = mesclarResultados(lotes.map((l: any) => l.resultado).filter(Boolean));
+  const { data: casoAtual, error: casoAtualError } = await supabase
+    .from("casos")
+    .select("nome_cliente,cpf,rg,endereco,qualificacao,empregadores")
+    .eq("id", casoId)
+    .single();
+  if (casoAtualError || !casoAtual) throw casoAtualError ?? new Error("Caso não encontrado ao finalizar extração");
 
   const { data: estruturados, error: estruturadosError } = await supabase
     .from("contracheques")
@@ -466,12 +478,12 @@ async function finalizarCaso(supabase: any, casoId: string, lotes: any[]) {
     .from("casos")
     .update({
       status: "aguardando_confirmacao",
-      nome_cliente: dados.nome_cliente ?? null,
-      cpf: dados.cpf ?? null,
-      rg: dados.rg ?? null,
-      endereco: dados.endereco ?? null,
-      qualificacao: dados.qualificacao ?? null,
-      empregadores: dados.empregadores ?? [],
+      nome_cliente: dados.nome_cliente ?? casoAtual.nome_cliente,
+      cpf: dados.cpf ?? casoAtual.cpf,
+      rg: dados.rg ?? casoAtual.rg,
+      endereco: dados.endereco ?? casoAtual.endereco,
+      qualificacao: dados.qualificacao ?? casoAtual.qualificacao,
+      empregadores: dados.empregadores?.length ? dados.empregadores : casoAtual.empregadores ?? [],
       contracheques: contras,
       erro_processamento: null,
     })
@@ -499,7 +511,8 @@ async function baixarParte(supabase: any, arq: any): Promise<any | null> {
   return null;
 }
 
-// Processa um lote numa chamada à IA, com até 3 tentativas. LANÇA erro em falha
+// A extração determinística trata documentos pessoais com camada de texto;
+// somente comprovantes de residência seguem para IA. LANÇA erro em falha
 // persistente (nunca retorna vazio em silêncio).
 async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY?: string): Promise<any> {
   // Cada PDF é avaliado antes do fan-out. Só os pendentes seguem ao gateway;
@@ -507,14 +520,22 @@ async function processarLote(supabase: any, lote: any[], LOVABLE_API_KEY?: strin
   const resultadosDeterministicos: any[] = [];
   const pendentes: any[] = [];
   for (const arq of lote) {
-    if (arq.mime_type !== "application/pdf") { pendentes.push(arq); continue; }
+    if (arq.mime_type !== "application/pdf") {
+      if (documentoPessoalUsaIa(nomeIndicaComprovante(arq.nome ?? "") ? "comprovante_residencia" : "outro")) pendentes.push(arq);
+      continue;
+    }
     try {
       const { data: blob, error } = await supabase.storage.from("casos-arquivos").download(arq.storage_path);
-      if (error || !blob) { pendentes.push(arq); continue; }
-      const dados = await dadosPessoaisDoPdf(blob);
-      if (dados) resultadosDeterministicos.push(dados);
-      else pendentes.push(arq);
-    } catch { pendentes.push(arq); }
+      if (error || !blob) {
+        if (nomeIndicaComprovante(arq.nome ?? "")) pendentes.push(arq);
+        continue;
+      }
+      const resultado = await dadosPessoaisDoPdf(blob, arq.nome);
+      if (documentoPessoalUsaIa(resultado.tipo_documento)) pendentes.push(arq);
+      else if (resultado.dados) resultadosDeterministicos.push(resultado.dados);
+    } catch {
+      if (nomeIndicaComprovante(arq.nome ?? "")) pendentes.push(arq);
+    }
   }
   if (pendentes.length === 0) return mesclarResultados(resultadosDeterministicos);
   if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurada para os arquivos pendentes");

@@ -13,8 +13,9 @@ Lovable; publicação do frontend ainda requer confirmação.
 
 ## Active Spec
 
-Reconciliação local/Git — refinamento da extração de endereço linearizado; testes
-e build validados, commit e publicação em andamento.
+Restaurar a extração por IA exclusivamente para comprovantes de residência, sem
+alterar a extração determinística de contracheques nem encaminhar documentos de
+identidade ao Gemini.
 
 ## Next Spec
 
@@ -22,7 +23,6 @@ NONE
 
 ## Known Issues
 
-- `estrutura-joins-temas.html` permanece não rastreado e fora do release atual;
 - um stash de segurança preserva o estado local anterior à sincronização com
   `origin/main`;
 - `npm run lint` falha com erros legados; lint seletivo das áreas alteradas ainda
@@ -50,10 +50,11 @@ NONE
 
 ## Last Verified
 
-Checkout local sincronizado com `origin/main` até `35cc96c`; o commit de reconciliação
-está em `main`. `npm run test` passou (274 testes),
-`npm run build` passou e o lint seletivo dos arquivos TypeScript alterados passou.
-`npm run lint` global falha com 245 erros e 23 avisos legados, incluindo
-`.tmp-main-deploy`. Push realizado; confirmação do Lovable para o commit enviado ainda
-pendente.
-O arquivo HTML não rastreado e o stash de segurança foram preservados.
+Base desta alteração: `d264400` (`main` e `origin/main`). O fluxo padrão de criação
+chama `process-documentos-pessoais-pdf`; o retry legado usa `extract-case-data`.
+`npm run test` passou (281 testes) e `npm run build` passou, com avisos existentes
+de Browserslist desatualizado e bundle acima de 500 kB. Lint global falha com 240
+erros e 23 avisos legados; ESLint do novo helper/teste passou, mas os arquivos Edge
+Functions ainda reportam erros legados. A validação local das Edge Functions não
+iniciou porque o Docker Desktop está indisponível.
+Commit, push e confirmação do Lovable desta alteração ainda pendentes.
