@@ -1,15 +1,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getDocumentProxy } from "npm:unpdf@1.4.0";
 import { documentoPessoalUsaIa } from "../_shared/personal-extraction-policy.ts";
+import { mesclarEnderecos, mesclarLeituraComprovante } from "../_shared/merge-personal-extraction.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const MODELO = "google/gemini-2.5-pro";
-const PROMPT = `Extraia somente dados visíveis no comprovante de residência. Priorize o endereço completo (logradouro, número, bairro, cidade, estado e CEP quando impressos). Não invente nem complete dados ausentes; use strings vazias quando ilegíveis. Classifique tipo_documento como comprovante_residencia.`;
+const PROMPT = `Leia visualmente todas as páginas do comprovante de residência e extraia todos os dados pessoais que estiverem explicitamente impressos: nome do titular/cliente, CPF somente se estiver completo e legível, RG somente se estiver impresso, e endereço completo separado em logradouro, número/complemento, bairro, cidade, estado e CEP. Nacionalidade, estado civil e profissão só devem ser preenchidos se estiverem expressamente impressos; caso contrário, deixe vazios. Não omita nome ou CPF quando estiverem visíveis. Não deduza nem complete dados ausentes ou ilegíveis; nesses casos retorne string vazia. Não confunda dados da concessionária com os do titular. Classifique tipo_documento como comprovante_residencia.`;
 const TOOL = { type: "function", function: { name: "registrar_documento_pessoal", parameters: { type: "object", properties: {
   tipo_documento: { type: "string" }, nome: { type: "string" }, cpf: { type: "string" }, rg: { type: "string" },
   nacionalidade: { type: "string" }, estado_civil: { type: "string" }, profissao: { type: "string" },
-  endereco: { type: "object", properties: { logradouro: { type: "string" }, numero: { type: "string" }, bairro: { type: "string" }, cidade: { type: "string" }, estado: { type: "string" }, cep: { type: "string" } } },
-}, additionalProperties: false } } };
+  endereco: { type: "object", properties: { logradouro: { type: "string" }, numero: { type: "string" }, bairro: { type: "string" }, cidade: { type: "string" }, estado: { type: "string" }, cep: { type: "string" } }, required: ["logradouro", "numero", "bairro", "cidade", "estado", "cep"], additionalProperties: false },
+}, required: ["tipo_documento", "nome", "cpf", "rg", "nacionalidade", "estado_civil", "profissao", "endereco"], additionalProperties: false } } };
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
 function base64(bytes: Uint8Array) { let value = ""; for (let i = 0; i < bytes.length; i += 0x8000) value += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(value); }
@@ -116,7 +117,11 @@ Deno.serve(async (req) => {
       const usaIa = documentoPessoalUsaIa(deterministico.dados.tipo_documento);
       const apiKey = Deno.env.get("LOVABLE_API_KEY");
       const dados = usaIa
-        ? await extrairComIa(arquivo, arquivo.name, apiKey ?? (() => { throw new Error("LOVABLE_API_KEY não configurada"); })())
+        ? mesclarLeituraComprovante(
+          deterministico.dados,
+          await extrairComIa(arquivo, arquivo.name, apiKey ?? (() => { throw new Error("LOVABLE_API_KEY não configurada"); })()),
+          normalizarCpf,
+        )
         : deterministico.dados;
       const camposAusentes = usaIa
         ? [!dados.endereco || !Object.values(dados.endereco).some((v) => String(v ?? "").trim()) ? "endereco" : null].filter(Boolean)
@@ -126,7 +131,7 @@ Deno.serve(async (req) => {
 
     const { caso_id } = await req.json();
     if (!caso_id) return json({ error: "caso_id obrigatório" }, 400);
-    const { data: caso, error: casoError } = await supabase.from("casos").select("id,nome_cliente,qualificacao,endereco").eq("id", caso_id).single();
+    const { data: caso, error: casoError } = await supabase.from("casos").select("id,nome_cliente,nome_pre_extraido,cpf,cpf_pre_extraido,rg,qualificacao,endereco").eq("id", caso_id).single();
     if (casoError || !caso) return json({ error: "Caso não encontrado" }, 404);
     const { data: arquivos, error: arquivosError } = await supabase.from("arquivos").select("nome,storage_path,mime_type").eq("caso_id", caso_id).eq("tipo", "informacoes_pessoais");
     if (arquivosError) throw arquivosError;
@@ -146,7 +151,8 @@ Deno.serve(async (req) => {
         if (documentoPessoalUsaIa(deterministico.dados.tipo_documento)) {
           const apiKey = Deno.env.get("LOVABLE_API_KEY");
           if (!apiKey) throw new Error("LOVABLE_API_KEY não configurada");
-          documentos.push({ arquivo: arquivo.nome, ...await extrairComIa(blob, arquivo.nome, apiKey) });
+          const dadosIa = await extrairComIa(blob, arquivo.nome, apiKey);
+          documentos.push({ arquivo: arquivo.nome, ...mesclarLeituraComprovante(deterministico.dados, dadosIa, normalizarCpf) });
         } else if (deterministico.suficiente) {
           documentos.push({ arquivo: arquivo.nome, ...deterministico.dados });
         } else {
@@ -159,11 +165,16 @@ Deno.serve(async (req) => {
       return json({ ok: false, documentos, revisao });
     }
 
-    const endereco = documentos.map((d) => d.endereco).find((v) => v && Object.values(v).some(Boolean)) ?? caso.endereco;
+    const enderecoExtraido = documentos
+      .map((d) => d.endereco as Record<string, unknown> | null | undefined)
+      .reduce((acumulado, atual) => mesclarEnderecos(acumulado, atual), null as Record<string, string> | null);
+    const endereco = mesclarEnderecos(caso.endereco as Record<string, unknown> | null, enderecoExtraido);
     const q = caso.qualificacao && typeof caso.qualificacao === "object" ? caso.qualificacao : {};
     const qualificacao = { ...q, nacionalidade: primeiro(documentos, "nacionalidade") ?? q.nacionalidade ?? "brasileiro", estado_civil: primeiro(documentos, "estado_civil") ?? q.estado_civil ?? null, profissao: primeiro(documentos, "profissao") ?? q.profissao ?? null, documentos_pessoais: documentos };
-    const nome = primeiro(documentos, "nome"), cpf = primeiroCpfValido(documentos), rg = primeiro(documentos, "rg");
-    const { error: updateError } = await supabase.from("casos").update({ nome_cliente: nome ?? caso.nome_cliente, nome_pre_extraido: nome, cpf, cpf_pre_extraido: cpf, rg, endereco, qualificacao, erro_processamento: revisao.length ? `${revisao.length} documento(s) pessoal(is) precisam de revisão` : null, status: "aguardando_confirmacao" }).eq("id", caso_id);
+    const nome = primeiro(documentos, "nome") ?? primeiro(documentos, "nome_cliente") ?? caso.nome_pre_extraido ?? caso.nome_cliente;
+    const cpf = primeiroCpfValido(documentos) ?? normalizarCpf(caso.cpf) ?? normalizarCpf(caso.cpf_pre_extraido);
+    const rg = primeiro(documentos, "rg") ?? caso.rg ?? null;
+    const { error: updateError } = await supabase.from("casos").update({ nome_cliente: nome ?? caso.nome_cliente, nome_pre_extraido: nome ?? caso.nome_pre_extraido, cpf, cpf_pre_extraido: cpf ?? normalizarCpf(caso.cpf_pre_extraido), rg, endereco: endereco ?? caso.endereco, qualificacao, erro_processamento: revisao.length ? `${revisao.length} documento(s) pessoal(is) precisam de revisão` : null, status: "aguardando_confirmacao" }).eq("id", caso_id);
     if (updateError) throw updateError;
     return json({ ok: true, documentos, revisao });
   } catch (error) {

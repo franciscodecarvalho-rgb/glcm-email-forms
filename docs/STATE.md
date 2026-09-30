@@ -55,6 +55,16 @@ NONE
 
 ## Last Verified
 
+Na correção local de 30/09/2026 do fluxo de documentos pessoais, os comprovantes
+reconhecidos continuam sendo enviados obrigatoriamente ao Gemini; o prompt agora
+solicita todos os dados pessoais e campos de endereço visíveis, e a resposta é
+mesclada com a leitura determinística sem descartar campos que a IA não retornou.
+A gravação também preserva valores anteriores quando a nova leitura não fornece
+um campo válido. Validação local: 284 testes passaram, build passou com avisos
+preexistentes de Browserslist/chunk e o parser TypeScript do esbuild aceitou a
+Edge Function. Deno não está instalado; não foi feito teste com chamada real ao
+gateway nem deploy remoto nesta validação.
+
 Base do checkout antes desta correção: `a8fbcd6` (`main` sincronizada com
 `origin/main`). O fluxo padrão de criação chama
 `process-documentos-pessoais-pdf`; o retry legado usa `extract-case-data`.
