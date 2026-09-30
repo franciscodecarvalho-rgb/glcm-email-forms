@@ -28,6 +28,15 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Arquivos físicos ficam no Storage; a tabela `arquivos` guarda metadados.
 - A extração por IA usa lotes e consolidação controlada.
 - Contracheques também possuem persistência estruturada.
+- Todos os usuários autenticados do sistema podem consultar casos e seus arquivos;
+  não há requisito de acesso anônimo. Exclusões e gestão de templates são
+  administrativas, e tabelas estruturadas da extração são escritas pelas Edge
+  Functions com `service_role`.
+- O navegador autenticado ainda grava/atualiza documentos em `casos-documentos`
+  durante a geração; não remover essa permissão sem migrar e validar esse fluxo.
+- Alertas de acesso a arquivos compartilhados não devem ser “corrigidos” com
+  isolamento por proprietário sem autorização, pois isso altera o acesso entre
+  usuários já definido para os casos.
 - Templates `.docx` e planilha gerada são mecanismos distintos.
 - O fluxo implementado termina em `concluido` após geração dos documentos.
 - O deploy do projeto será realizado pelo Lovable.

@@ -21,9 +21,11 @@ export function AppHeader() {
           <Button variant="ghost" size="sm" asChild>
             <Link to="/"><LayoutDashboard className="mr-2 h-4 w-4" />Casos</Link>
           </Button>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/templates"><FileText className="mr-2 h-4 w-4" />Templates</Link>
-          </Button>
+          {isAdmin && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/templates"><FileText className="mr-2 h-4 w-4" />Templates</Link>
+            </Button>
+          )}
           <Button variant="ghost" size="sm" asChild>
             <Link to="/Temas"><Tag className="mr-2 h-4 w-4" />Temas</Link>
           </Button>

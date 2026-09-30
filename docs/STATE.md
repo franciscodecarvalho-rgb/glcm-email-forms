@@ -29,14 +29,19 @@ NONE
   aponta usos preexistentes de `any` na Edge Function;
 - `arquivos.processado` é usado pela implementação, mas não aparece nas migrations
   nem nos tipos locais;
-- políticas, buckets e demais partes do schema remoto não foram verificadas;
+- a migration `20260930115916_harden_authenticated_data_access.sql` foi criada
+  para substituir políticas tautológicas por verificação de papel e restringir
+  mutações administrativas/de workers; ainda não foi aplicada ao banco publicado;
+- os alertas de Storage por ausência de vínculo a proprietário permanecem
+  intencionais enquanto a regra for leitura compartilhada dos casos por todos os
+  usuários autenticados;
 - a documentação legada em `context/` não cobre todas as Edge Functions.
 
 ## Open Decisions
 
 - qual será a próxima mudança real a especificar;
 - como resolver e validar a divergência de `arquivos.processado`;
-- política desejada de isolamento/RLS;
+- se a política de acesso compartilhado aos arquivos de todos os casos deve mudar;
 - escopo e prioridade da correção de lint;
 - fonte de verdade para o ambiente publicado e seu processo de validação.
 
@@ -50,11 +55,18 @@ NONE
 
 ## Last Verified
 
-Base desta alteração: `d264400` (`main` e `origin/main`). O fluxo padrão de criação
-chama `process-documentos-pessoais-pdf`; o retry legado usa `extract-case-data`.
-`npm run test` passou (281 testes) e `npm run build` passou, com avisos existentes
-de Browserslist desatualizado e bundle acima de 500 kB. Lint global falha com 240
-erros e 23 avisos legados; ESLint do novo helper/teste passou, mas os arquivos Edge
-Functions ainda reportam erros legados. A validação local das Edge Functions não
-iniciou porque o Docker Desktop está indisponível.
-Commit, push e confirmação do Lovable desta alteração ainda pendentes.
+Base do checkout antes desta correção: `a8fbcd6` (`main` sincronizada com
+`origin/main`). O fluxo padrão de criação chama
+`process-documentos-pessoais-pdf`; o retry legado usa `extract-case-data`.
+`npm run test -- --run` passou (281 testes) e `npm run build` passou, com avisos
+existentes de Browserslist desatualizado e bundle acima de 500 kB. O lint global
+tem erros legados conhecidos.
+
+Para a revisão de segurança de 2026-09-30, foi consultado o schema do projeto
+Lovable associado à aplicação: 7 usuários cadastrados (1 admin e 6 users) e as
+políticas das tabelas/buckets analisados. A migration foi revisada, mas ainda não
+aplicada; não houve alteração remota. `supabase db lint --local` não pôde conectar
+porque o banco local/Docker não estava disponível. ESLint seletivo aponta 12
+ocorrências `no-explicit-any` preexistentes nos arquivos afetados; o diff não
+introduziu novas ocorrências. Esta correção local ainda aguarda confirmação do
+fluxo de release previsto no `context/DEPLOY.md`.

@@ -34,6 +34,7 @@ import {
 import { encontrarRubricasAlerta, encontrarRubricasSemIr } from "@/lib/alertas-rubricas";
 import { dadosEsperadosForamExtraidos } from "@/lib/dados-extraidos";
 import { ordenarPorCompetencia } from "@/lib/planilha-xlsx";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export type CasoData = {
   id: string;
@@ -81,6 +82,7 @@ async function buscarItensContrachequePaginado(contrachequeIds: string[]) {
 }
 
 export default function Caso() {
+  const { isAdmin } = useIsAdmin();
   const { id } = useParams();
   const nav = useNavigate();
   const [caso, setCaso] = useState<CasoData | null>(null);
@@ -201,34 +203,36 @@ export default function Caso() {
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-muted-foreground">{caso.id.slice(0, 8)}</span>
             <StatusBadge status={caso.status} />
-            <AlertDialog open={excluirAberto} onOpenChange={setExcluirAberto}>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm">
-                  <Trash2 className="mr-1 h-4 w-4" />Excluir caso
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Excluir caso</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Deseja excluir o caso de {caso.nome_cliente ?? "cliente não identificado"} ({caso.id.slice(0, 8)})? Esta ação não pode ser desfeita.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={excluindo}>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    disabled={excluindo}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      void excluirCaso();
-                    }}
-                  >
-                    {excluindo ? "Excluindo..." : "Confirmar exclusão"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {isAdmin && (
+              <AlertDialog open={excluirAberto} onOpenChange={setExcluirAberto}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <Trash2 className="mr-1 h-4 w-4" />Excluir caso
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Excluir caso</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Deseja excluir o caso de {caso.nome_cliente ?? "cliente não identificado"} ({caso.id.slice(0, 8)})? Esta ação não pode ser desfeita.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={excluindo}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={excluindo}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        void excluirCaso();
+                      }}
+                    >
+                      {excluindo ? "Excluindo..." : "Confirmar exclusão"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </div>
 
