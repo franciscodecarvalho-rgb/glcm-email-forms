@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { montarVariaveisCaso } from "./caso-variaveis";
-import { selecionarPecas } from "./modelos-documentos";
+import { selecionarPecas, nomeArquivoGerado } from "./modelos-documentos";
 import {
   agregarBancoHorasPorCompetencia,
   agregarContribExtraPorCompetencia,
@@ -162,8 +162,9 @@ export async function gerarDocumentosNoNavegador(
       nullGetter: () => "",
     });
     doc.render(variaveis);
-    const nome = `${peca.tipoSaida}-${baseNome}.docx`;
-    const path = `${caso.id}/${nome}`;
+    const chaveDocx = `${peca.tipoSaida}-${baseNome}.docx`;
+    const nome = nomeArquivoGerado(peca.tipoSaida, caso.nome_cliente, caso.tipo_acao, "docx");
+    const path = `${caso.id}/${chaveDocx}`;
     const bytesDocx = doc.getZip().generate({ type: "uint8array" }) as unknown as BlobPart;
     await subirArquivo(path, new Blob([bytesDocx], { type: MIME_DOCX }), MIME_DOCX);
     gerados.push({ tipo: peca.tipoSaida, storage_path: path, nome });
@@ -203,8 +204,9 @@ export async function gerarDocumentosNoNavegador(
 
   const linhasBancoHoras = agregarBancoHorasPorCompetencia(caso.contracheques_extraidos, itens);
   if (linhasBancoHoras.length) {
-    const nome = `planilha-banco-horas-1513-${baseNome}.xlsx`;
-    const path = `${caso.id}/${nome}`;
+    const chaveBancoHoras = `planilha-banco-horas-1513-${baseNome}.xlsx`;
+    const nome = nomeArquivoGerado("planilha_codigos", caso.nome_cliente, caso.tipo_acao, "xlsx");
+    const path = `${caso.id}/${chaveBancoHoras}`;
     await subirArquivo(path, criarXlsx(montarArquivosPlanilhaBancoHorasXlsx(caso.nome_cliente ?? "", linhasBancoHoras)), MIME_XLSX);
     gerados.push({ tipo: "planilha_codigos", storage_path: path, nome });
   }
@@ -222,8 +224,9 @@ export async function gerarDocumentosNoNavegador(
   if (arquivoUnificado?.storage_path) {
     const { data: pdf, error: pdfErro } = await supabase.storage.from("casos-arquivos").download(arquivoUnificado.storage_path);
     if (pdfErro || !pdf) throw new Error("Falha ao baixar o PDF unificado de contracheques");
-    const nome = `contracheques-unificados-${baseNome}.pdf`;
-    const path = `${caso.id}/${nome}`;
+    const chavePdf = `contracheques-unificados-${baseNome}.pdf`;
+    const nome = nomeArquivoGerado("contracheques_unificados", caso.nome_cliente, caso.tipo_acao, "pdf");
+    const path = `${caso.id}/${chavePdf}`;
     await subirArquivo(path, pdf, "application/pdf");
     gerados.push({ tipo: "contracheques_unificados", storage_path: path, nome });
   }

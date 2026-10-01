@@ -121,6 +121,38 @@ function selecionarPecas(tipoAcao: string, escritorios: string[]): PecaSeleciona
   return pecas;
 }
 
+// Espelho de src/lib/modelos-documentos.ts (nomeArquivoGerado e rótulos).
+// A planilha principal e a complementar seguem inline (rótulo de ação fixo).
+const NOME_ARQUIVO_TIPO: Record<string, string> = {
+  peticao: "Petição Inicial",
+  contrato: "Contrato",
+  termo_renuncia: "Termo de Renúncia",
+  declaracao_pobreza: "Declaração de Pobreza",
+  procuracao_glcm: "Procuração GLCM",
+  procuracao_polkowski: "Procuração Polkowski",
+  termo_lgpd_glcm: "Termo LGPD GLCM",
+  termo_lgpd_polkowski: "Termo LGPD Polkowski",
+  planilha_codigos: "Planilha Códigos 1513",
+  contracheques_unificados: "Contracheques Unificados",
+};
+
+function rotuloAcaoArquivo(tipoAcao: string): string {
+  return tipoAcao === "contribuicao_extraordinaria"
+    ? "IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA"
+    : "IR SOBRE HRA";
+}
+
+function nomeArquivoGerado(
+  tipoSaida: string,
+  nomeCliente: string | null | undefined,
+  tipoAcao: string,
+  extensao: string,
+): string {
+  const tipo = NOME_ARQUIVO_TIPO[tipoSaida] ?? tipoSaida;
+  const cliente = nomeCliente ?? "";
+  return `${tipo} — ${cliente} — ${rotuloAcaoArquivo(tipoAcao)}.${extensao}`;
+}
+
 function garantirMarcadorNumeroContrato(zip: PizZip): void {
   const arquivosXml = Object.keys(zip.files).filter((nome) =>
     /^word\/(?:document|header\d+)\.xml$/.test(nome)
@@ -1349,8 +1381,9 @@ Deno.serve(async (req) => {
       doc.render(data);
       const out: Uint8Array = doc.getZip().generate({ type: "uint8array" });
 
-      const safeName = `${peca.tipoSaida}-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.docx`;
-      const path = `${caso.id}/${safeName}`;
+      const chaveDocx = `${peca.tipoSaida}-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.docx`;
+      const nomeDocx = nomeArquivoGerado(peca.tipoSaida, caso.nome_cliente, caso.tipo_acao, "docx");
+      const path = `${caso.id}/${chaveDocx}`;
       const { error: upErr } = await supabase.storage
         .from("casos-documentos")
         .upload(path, out, {
@@ -1358,7 +1391,7 @@ Deno.serve(async (req) => {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         });
       if (upErr) throw upErr;
-        generated.push({ tipo: peca.tipoSaida, storage_path: path, nome: safeName });
+        generated.push({ tipo: peca.tipoSaida, storage_path: path, nome: nomeDocx });
       }
     }
 
@@ -1449,8 +1482,9 @@ Deno.serve(async (req) => {
         const zipBH = new PizZip();
         for (const [caminho, conteudo] of Object.entries(partesBH)) zipBH.file(caminho, conteudo);
         const outBH: Uint8Array = zipBH.generate({ type: "uint8array" });
-        const nomeBH = `planilha-banco-horas-1513-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
-        const pathBH = `${caso.id}/${nomeBH}`;
+        const chaveBH = `planilha-banco-horas-1513-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.xlsx`;
+        const nomeBH = nomeArquivoGerado("planilha_codigos", caso.nome_cliente, caso.tipo_acao, "xlsx");
+        const pathBH = `${caso.id}/${chaveBH}`;
         const { error: upBHErr } = await supabase.storage
           .from("casos-documentos")
           .upload(pathBH, outBH, {
@@ -1483,8 +1517,9 @@ Deno.serve(async (req) => {
           .download(arquivoUnificado.storage_path);
         if (dlErr || !blob) throw new Error("Falha ao baixar o PDF unificado de contracheques");
         const bytes = new Uint8Array(await blob.arrayBuffer());
-        const nomeUni = `contracheques-unificados-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`;
-        const pathUni = `${caso.id}/${nomeUni}`;
+        const chaveUni = `contracheques-unificados-${(caso.numero_pasta || caso.id.slice(0, 8)).replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`;
+        const nomeUni = nomeArquivoGerado("contracheques_unificados", caso.nome_cliente, caso.tipo_acao, "pdf");
+        const pathUni = `${caso.id}/${chaveUni}`;
         const { error: upUniErr } = await supabase.storage
           .from("casos-documentos")
           .upload(pathUni, bytes, { upsert: true, contentType: "application/pdf" });

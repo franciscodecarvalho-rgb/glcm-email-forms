@@ -47,6 +47,13 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Um upload manual só vira Caso depois de comprovantes pessoais e contracheques
   serem enviados, processados, persistidos e confirmados; registros provisórios
   ficam fora da listagem operacional até cumprir esses requisitos.
+- Os arquivos gerados seguem o nome `Tipo de Documento — Nome cliente — Tipo ação`
+  (ex.: `Procuração Polkowski — DANIEL RICARDO SIMOES DE MENEZES — IR SOBRE HRA.docx`);
+  o tipo usa capitalização natural, a Planilha mantém `PLANILHA` em maiúsculas e a
+  ação usa `IR SOBRE HRA` (ou `IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA`). A chave do
+  Storage permanece sanitizada; `nome` é o rótulo de exibição/download. Fonte
+  canônica: `src/lib/modelos-documentos.ts` (`nomeArquivoGerado`), espelhada na
+  Edge Function `generate-documents`.
 
 ## Divergências conhecidas
 

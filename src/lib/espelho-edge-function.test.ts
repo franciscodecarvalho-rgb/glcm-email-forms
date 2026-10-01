@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { selecionarPecas } from "./modelos-documentos";
+import { selecionarPecas, nomeArquivoGerado } from "./modelos-documentos";
 import {
   agregarBancoHorasPorCompetencia,
   agregarContribExtraPorCompetencia,
@@ -37,10 +37,13 @@ function carregarTrechoDaFuncao<T extends Record<string, unknown>>(
   return new Function(`${js}; return { ${exportados.join(", ")} };`)() as T;
 }
 
-const edgePecas = carregarTrechoDaFuncao<{ selecionarPecas: typeof selecionarPecas }>(
+const edgePecas = carregarTrechoDaFuncao<{
+  selecionarPecas: typeof selecionarPecas;
+  nomeArquivoGerado: typeof nomeArquivoGerado;
+}>(
   "const DOCUMENTOS_POR_TIPO_ACAO",
   "function garantirMarcadorNumeroContrato",
-  ["selecionarPecas"],
+  ["selecionarPecas", "nomeArquivoGerado"],
 );
 
 const edgePlanilha = carregarTrechoDaFuncao<{
@@ -94,6 +97,22 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     }
     expect(erroEdge).not.toBe("");
     expect(() => selecionarPecas("desconhecido", [])).toThrow(erroEdge);
+  });
+
+  it("nomeArquivoGerado: saída idêntica em src/lib e na Edge Function", () => {
+    const casos: Array<[string, string | null, string, string]> = [
+      ["peticao", "FULANO", "ir_sobre_hra", "docx"],
+      ["procuracao_polkowski", "DANIEL RICARDO SIMOES DE MENEZES", "ir_sobre_hra", "docx"],
+      ["termo_lgpd_glcm", null, "horas_extras", "docx"],
+      ["declaracao_pobreza", "FULANO", "supressao_folgas", "docx"],
+      ["contracheques_unificados", "FULANO", "tema_324", "pdf"],
+      ["planilha_codigos", "FULANO", "contribuicao_extraordinaria", "xlsx"],
+    ];
+    for (const [tipo, cliente, acao, ext] of casos) {
+      expect(nomeArquivoGerado(tipo, cliente, acao, ext)).toBe(
+        edgePecas.nomeArquivoGerado(tipo, cliente, acao, ext),
+      );
+    }
   });
 
   it("planilha: saída byte a byte idêntica", () => {
