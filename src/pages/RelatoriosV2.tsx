@@ -150,8 +150,23 @@ export default function RelatoriosV2() {
   const [opcoesEmpresa, setOpcoesEmpresa] = useState<Fonte<EmpresaSelecionada>>({ estado: "ok", dados: [] });
   const [buscandoEmpresas, setBuscandoEmpresas] = useState(false);
 
-  // Busca rápida na tabela de clientes
+  // Busca rápida na tabela de clientes com debounce e integração global server-side
   const [buscaClienteLocal, setBuscaClienteLocal] = useState("");
+  const [buscaClienteDebounced, setBuscaClienteDebounced] = useState("");
+
+  // Cache em memória dos lançamentos canônicos por pessoa (0ms em refiltros e reaberturas)
+  const cacheLancamentosRef = useRef<Map<string, Linha[]>>(new Map());
+
+  // Debounce de 350ms para busca server-side responsiva
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setBuscaClienteDebounced(buscaClienteLocal);
+      if (buscaClienteLocal.trim() !== buscaClienteDebounced.trim()) {
+        setPagina(0);
+      }
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [buscaClienteLocal, buscaClienteDebounced]);
 
   const [totais, setTotais] = useState<Record<OrigemRelatorio, Fonte<Record<string, unknown>>>>({
     casos: { estado: "ok", dados: [] },
@@ -169,6 +184,7 @@ export default function RelatoriosV2() {
     origem: OrigemRelatorio;
     temaDestaque?: string;
   } | null>(null);
+  const [temaFiltroModal, setTemaFiltroModal] = useState<string | null>(null);
   const [lancamentos, setLancamentos] = useState<Fonte<Linha>>({ estado: "ok", dados: [] });
   const [paginaLancamentos, setPaginaLancamentos] = useState(0);
   const [carregandoLancamentos, setCarregandoLancamentos] = useState(false);
@@ -216,8 +232,9 @@ export default function RelatoriosV2() {
       empresas: empresasPorOrigem(filtros.empresas, "historico"),
       de: payload.p_de,
       ate: payload.p_ate,
+      busca_cliente: buscaClienteDebounced.trim() || null,
     }),
-    [payload, filtros.empresas],
+    [payload, filtros.empresas, buscaClienteDebounced],
   );
 
   const usaCasos = filtros.origem !== "historico";
@@ -371,10 +388,14 @@ export default function RelatoriosV2() {
     });
   }, [linhasVisiveis, buscaClienteLocal]);
 
-  // Cálculo das 4 métricas de gestão aprovadas por Ana e Nodley
+  // Cálculo das 4 métricas de gestão aprovadas por Ana e Nodley (Reativo ao filtro ativo)
   const metricasGestao = useMemo(() => {
     const dadosParaMetricas = (
-      linhas.casos.dados.length > 0 ? linhas.casos.dados : linhas.historico.dados
+      linhasFiltradasLocal.length > 0
+        ? linhasFiltradasLocal
+        : linhasVisiveis.length > 0
+          ? linhasVisiveis
+          : (linhas.casos.dados.length > 0 ? linhas.casos.dados : linhas.historico.dados)
     ) as Array<{
       pessoa_cpf?: string | null;
       empresa?: string | null;
@@ -382,9 +403,11 @@ export default function RelatoriosV2() {
       proventos?: number | null;
       descontos?: number | null;
     }>;
-    const totalPessoasBase = subtotais.somaSimples.pessoas;
+    const totalPessoasBase = buscaClienteDebounced.trim()
+      ? dadosParaMetricas.length
+      : (subtotais.somaSimples.pessoas || dadosParaMetricas.length);
     return calcularMetricasGestao(dadosParaMetricas, totalPessoasBase);
-  }, [linhas, subtotais]);
+  }, [linhasFiltradasLocal, linhasVisiveis, linhas, subtotais, buscaClienteDebounced]);
 
   const proximaDisponivel = useMemo(() => {
     if (visao === "tema") return false;
@@ -430,9 +453,11 @@ export default function RelatoriosV2() {
   };
 
   const limpar = () => {
+    cacheLancamentosRef.current.clear();
     setRascunho({ ...FILTROS_INICIAIS });
     setBuscaEmpresa("");
     setBuscaClienteLocal("");
+    setBuscaClienteDebounced("");
     setPagina(0);
     setFiltros({ ...FILTROS_INICIAIS });
     setConsultou(false);
@@ -493,6 +518,15 @@ export default function RelatoriosV2() {
 
   const carregarLancamentos = useCallback(
     async (pessoa: { id: string; origem: OrigemRelatorio }) => {
+      const chaveCache = `${pessoa.origem}:${pessoa.id}`;
+      // Cache de performance: se o cliente já foi carregado, recupera em 0ms sem nova requisição
+      if (cacheLancamentosRef.current.has(chaveCache)) {
+        const dadosEmCache = cacheLancamentosRef.current.get(chaveCache)!;
+        setLancamentos({ estado: "ok", dados: dadosEmCache });
+        setCarregandoLancamentos(false);
+        return;
+      }
+
       const serie = ++serieLancamentos.current;
       setCarregandoLancamentos(true);
       const r =
@@ -500,19 +534,22 @@ export default function RelatoriosV2() {
           ? await consultarCasos<Linha>("relatorio_lancamentos_pessoa", {
               ...payload,
               p_pessoa_id: pessoa.id,
-              p_limit: 500,
+              p_limit: 1000,
               p_offset: 0,
             })
           : await consultarHistorico<Linha>("lancamentos", {
               ...corpoHistorico,
               pessoa_id: pessoa.id,
-              limit: 500,
+              limit: 1000,
               offset: 0,
             });
       if (serie !== serieLancamentos.current) return;
 
       // Deduplicação canônica imediata para eliminar repetições de holerites idênticos
       const dadosDedup = deduplicarLancamentos(r.dados);
+      if (r.estado === "ok") {
+        cacheLancamentosRef.current.set(chaveCache, dadosDedup);
+      }
       setLancamentos({
         ...r,
         dados: dadosDedup,
@@ -569,39 +606,74 @@ export default function RelatoriosV2() {
     temaDestaque?: string,
   ) => {
     setPessoaAberta({ id, nome, origem, temaDestaque });
+    setTemaFiltroModal(temaDestaque ?? null);
     setPaginaLancamentos(0);
-    setLancamentos({ estado: "ok", dados: [] });
-    await carregarLancamentos({ id, origem });
+
+    const chaveCache = `${origem}:${id}`;
+    if (cacheLancamentosRef.current.has(chaveCache)) {
+      setLancamentos({ estado: "ok", dados: cacheLancamentosRef.current.get(chaveCache)! });
+      setCarregandoLancamentos(false);
+    } else {
+      setLancamentos({ estado: "ok", dados: [] });
+      await carregarLancamentos({ id, origem });
+    }
   };
 
   const irParaPaginaLancamentos = (pag: number) => {
     setPaginaLancamentos(pag);
   };
 
+  // Identifica todos os temas presentes nos lançamentos já carregados desta pessoa
+  const temasDisponiveisCliente = useMemo(() => {
+    if (lancamentos.dados.length === 0) return [];
+    const nomesEncontrados = new Set<string>();
+    for (const item of lancamentos.dados) {
+      const desc = (txt(item.descricao) ?? "").toLowerCase();
+      for (const t of temas) {
+        if (t.termos.some((termo) => desc.includes(termo.toLowerCase().trim()))) {
+          nomesEncontrados.add(t.nome);
+        }
+      }
+    }
+    return Array.from(nomesEncontrados).sort();
+  }, [lancamentos.dados, temas]);
+
+  // Lançamentos filtrados no modal com base no tema ativo (instantâneo em 0ms via memória)
+  const lancamentosFiltradosModal = useMemo(() => {
+    if (!temaFiltroModal) return lancamentos.dados;
+    const tAlvo = temas.find((t) => t.nome === temaFiltroModal);
+    const termos = tAlvo?.termos ?? [temaFiltroModal.toLowerCase()];
+    return lancamentos.dados.filter((l) => {
+      const desc = (txt(l.descricao) ?? "").toLowerCase();
+      return termos.some((termo) => desc.includes(termo.toLowerCase().trim()));
+    });
+  }, [lancamentos.dados, temaFiltroModal, temas]);
+
   const lancamentosPaginados = useMemo(() => {
     const inicio = paginaLancamentos * LANCAMENTOS_POR_PAGINA;
-    return lancamentos.dados.slice(inicio, inicio + LANCAMENTOS_POR_PAGINA);
-  }, [lancamentos.dados, paginaLancamentos]);
+    return lancamentosFiltradosModal.slice(inicio, inicio + LANCAMENTOS_POR_PAGINA);
+  }, [lancamentosFiltradosModal, paginaLancamentos]);
 
-  const proximaLancamentos = (paginaLancamentos + 1) * LANCAMENTOS_POR_PAGINA < lancamentos.dados.length;
+  const proximaLancamentos = (paginaLancamentos + 1) * LANCAMENTOS_POR_PAGINA < lancamentosFiltradosModal.length;
 
-  // Totalização do tema selecionado para o modal
+  // Totalização do tema ativo selecionado para o modal
+  const temaAtivoModal = temaFiltroModal ?? pessoaAberta?.temaDestaque;
   const resumoTemaDestaque = useMemo(() => {
-    if (!pessoaAberta?.temaDestaque || lancamentos.dados.length === 0) return null;
-    const temaAlvo = pessoaAberta.temaDestaque.toLowerCase();
-    const termoTema = temas.find((t) => t.nome === pessoaAberta.temaDestaque)?.termos ?? [temaAlvo];
+    if (!temaAtivoModal || lancamentos.dados.length === 0) return null;
+    const temaAlvo = temaAtivoModal.toLowerCase();
+    const termoTema = temas.find((t) => t.nome === temaAtivoModal)?.termos ?? [temaAlvo];
 
     const itensDoTema = lancamentos.dados.filter((l) => {
       const desc = txt(l.descricao)?.toLowerCase() ?? "";
       return termoTema.some((termo) => desc.includes(termo.toLowerCase().trim()));
     });
 
-    const itens = itensDoTema.length > 0 ? itensDoTema : lancamentos.dados;
+    if (itensDoTema.length === 0) return null;
     let proventos = 0;
     let descontos = 0;
     const comps = new Set<string>();
 
-    for (const item of itens) {
+    for (const item of itensDoTema) {
       const v = num(item.valor);
       if (item.tipo === "provento") proventos += v;
       if (item.tipo === "desconto") descontos += v;
@@ -614,7 +686,7 @@ export default function RelatoriosV2() {
     const viavel = acaoViavel(saldo);
 
     return {
-      nomeTema: pessoaAberta.temaDestaque,
+      nomeTema: temaAtivoModal,
       saldo,
       proventos,
       descontos,
@@ -622,7 +694,7 @@ export default function RelatoriosV2() {
       mediaMensal,
       viavel,
     };
-  }, [pessoaAberta, lancamentos, temas]);
+  }, [temaAtivoModal, lancamentos, temas]);
 
   return (
     <div className="min-h-screen bg-muted/20">
@@ -1319,6 +1391,43 @@ export default function RelatoriosV2() {
               </p>
             ) : (
               <div className="space-y-4 pt-2">
+                {/* FILTRO DE TEMAS EM MEMÓRIA (0ms SEM NOVA REQUISIÇÃO) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 p-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-semibold text-foreground text-[11px] mr-1">Filtrar tema:</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={temaFiltroModal === null ? "default" : "outline"}
+                      className="h-6 text-[11px] px-2"
+                      onClick={() => {
+                        setTemaFiltroModal(null);
+                        setPaginaLancamentos(0);
+                      }}
+                    >
+                      Todos ({lancamentos.dados.length})
+                    </Button>
+                    {temasDisponiveisCliente.map((t) => (
+                      <Button
+                        key={t}
+                        type="button"
+                        size="sm"
+                        variant={temaFiltroModal === t ? "default" : "outline"}
+                        className="h-6 text-[11px] px-2"
+                        onClick={() => {
+                          setTemaFiltroModal(t);
+                          setPaginaLancamentos(0);
+                        }}
+                      >
+                        {t}
+                      </Button>
+                    ))}
+                  </div>
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground bg-background border-dashed">
+                    ⚡ Em memória (0ms)
+                  </Badge>
+                </div>
+
                 <div className="overflow-x-auto rounded-lg border">
                   <Table>
                     <TableHeader>

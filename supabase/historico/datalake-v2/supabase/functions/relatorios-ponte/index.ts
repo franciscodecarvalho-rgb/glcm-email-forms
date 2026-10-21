@@ -169,6 +169,10 @@ Deno.serve(async (req) => {
       params.p_limit = inteiro(body?.limit, 50, 500);
       params.p_offset = inteiro(body?.offset, 0, 1_000_000);
     }
+    if (acao === "resumo_pessoas") {
+      const busca = texto(body?.busca_cliente)?.trim();
+      params.p_busca_cliente = busca ? busca : null;
+    }
     if (acao === "lancamentos") {
       const pessoa = (texto(body?.pessoa_id) ?? "").trim();
       if (!pessoa) return json({ error: "pessoa_id obrigatório" }, 400);
