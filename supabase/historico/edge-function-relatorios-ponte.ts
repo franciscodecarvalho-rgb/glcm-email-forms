@@ -49,6 +49,16 @@ const ACOES: Record<string, string> = {
   rubricas: "relatorio_rubricas",
   opcoes_empresa: "relatorio_opcoes_empresa",
 };
+const ACOES_V2: Record<string, string> = {
+  total_geral: "relatorio_v2_total_geral",
+  totais_tema: "relatorio_v2_totais_tema",
+  por_pessoa: "relatorio_v2_por_pessoa",
+  resumo_pessoas: "relatorio_v2_resumo_pessoas",
+  por_empresa: "relatorio_v2_por_empresa",
+  lancamentos: "relatorio_v2_lancamentos_pessoa",
+  rubricas: "relatorio_v2_rubricas",
+  opcoes_empresa: "relatorio_v2_opcoes_empresa",
+};
 
 const texto = (v: unknown) => (typeof v === "string" ? v : null);
 
@@ -134,7 +144,9 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const acao = texto(body?.acao) ?? "";
-    const rpc = ACOES[acao];
+    const versao = texto(body?.versao) ?? "v1";
+    const tabelaAcoes = versao === "v2" ? ACOES_V2 : ACOES;
+    const rpc = tabelaAcoes[acao];
     if (!rpc) return json({ error: "Ação inválida" }, 400);
 
     const params: Record<string, unknown> = {
