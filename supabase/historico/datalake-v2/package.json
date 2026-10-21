@@ -1,0 +1,7 @@
+{
+  "name": "glcm-datalake-v2-validacao",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node test-db.mjs" },
+  "devDependencies": { "@electric-sql/pglite": "0.5.9" }
+}
