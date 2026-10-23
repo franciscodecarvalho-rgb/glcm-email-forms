@@ -1,6 +1,8 @@
 import type { TextItemPdf } from "@/lib/parse-contracheque-pdf";
 export type { TextItemPdf } from "@/lib/parse-contracheque-pdf";
-import { parsePaginaContracheque } from "@/lib/parse-contracheque-pdf";
+import { parsePaginaContracheque, parsePaginasContracheque } from "@/lib/parse-contracheque-pdf";
+import { criarSessaoOcr, OCR_MIN_CONFIDENCE, type OcrProgress } from "@/lib/ocr-pdf";
+import type { PDFPageProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 function lerArquivo(arquivo: File): Promise<ArrayBuffer> {
@@ -73,11 +75,76 @@ async function extrairItensPorPagina(bytes: ArrayBuffer | Uint8Array): Promise<T
   }
 }
 
+async function adicionarCamadaOcr(
+  bytes: ArrayBuffer | Uint8Array,
+  onProgress?: (progresso: OcrProgress) => void,
+): Promise<Uint8Array> {
+  const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist");
+  GlobalWorkerOptions.workerSrc = workerUrl;
+  const copia = bytes instanceof Uint8Array ? bytes.slice() : new Uint8Array(bytes).slice();
+  const doc = await getDocument({ data: copia }).promise;
+  const paginasSemTexto: Array<{ numero: number; pagina: PDFPageProxy }> = [];
+
+  try {
+    for (let numero = 1; numero <= doc.numPages; numero++) {
+      const pagina = await doc.getPage(numero);
+      const conteudo = await pagina.getTextContent();
+      const temTexto = conteudo.items.some((item) => "str" in item && typeof item.str === "string" && item.str.trim());
+      if (!temTexto && typeof pagina.getViewport === "function" && typeof pagina.render === "function") {
+        paginasSemTexto.push({ numero, pagina });
+      } else {
+        pagina.cleanup();
+      }
+    }
+
+    if (!paginasSemTexto.length) return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+
+    const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+    const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const fonte = await pdf.embedFont(StandardFonts.Helvetica);
+    const sessao = await criarSessaoOcr();
+    let alterado = false;
+
+    try {
+      for (const [indice, entrada] of paginasSemTexto.entries()) {
+        const resultado = await sessao.reconhecerPagina(entrada.pagina);
+        const paginaPdf = pdf.getPage(entrada.numero - 1);
+        const itensAceitos = resultado.confianca >= OCR_MIN_CONFIDENCE ? resultado.itens : [];
+        for (const item of itensAceitos) {
+          paginaPdf.drawText(item.str, {
+            x: item.x,
+            y: Math.max(0, item.y - item.height * 0.25),
+            size: Math.max(4, item.height * 0.75),
+            font: fonte,
+            color: rgb(1, 1, 1),
+            opacity: 0,
+          });
+        }
+        if (itensAceitos.length) alterado = true;
+        onProgress?.({
+          pagina: entrada.numero,
+          totalPaginas: doc.numPages,
+          confianca: resultado.confianca,
+          itens: itensAceitos.length,
+        });
+        entrada.pagina.cleanup();
+        if (indice < paginasSemTexto.length - 1) await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } finally {
+      await sessao.encerrar();
+    }
+
+    return alterado ? pdf.save() : bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  } finally {
+    await doc.destroy();
+  }
+}
+
 // Competência (MM/AAAA) do primeiro contracheque reconhecido nas páginas.
 export function competenciaDoArquivo(paginas: TextItemPdf[][]): string | null {
   for (const pagina of paginas) {
     const largura = Math.max(...pagina.map((i) => i.x + i.width), 595);
-    const contra = parsePaginaContracheque(pagina, largura);
+    const contra = parsePaginasContracheque(pagina, largura).find((item) => item.competencia) ?? parsePaginaContracheque(pagina, largura);
     if (contra.competencia) return contra.competencia;
   }
   return null;
@@ -91,7 +158,7 @@ export function competenciaDoArquivo(paginas: TextItemPdf[][]): string | null {
 export function competenciasPorPagina(paginas: TextItemPdf[][]): (string | null)[] {
   return paginas.map((pagina) => {
     const largura = Math.max(...pagina.map((i) => i.x + i.width), 595);
-    return parsePaginaContracheque(pagina, largura).competencia;
+    return parsePaginasContracheque(pagina, largura).find((item) => item.competencia)?.competencia ?? null;
   });
 }
 
@@ -146,7 +213,10 @@ export type LotePdf = { ordem: number; pagina_inicio: number; pagina_fim: number
 // Normaliza e descriptografa os PDFs de origem, calculando a competência de
 // cada página (ver `agruparPaginasPorCompetencia`). Não ordena aqui: a ordem
 // depende dos blocos de todos os arquivos juntos (ver `ordenarUnidades`).
-async function prepararArquivos(arquivos: File[]): Promise<ArquivoPreparado[]> {
+async function prepararArquivos(
+  arquivos: File[],
+  onOcrProgress?: (progresso: OcrProgress) => void,
+): Promise<ArquivoPreparado[]> {
   if (arquivos.length === 0) throw new Error("Nenhum contracheque foi selecionado");
 
   const { PDFDocument } = await import("pdf-lib");
@@ -167,6 +237,13 @@ async function prepararArquivos(arquivos: File[]): Promise<ArquivoPreparado[]> {
       // Normaliza o PDF antes de extrair e copiar as páginas para contornar
       // erros de estrutura interna (PDFDict undefined) em PDFs descriptografados.
       bytes = await origem.save();
+      try {
+        bytes = await adicionarCamadaOcr(bytes, onOcrProgress);
+      } catch (erro) {
+        // OCR é uma melhoria local: se os assets/worker não estiverem disponíveis,
+        // preserva o PDF original para o fallback já existente na Edge Function.
+        console.warn("OCR local indisponível; mantendo PDF original", erro instanceof Error ? erro.message : erro);
+      }
 
       const totalPaginasArquivo = origem.getPageCount();
       let blocos: BlocoPaginas[] = totalPaginasArquivo
@@ -249,9 +326,10 @@ export function planejarIntervalos(
 export async function unificarPdfsEmLotes(
   arquivos: File[],
   tamanhoLote = TAMANHO_LOTE_PAGINAS,
+  onOcrProgress?: (progresso: OcrProgress) => void,
 ): Promise<{ unificado: File; lotes: LotePdf[] }> {
   const { PDFDocument } = await import("pdf-lib");
-  const bytesUnificado = await montarUnificado(await prepararArquivos(arquivos));
+  const bytesUnificado = await montarUnificado(await prepararArquivos(arquivos, onOcrProgress));
 
   const origem = await PDFDocument.load(bytesUnificado, { ignoreEncryption: true });
   const total = origem.getPageCount();

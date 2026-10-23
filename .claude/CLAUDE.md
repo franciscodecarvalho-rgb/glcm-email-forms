@@ -28,9 +28,32 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Arquivos físicos ficam no Storage; a tabela `arquivos` guarda metadados.
 - A extração por IA usa lotes e consolidação controlada.
 - Contracheques também possuem persistência estruturada.
+- Todos os usuários autenticados do sistema podem consultar casos e seus arquivos;
+  não há requisito de acesso anônimo. Exclusões e gestão de templates são
+  administrativas, e tabelas estruturadas da extração são escritas pelas Edge
+  Functions com `service_role`.
+- O navegador autenticado ainda grava/atualiza documentos em `casos-documentos`
+  durante a geração; não remover essa permissão sem migrar e validar esse fluxo.
+- Alertas de acesso a arquivos compartilhados não devem ser “corrigidos” com
+  isolamento por proprietário sem autorização, pois isso altera o acesso entre
+  usuários já definido para os casos.
 - Templates `.docx` e planilha gerada são mecanismos distintos.
 - O fluxo implementado termina em `concluido` após geração dos documentos.
 - O deploy do projeto será realizado pelo Lovable.
+- Após cada interação do Lovable que possa sincronizar código, comparar o SHA local,
+  `origin/main`, o SHA reconhecido pelo Lovable e o SHA publicado; inspecionar qualquer
+  avanço remoto e sincronizá-lo por fast-forward somente após revisar o diff e preservar
+  o trabalho local. Nunca esconder divergências com reset ou force-push.
+- Um upload manual só vira Caso depois de comprovantes pessoais e contracheques
+  serem enviados, processados, persistidos e confirmados; registros provisórios
+  ficam fora da listagem operacional até cumprir esses requisitos.
+- Os arquivos gerados seguem o nome `Tipo de Documento — Nome cliente — Tipo ação`
+  (ex.: `Procuração Polkowski — DANIEL RICARDO SIMOES DE MENEZES — IR SOBRE HRA.docx`);
+  o tipo usa capitalização natural, a Planilha mantém `PLANILHA` em maiúsculas e a
+  ação usa `IR SOBRE HRA` (ou `IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA`). A chave do
+  Storage permanece sanitizada; `nome` é o rótulo de exibição/download. Fonte
+  canônica: `src/lib/modelos-documentos.ts` (`nomeArquivoGerado`), espelhada na
+  Edge Function `generate-documents`.
 
 ## Divergências conhecidas
 
@@ -297,7 +320,7 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `src/lib/unificar-pdfs.ts` calcula a competência de cada página (`competenciasPorPagina`), agrupa páginas consecutivas da mesma competência em blocos (`agruparPaginasPorCompetencia`, página sem competência reconhecida vira continuação do bloco anterior) e ordena os blocos com `ordenarPorCompetencia` (`ordenarUnidades`), não mais os arquivos inteiros — `prepararArquivos`/`montarUnificado`/`unificarPdfsEmLotes` usam esse fluxo. Só confia no agrupamento por página quando a extração via pdf.js enxerga o mesmo número de páginas que o pdf-lib real; senão mantém o arquivo inteiro como um bloco único (fallback de segurança para não perder páginas).
 **Evitar:** Voltar a tratar o arquivo inteiro como uma única unidade de ordenação, ou confiar no agrupamento por página quando a contagem de páginas da extração não bate com a do PDF real.
 
-### 2026-09 — Extração pessoal determinística antes de IA
+### 2026-09 — Extração pessoal determinística antes de IA (superada em 30/09/2026)
 
 **Regra confirmada:** Documentos pessoais em PDF devem tentar extração determinística validada antes de qualquer chamada ao Gemini; a IA é fallback individual apenas para o arquivo insuficiente ou escaneado.
 **Origem:** Especificação `Extracao_Pdf - V2` aprovada por Nodley.
@@ -347,3 +370,31 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Correção expressa de Nodley durante a implementação dos relatórios por tema.
 **Aplicação:** Fazer o ciclo local → validações → Git → Lovable, sem editar ou construir funcionalidades no Lovable.
 **Evitar:** Usar o Lovable para implementar, testar ou alterar o código-fonte do projeto.
+
+### 2026-09 — Recibos BASF retificados no cálculo HRA
+
+**Regra confirmada:** Na BASF, `Pagamento Referente a` iniciado por `R` antes do mês marca o recibo retificado. Se houver recibos retificado e original da mesma competência no mesmo caso, somente o retificado compõe o cálculo HRA/AHRA.
+**Origem:** PDF BASF enviado por Nodley em 29/09/2026, com pares original/retificado nas competências analisadas.
+**Aplicação:** Persistir o marcador em `contracheques.retificado`; manter ambos os recibos e aplicar a substituição somente na consolidação da revisão e da planilha HRA do caso.
+**Evitar:** Somar as duas versões, apagar o original ou aplicar a regra a outras empresas.
+
+### 2026-09 — IA exclusiva para comprovantes de residência (superada em 30/09/2026)
+
+**Regra confirmada:** O Gemini deve ser usado exclusivamente para comprovantes de residência, com foco no endereço completo. CNH, RG, CIN e CPF permanecem na extração determinística/revisão manual; contracheques nunca são enviados à IA generativa.
+**Origem:** Correção expressa de Nodley após identificar que a extração determinística passou a dispensar a IA ao encontrar apenas o CEP.
+**Aplicação:** Nos fluxos de extração pessoal e de reprocessamento, encaminhar ao gateway somente arquivos reconhecidos como comprovantes de residência. Não considerar a presença isolada de CEP como substituto da extração do endereço pela IA.
+**Evitar:** Enviar identidade ou contracheques ao Gemini, ou marcar endereço como plenamente extraído apenas porque o CEP foi localizado.
+
+### 2026-09 — Gemini obrigatório em documentos pessoais; confirmação manual em caso de falha
+
+**Regra confirmada:** PDFs enviados como documentos pessoais (comprovante de residência, CNH, RG, CIN, CPF ou outro documento pessoal) devem ser lidos pelo Gemini. Contracheques continuam fora do Gemini e seguem o fluxo específico de contracheques.
+**Origem:** Solicitação de Nodley em 30/09/2026, confirmando que, se a extração do Gemini falhar ou não retornar dados utilizáveis, o PDF original deve permanecer anexado e os campos devem ser preenchidos manualmente.
+**Aplicação:** Usar a leitura determinística somente como complemento à resposta do Gemini; não persistir respostas vazias ou CPF inválido. Se os dados essenciais ficarem incompletos ou a chamada falhar, abrir a confirmação editável, mostrar o aviso e conservar os PDFs no Storage e no registro de arquivos. Ao confirmar os campos manuais, limpar o erro de processamento.
+**Evitar:** Usar Gemini para contracheques, excluir/substituir o documento enviado em caso de falha, ou afirmar que houve extração completa sem dados úteis.
+
+### 2026-09 — CPF válido torna RG opcional na importação
+
+**Regra confirmada:** Um CPF válido extraído da CNH ou de outro documento é suficiente para a identificação do cliente; não exigir RG para confirmar ou concluir a importação.
+**Origem:** Solicitação de Nodley em 30/09/2026.
+**Aplicação:** Gemini deve ler a CNH visualmente e procurar o CPF mesmo em PDF escaneado; enviar PDFs como partes `file` multimodais. Preservar a validação de CPF e os demais requisitos (nome, logradouro, comprovantes, contracheques e rubricas). RG pode ser salvo se impresso, mas fica opcional.
+**Evitar:** Tratar RG como requisito quando o CPF está válido, ou usar RG como substituto de CPF.

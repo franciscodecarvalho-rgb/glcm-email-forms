@@ -4,11 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { TEMPLATE_TIPOS, TemplateTipo } from "@/lib/status";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { toast } from "sonner";
 
 type TplRow = { tipo: string; nome: string; storage_path: string; updated_at: string };
 
 export default function Templates() {
+  const { isAdmin } = useIsAdmin();
   const [rows, setRows] = useState<Record<string, TplRow>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -52,8 +54,14 @@ export default function Templates() {
       <main className="container max-w-3xl py-8">
         <h1 className="text-2xl font-bold">Templates de Documentos</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Envie cada modelo <code className="rounded bg-muted px-1">.docx</code> no tipo correspondente, com placeholders no formato <code className="rounded bg-muted px-1">{`{NOME_CLIENTE}`}</code>, <code className="rounded bg-muted px-1">{`{CPF}`}</code>, <code className="rounded bg-muted px-1">{`{NUMERO_CONTRATO}`}</code>, etc.
+          {isAdmin ? "Envie cada modelo " : "Modelos usados na geração dos documentos: "}
+          {isAdmin && <><code className="rounded bg-muted px-1">.docx</code> no tipo correspondente, com placeholders no formato <code className="rounded bg-muted px-1">{`{NOME_CLIENTE}`}</code>, <code className="rounded bg-muted px-1">{`{CPF}`}</code>, <code className="rounded bg-muted px-1">{`{NUMERO_CONTRATO}`}</code>, etc.</>}
         </p>
+        {!isAdmin && (
+          <p className="mb-6 rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+            Os templates podem ser consultados por todos os usuários; somente administradores podem substituí-los.
+          </p>
+        )}
 
         <div className="space-y-3">
           {TEMPLATE_TIPOS.map((t) => {
@@ -71,17 +79,19 @@ export default function Templates() {
                     <div className="mt-1 text-xs text-destructive">Nenhum template enviado</div>
                   )}
                 </div>
-                <label className="cursor-pointer">
-                  <Button variant="outline" size="sm" asChild disabled={busy === t.id}>
-                    <span><Upload className="mr-2 h-4 w-4" />{busy === t.id ? "Enviando…" : cur ? "Substituir" : "Enviar"}</span>
-                  </Button>
-                  <input
-                    type="file"
-                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    className="hidden"
-                    onChange={(e) => e.target.files?.[0] && upload(t.id, e.target.files[0])}
-                  />
-                </label>
+                {isAdmin && (
+                  <label className="cursor-pointer">
+                    <Button variant="outline" size="sm" asChild disabled={busy === t.id}>
+                      <span><Upload className="mr-2 h-4 w-4" />{busy === t.id ? "Enviando…" : cur ? "Substituir" : "Enviar"}</span>
+                    </Button>
+                    <input
+                      type="file"
+                      accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && upload(t.id, e.target.files[0])}
+                    />
+                  </label>
+                )}
               </div>
             );
           })}

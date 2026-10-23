@@ -1,23 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, FolderOpen, X, Filter, Trash2 } from "lucide-react";
+import { Plus, FolderOpen, X, Filter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CasoStatus, STATUS_LABEL, STATUS_ORDER } from "@/lib/status";
@@ -31,6 +18,7 @@ import { encontrarRubricasAlerta } from "@/lib/alertas-rubricas";
 
 type Caso = {
   id: string;
+  importacao_concluida: boolean;
   created_at: string;
   status: string;
   origem: string;
@@ -48,16 +36,14 @@ type Caso = {
 export default function Dashboard() {
   const [casos, setCasos] = useState<Caso[]>([]);
   const [filter, setFilter] = useState<"all" | CasoStatus>("all");
-  const [excluirAberto, setExcluirAberto] = useState(false);
-  const [casoId, setCasoId] = useState("");
-  const [excluindo, setExcluindo] = useState(false);
   const nav = useNavigate();
 
   useEffect(() => {
     let ignore = false;
     supabase
       .from("casos")
-      .select("id, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref, contracheques(id, itens_contracheque(codigo, descricao, referencia, valor))")
+      .select("id, importacao_concluida, created_at, status, origem, nome_cliente, mesclado_em, mesclado_at, possivel_duplicata_de, cliente_recorrente_ref, contracheques(id, itens_contracheque(codigo, descricao, referencia, valor))")
+      .eq("importacao_concluida", true)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error("Erro ao carregar casos");
@@ -69,6 +55,7 @@ export default function Dashboard() {
       .on("postgres_changes", { event: "*", schema: "public", table: "casos" }, (payload) => {
         if (payload.eventType === "INSERT") {
           const novo = payload.new as Caso;
+          if (novo.importacao_concluida === false) return;
           setCasos((prev) => [novo, ...prev.filter((c) => c.id !== novo.id)]);
           if (novo.origem === "n8n") {
             toast.message("Novo caso recebido por email", {
@@ -78,7 +65,16 @@ export default function Dashboard() {
           }
         } else if (payload.eventType === "UPDATE") {
           const upd = payload.new as Caso;
-          setCasos((prev) => prev.map((c) => (c.id === upd.id ? { ...c, ...upd } : c)));
+          if (upd.importacao_concluida === false) {
+            setCasos((prev) => prev.filter((c) => c.id !== upd.id));
+          } else {
+            setCasos((prev) => {
+              const existe = prev.some((c) => c.id === upd.id);
+              return existe
+                ? prev.map((c) => (c.id === upd.id ? { ...c, ...upd } : c))
+                : [upd, ...prev];
+            });
+          }
         } else if (payload.eventType === "DELETE") {
           setCasos((prev) => prev.filter((c) => c.id !== (payload.old as any).id));
         }
@@ -91,29 +87,6 @@ export default function Dashboard() {
   const cancelar = async (id: string) => {
     const { error } = await supabase.from("casos").update({ status: "cancelado" }).eq("id", id);
     if (error) toast.error("Falha ao cancelar"); else toast.success("Caso cancelado");
-  };
-
-  const excluirCaso = async () => {
-    const id = casoId.trim();
-    if (!id) return;
-
-    setExcluindo(true);
-    const { data, error } = await supabase.from("casos").delete().eq("id", id).select("id").maybeSingle();
-    setExcluindo(false);
-
-    if (error) {
-      toast.error("Falha ao excluir caso");
-      return;
-    }
-    if (!data) {
-      toast.error("Caso não encontrado");
-      return;
-    }
-
-    setCasos((prev) => prev.filter((caso) => caso.id !== id));
-    setCasoId("");
-    setExcluirAberto(false);
-    toast.success("Caso excluído");
   };
 
   // Oculta casos que foram mesclados em outros (continuam acessíveis pelo redirect)
@@ -130,42 +103,6 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground">Gerencie todos os processos abertos no escritório.</p>
           </div>
           <div className="flex items-center gap-2">
-            <AlertDialog open={excluirAberto} onOpenChange={setExcluirAberto}>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive"><Trash2 className="mr-2 h-4 w-4" />Excluir caso</Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Excluir caso</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Informe o ID completo do caso que deseja excluir.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <div className="space-y-2">
-                  <Label htmlFor="caso-id">ID do caso</Label>
-                  <Input
-                    id="caso-id"
-                    value={casoId}
-                    onChange={(event) => setCasoId(event.target.value)}
-                    placeholder="ID do caso"
-                    autoComplete="off"
-                  />
-                </div>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={excluindo}>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    disabled={!casoId.trim() || excluindo}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      void excluirCaso();
-                    }}
-                  >
-                    {excluindo ? "Excluindo..." : "Confirmar"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
             <Button asChild>
               <Link to="/casos/novo"><Plus className="mr-2 h-4 w-4" />Novo Caso</Link>
             </Button>

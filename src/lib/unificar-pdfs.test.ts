@@ -94,6 +94,12 @@ describe("unificarPdfs", () => {
         promise: Promise.resolve(documentoFake([paginaComMesAno("03/2026")])),
       }))
       .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([paginaComMesAno("03/2026")])),
+      }))
+      .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([paginaComMesAno("01/2026")])),
+      }))
+      .mockImplementationOnce(() => ({
         promise: Promise.resolve(documentoFake([paginaComMesAno("01/2026")])),
       }));
 
@@ -131,7 +137,21 @@ describe("unificarPdfs", () => {
         ])),
       }))
       .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([
+          paginaComMesAno("09/2026"),
+          paginaComMesAno("09/2026"),
+          paginaComMesAno("10/2026"),
+          paginaComMesAno("10/2026"),
+        ])),
+      }))
+      .mockImplementationOnce(() => ({
         promise: Promise.resolve(documentoFake([paginaComMesAno("09/2026")])),
+      }))
+      .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([paginaComMesAno("09/2026")])),
+      }))
+      .mockImplementationOnce(() => ({
+        promise: Promise.resolve(documentoFake([paginaComMesAno("11/2026")])),
       }))
       .mockImplementationOnce(() => ({
         promise: Promise.resolve(documentoFake([paginaComMesAno("11/2026")])),

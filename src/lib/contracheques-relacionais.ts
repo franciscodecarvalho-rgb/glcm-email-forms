@@ -19,6 +19,7 @@ export type ContrachequeRelacional = {
   liquido?: number | null;
   arquivo_origem?: string | null;
   modelo_origem?: string | null;
+  retificado?: boolean | null;
   itens_contracheque?: ItemContrachequeRelacional[] | null;
 };
 
@@ -95,7 +96,18 @@ export function pendenciasCompetenciaAcelen(
 export function contrachequesRelacionaisParaRevisao(
   contracheques: ContrachequeRelacional[] | null | undefined,
 ): ContrachequeRevisao[] {
-  const linhas = (contracheques ?? []).flatMap((contracheque, index) => {
+  const todos = contracheques ?? [];
+  const competenciasRetificadasBasf = new Set(
+    todos
+      .filter((contracheque) =>
+        contracheque.modelo_origem === "basf" && contracheque.retificado === true && !!contracheque.competencia,
+      )
+      .map((contracheque) => contracheque.competencia as string),
+  );
+  const linhas = todos.filter((contracheque) =>
+    !(contracheque.modelo_origem === "basf" && contracheque.retificado !== true &&
+      contracheque.competencia && competenciasRetificadasBasf.has(contracheque.competencia)),
+  ).flatMap((contracheque, index) => {
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
       .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))

@@ -66,7 +66,7 @@ export function classificarRubrica(
 
   // Precisa conter "hra" (cobre também "ahra") em qualquer ponto — pega o OCR.
   // Ou ter um código confirmado da tabela CODIGOS_HRA_CONHECIDOS.
-  if (!/hra/.test(n) && !codigoConhecido) return { familia: null, semIr: false };
+  if (!/hra/.test(n.replace(/\s+/g, "")) && !codigoConhecido) return { familia: null, semIr: false };
 
   const semIr = ehSemIr(descricao);
 

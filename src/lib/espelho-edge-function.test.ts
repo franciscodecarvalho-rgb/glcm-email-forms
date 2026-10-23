@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { selecionarPecas } from "./modelos-documentos";
+import { selecionarPecas, nomeArquivoGerado } from "./modelos-documentos";
 import {
   agregarBancoHorasPorCompetencia,
   agregarContribExtraPorCompetencia,
@@ -37,10 +37,13 @@ function carregarTrechoDaFuncao<T extends Record<string, unknown>>(
   return new Function(`${js}; return { ${exportados.join(", ")} };`)() as T;
 }
 
-const edgePecas = carregarTrechoDaFuncao<{ selecionarPecas: typeof selecionarPecas }>(
+const edgePecas = carregarTrechoDaFuncao<{
+  selecionarPecas: typeof selecionarPecas;
+  nomeArquivoGerado: typeof nomeArquivoGerado;
+}>(
   "const DOCUMENTOS_POR_TIPO_ACAO",
   "function garantirMarcadorNumeroContrato",
-  ["selecionarPecas"],
+  ["selecionarPecas", "nomeArquivoGerado"],
 );
 
 const edgePlanilha = carregarTrechoDaFuncao<{
@@ -94,6 +97,22 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     }
     expect(erroEdge).not.toBe("");
     expect(() => selecionarPecas("desconhecido", [])).toThrow(erroEdge);
+  });
+
+  it("nomeArquivoGerado: saída idêntica em src/lib e na Edge Function", () => {
+    const casos: Array<[string, string | null, string, string]> = [
+      ["peticao", "FULANO", "ir_sobre_hra", "docx"],
+      ["procuracao_polkowski", "DANIEL RICARDO SIMOES DE MENEZES", "ir_sobre_hra", "docx"],
+      ["termo_lgpd_glcm", null, "horas_extras", "docx"],
+      ["declaracao_pobreza", "FULANO", "supressao_folgas", "docx"],
+      ["contracheques_unificados", "FULANO", "tema_324", "pdf"],
+      ["planilha_codigos", "FULANO", "contribuicao_extraordinaria", "xlsx"],
+    ];
+    for (const [tipo, cliente, acao, ext] of casos) {
+      expect(nomeArquivoGerado(tipo, cliente, acao, ext)).toBe(
+        edgePecas.nomeArquivoGerado(tipo, cliente, acao, ext),
+      );
+    }
   });
 
   it("planilha: saída byte a byte idêntica", () => {
@@ -168,12 +187,14 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     const itens = [
       { contracheque_id: "a", valor: 100, tipo: "provento", familia_hra: "adicional_hra" },
       { contracheque_id: "a", valor: 50, tipo: "provento", familia_hra: "hra" },
+      { contracheque_id: "a", valor: 25, tipo: "provento", familia_hra: "ahra" },
     ];
     const fonte = contrachequesRelacionaisParaRevisao([{
       ...contracheques[0],
       itens_contracheque: itens,
     }]);
     expect(edgeCalculos.montarContrasRelacionais(contracheques, itens)).toEqual(fonte);
+    expect(fonte).toEqual([{ id: "a", label: "04/2026", valor_hra: 50, valor_ahra: 125 }]);
   });
 
   it("ir_sobre_hra gera planilha complementar de contribuição extraordinária só quando há rubricas", () => {
@@ -181,7 +202,7 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
       resolve(process.cwd(), "supabase/functions/generate-documents/index.ts"),
       "utf8",
     );
-    expect(fonte).toContain('if (caso.tipo_acao === "ir_sobre_hra") {');
+    expect(fonte).toContain('if (gerarPlanilhaContribExtra && caso.tipo_acao === "ir_sobre_hra") {');
     expect(fonte).toContain("if (linhasCE.length > 0) {");
     expect(fonte).toContain('tipo: "planilha_contrib_extra"');
     // a ação exclusiva continua gerando apenas a planilha principal

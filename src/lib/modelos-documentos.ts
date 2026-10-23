@@ -83,3 +83,47 @@ export function selecionarPecas(tipoAcao: string, escritorios: string[]): PecaSe
   }
   return pecas;
 }
+
+/**
+ * Nome de exibição/download dos arquivos gerados.
+ *
+ * Padrão (Nodley, 01/10/2026): "Tipo de Documento — Nome cliente — Tipo ação",
+ * replicando o padrão já usado pela Planilha de Cálculo. O tipo usa
+ * capitalização natural e espaço (não travessão) internamente, porque o
+ * travessão " — " separa os três componentes do nome.
+ *
+ * A planilha principal (`planilha`) e a complementar (`planilha_contrib_extra`)
+ * NÃO passam por aqui: seus nomes já seguem o padrão e são montados inline na
+ * geração (a complementar tem rótulo de ação fixo, independente do tipo_acao).
+ */
+export const NOME_ARQUIVO_TIPO: Record<string, string> = {
+  peticao: "Petição Inicial",
+  contrato: "Contrato",
+  termo_renuncia: "Termo de Renúncia",
+  declaracao_pobreza: "Declaração de Pobreza",
+  procuracao_glcm: "Procuração GLCM",
+  procuracao_polkowski: "Procuração Polkowski",
+  termo_lgpd_glcm: "Termo LGPD GLCM",
+  termo_lgpd_polkowski: "Termo LGPD Polkowski",
+  planilha_codigos: "Planilha Códigos 1513",
+  contracheques_unificados: "Contracheques Unificados",
+};
+
+/** Rótulo da ação (3º termo) seguindo o comportamento atual da planilha. */
+export function rotuloAcaoArquivo(tipoAcao: string): string {
+  return tipoAcao === "contribuicao_extraordinaria"
+    ? "IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA"
+    : "IR SOBRE HRA";
+}
+
+/** Monta "Tipo — Cliente — Ação.ext" para download. */
+export function nomeArquivoGerado(
+  tipoSaida: string,
+  nomeCliente: string | null | undefined,
+  tipoAcao: string,
+  extensao: string,
+): string {
+  const tipo = NOME_ARQUIVO_TIPO[tipoSaida] ?? tipoSaida;
+  const cliente = nomeCliente ?? "";
+  return `${tipo} — ${cliente} — ${rotuloAcaoArquivo(tipoAcao)}.${extensao}`;
+}

@@ -60,6 +60,24 @@ contracheques 1 ─── N itens_contracheque
 - Não duplicar a mesma fonte de verdade em campos diferentes sem regra de sincronização.
 - Nunca inferir que o esquema remoto corresponde ao repositório.
 
+## Política de acesso confirmada (2026-09)
+
+- Todos os usuários autenticados com papel `user` ou `admin` podem consultar todos
+  os casos, seus metadados, contracheques, rubricas, lotes e arquivos nos três
+  buckets. Acesso anônimo não faz parte desse requisito.
+- A criação e atualização normal dos casos permanece disponível à equipe
+  autenticada. Exclusão de casos e mutações de metadados/arquivos e templates são
+  administrativas.
+- Contracheques, rubricas e lotes de extração são gravados pelas Edge Functions
+  com `service_role`; clientes autenticados mantêm acesso somente de leitura a essas
+  tabelas.
+- O fluxo de geração atual também pode gravar/atualizar arquivos em
+  `casos-documentos` no navegador autenticado; não remover essa permissão sem
+  migrar primeiro a geração para um limite de servidor validado.
+- As políticas de leitura compartilhada não são isolamento por proprietário. Os
+  alertas do scanner para buckets sem vínculo a proprietário devem ser avaliados à
+  luz dessa regra confirmada; não apertar o acesso a PDFs sem decisão explícita.
+
 ## Divergência aberta
 
 `arquivos.processado` é usado por código, mas não consta no esquema versionado

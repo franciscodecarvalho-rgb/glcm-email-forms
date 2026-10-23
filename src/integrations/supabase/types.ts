@@ -70,6 +70,7 @@ export type Database = {
           escritorios: Json
           honorarios_pct: number | null
           id: string
+          importacao_concluida: boolean
           limite_viabilidade: number
           mesclado_at: string | null
           mesclado_em: string | null
@@ -100,6 +101,7 @@ export type Database = {
           escritorios?: Json
           honorarios_pct?: number | null
           id?: string
+          importacao_concluida?: boolean
           limite_viabilidade?: number
           mesclado_at?: string | null
           mesclado_em?: string | null
@@ -130,6 +132,7 @@ export type Database = {
           escritorios?: Json
           honorarios_pct?: number | null
           id?: string
+          importacao_concluida?: boolean
           limite_viabilidade?: number
           mesclado_at?: string | null
           mesclado_em?: string | null
@@ -179,6 +182,7 @@ export type Database = {
           id: string
           liquido: number | null
           modelo_origem: string | null
+          retificado: boolean
           salario_base: number | null
           total_descontos: number | null
           total_proventos: number | null
@@ -191,6 +195,7 @@ export type Database = {
           id?: string
           liquido?: number | null
           modelo_origem?: string | null
+          retificado?: boolean
           salario_base?: number | null
           total_descontos?: number | null
           total_proventos?: number | null
@@ -203,6 +208,7 @@ export type Database = {
           id?: string
           liquido?: number | null
           modelo_origem?: string | null
+          retificado?: boolean
           salario_base?: number | null
           total_descontos?: number | null
           total_proventos?: number | null

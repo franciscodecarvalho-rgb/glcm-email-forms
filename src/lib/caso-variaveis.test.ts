@@ -76,11 +76,13 @@ describe("montarVariaveisCaso", () => {
       email_cliente: "cliente@email.com",
       telefone_cliente: "(71) 99999-9999",
       uf_comarca: "BA",
+      endereco_uniao: "Av. da União, 100, Brasília/DF",
     });
     expect(v.CAPTADOR).toBe("JSC");
     expect(v.OAB_CASO).toBe("BA123456");
     expect(v.EMAIL_CLIENTE).toBe("cliente@email.com");
     expect(v.TELEFONE_CLIENTE).toBe("(71) 99999-9999");
     expect(v.UF_COMARCA).toBe("BA");
+    expect(v["ENDEREÇO_UNIAO"]).toBe("Av. da União, 100, Brasília/DF");
   });
 });

@@ -59,6 +59,69 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("0001", "Salário Básico", "")).toBeNull();
   });
 
+  it("aplica a classificação específica da Petrobras", () => {
+    expect(familia("1062", "Adicional HRA", "petrobras", "provento")).toBe("hra");
+    expect(familia("1062", "AdicionalHRA", "petrobras", "provento")).toBe("hra");
+    expect(familia("4208", "Dif AHRA Dobra", "petrobras", "provento")).toBe("ahra");
+    expect(familia("9999", "DI AHRA Dobra", "petrobras", "provento")).toBe("ahra");
+    expect(familia("0207", "Adic HRA Eventual", "petrobras", "provento")).toBe("adicional_hra");
+    expect(familia("1062", "Adicional HRA", "braskem", "provento")).toBe("adicional_hra");
+    expect(familia("4208", "Dif AHRA Dobra", "braskem", "provento")).toBe("dif_ahra");
+  });
+
+  it("classifica a rubrica 3217 da ECOLAB como hra sem tornar o código global", () => {
+    expect(familia("3217", "Adicional Repouso Alimentação", "ecolab", "provento")).toBe("hra");
+    expect(familia("3217", "Adicional Repouso Alimentação", "generico", "provento")).toBeNull();
+    expect(familia("3217", "Outra descrição", "ecolab", "provento")).toBe("hra");
+  });
+
+  it("classifica a rubrica 3453 da OXITENO como hra sem tornar o código global", () => {
+    expect(familia("3320", "HRA IR", "oxiteno", "provento")).toBe("hra");
+    expect(familia("3453", "HRA-Horas Rep. Alimentação", "oxiteno", "provento")).toBe("hra");
+    expect(familia("3320", "Salário Básico", "generico", "provento")).toBeNull();
+    expect(familia("3453", "Salário Básico", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica a rubrica 3331 da OXITENO como hra, apesar do texto de diferença", () => {
+    expect(familia("3331", "HRA-Dif. Dissídio", "oxiteno", "provento")).toBe("hra");
+    expect(familia("3331", "HRA-Dif. Dissídio", "generico", "provento")).toBe("dif_ahra");
+  });
+
+  it("classifica P368 da CETREL como hra somente em proventos", () => {
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "provento")).toBe("hra");
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "desconto")).toBeNull();
+    expect(familia("P368", "Salário Básico", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica 2000 da VOPAK como hra somente em proventos", () => {
+    expect(familia("2000", "H.R.A", "vopak", "provento")).toBe("hra");
+    expect(familia("2000", "H.R.A", "vopak", "desconto")).toBeNull();
+    expect(familia("2000", "H.R.A", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica Adic. Repouso Alimentação da Birla como hra somente em proventos", () => {
+    expect(familia("", "Adic. Repouso Alimentação", "birla_carbon", "provento")).toBe("hra");
+    expect(familia("", "Adic.RepousoAlimentação", "birla_carbon", "provento")).toBe("hra");
+    expect(familia("", "Adic. Repouso Alimentação", "birla_carbon", "desconto")).toBeNull();
+    expect(familia("", "Adic. Repouso Alimentação", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica Adic.Rep.Aliment.s/Fer da Birla como ahra somente em proventos", () => {
+    expect(familia("", "Adic.Rep.Aliment.s/Fer", "birla_carbon", "provento")).toBe("ahra");
+    expect(familia("", "Adic. Rep. Aliment. s/Fer", "birla_carbon", "provento")).toBe("ahra");
+    expect(familia("", "Adic.Rep.Aliment.s/Fer", "birla_carbon", "desconto")).toBeNull();
+    expect(familia("", "Adic.Rep.Aliment.s/Fer", "generico", "provento")).toBeNull();
+  });
+
+  it("classifica CETREL P368 e VOPAK 2000 como hra somente em proventos, sem globalizar", () => {
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "provento")).toBe("hra");
+    expect(familia("P368", "ADIC HR REM ALIM SUPLEM(HRAS)", "cetrel", "desconto")).toBeNull();
+    expect(familia("2000", "H.R.A", "vopak", "provento")).toBe("hra");
+    expect(familia("2000", "H.R.A", "vopak", "desconto")).toBeNull();
+    expect(familia("2000", "Salário Básico", "generico", "provento")).toBeNull();
+    expect(familia("P368", "Outra", "generico", "provento")).toBeNull();
+  });
+
 });
 
 describe("Petrobras — HRA/AHRA", () => {

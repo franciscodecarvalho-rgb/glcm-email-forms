@@ -22,6 +22,7 @@ export type CasoParaDocumento = {
   email_cliente?: string | null;
   telefone_cliente?: string | null;
   uf_comarca?: string | null;
+  endereco_uniao?: string | null;
 };
 
 /** Local fixo da assinatura das peças (sede do escritório). */
@@ -91,5 +92,6 @@ export function montarVariaveisCaso(
     CAPTADOR: caso.captador ?? "",
     OAB_CASO: caso.oab ?? "",
     UF_COMARCA: caso.uf_comarca ?? "",
+    "ENDEREÇO_UNIAO": caso.endereco_uniao ?? "",
   };
 }

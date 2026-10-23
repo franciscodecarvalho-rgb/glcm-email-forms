@@ -28,9 +28,32 @@ hipóteses, credenciais, dados de clientes ou propostas ainda não aprovadas.
 - Arquivos físicos ficam no Storage; a tabela `arquivos` guarda metadados.
 - A extração por IA usa lotes e consolidação controlada.
 - Contracheques também possuem persistência estruturada.
+- Todos os usuários autenticados do sistema podem consultar casos e seus arquivos;
+  não há requisito de acesso anônimo. Exclusões e gestão de templates são
+  administrativas, e tabelas estruturadas da extração são escritas pelas Edge
+  Functions com `service_role`.
+- O navegador autenticado ainda grava/atualiza documentos em `casos-documentos`
+  durante a geração; não remover essa permissão sem migrar e validar esse fluxo.
+- Alertas de acesso a arquivos compartilhados não devem ser “corrigidos” com
+  isolamento por proprietário sem autorização, pois isso altera o acesso entre
+  usuários já definido para os casos.
 - Templates `.docx` e planilha gerada são mecanismos distintos.
 - O fluxo implementado termina em `concluido` após geração dos documentos.
 - O deploy do projeto será realizado pelo Lovable.
+- Após cada interação do Lovable que possa sincronizar código, comparar o SHA local,
+  `origin/main`, o SHA reconhecido pelo Lovable e o SHA publicado; inspecionar qualquer
+  avanço remoto e sincronizá-lo por fast-forward somente após revisar o diff e preservar
+  o trabalho local. Nunca esconder divergências com reset ou force-push.
+- Um upload manual só vira Caso depois de comprovantes pessoais e contracheques
+  serem enviados, processados, persistidos e confirmados; registros provisórios
+  ficam fora da listagem operacional até cumprir esses requisitos.
+- Os arquivos gerados seguem o nome `Tipo de Documento — Nome cliente — Tipo ação`
+  (ex.: `Procuração Polkowski — DANIEL RICARDO SIMOES DE MENEZES — IR SOBRE HRA.docx`);
+  o tipo usa capitalização natural, a Planilha mantém `PLANILHA` em maiúsculas e a
+  ação usa `IR SOBRE HRA` (ou `IR SOBRE CONTRIBUIÇÃO EXTRAORDINÁRIA`). A chave do
+  Storage permanece sanitizada; `nome` é o rótulo de exibição/download. Fonte
+  canônica: `src/lib/modelos-documentos.ts` (`nomeArquivoGerado`), espelhada na
+  Edge Function `generate-documents`.
 
 ## Divergências conhecidas
 
@@ -290,6 +313,12 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Em `process-contracheques-pdf`, classificar esses códigos como `hra` somente quando o modelo identificado for, respectivamente, `basf` ou `braskem`.
 **Evitar:** Tornar os códigos globais para outras empresas ou modificar as regras existentes dos demais modelos.
 
+### 2026-09 — Famílias HRA específicas da Petrobras
+
+**Regra confirmada:** Na Petrobras, `Dif/DI AHRA` pertence à família/coluna AHRA; a descrição `Adicional HRA` pertence à família/coluna HRA. `Adic HRA Eventual` permanece em `adicional_hra`.
+**Aplicação:** `process-contracheques-pdf` aplica a exceção somente quando o modelo da página é Petrobras; a revisão e a geração da planilha reconhecem a família `ahra` como AHRA.
+**Evitar:** Aplicar a troca de `Adicional HRA` a outras empresas ou incluir descontos no cálculo.
+
 ### 2026-08 — Unificação: ordenar por página, não pelo arquivo inteiro
 
 **Regra confirmada:** Um único PDF de contracheque pode conter páginas de mais de uma competência (ex.: a BASF costuma emitir o adiantamento quinzenal e o recibo integral de um mês junto com o adiantamento do mês seguinte no mesmo arquivo). Ordenar a unificação pela competência do arquivo inteiro (só a primeira página) arrasta as páginas do mês seguinte para a posição do primeiro mês, embaralhando a ordem cronológica quando outro arquivo desse primeiro mês é selecionado depois na lista.
@@ -297,7 +326,72 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `src/lib/unificar-pdfs.ts` calcula a competência de cada página (`competenciasPorPagina`), agrupa páginas consecutivas da mesma competência em blocos (`agruparPaginasPorCompetencia`, página sem competência reconhecida vira continuação do bloco anterior) e ordena os blocos com `ordenarPorCompetencia` (`ordenarUnidades`), não mais os arquivos inteiros — `prepararArquivos`/`montarUnificado`/`unificarPdfsEmLotes` usam esse fluxo. Só confia no agrupamento por página quando a extração via pdf.js enxerga o mesmo número de páginas que o pdf-lib real; senão mantém o arquivo inteiro como um bloco único (fallback de segurança para não perder páginas).
 **Evitar:** Voltar a tratar o arquivo inteiro como uma única unidade de ordenação, ou confiar no agrupamento por página quando a contagem de páginas da extração não bate com a do PDF real.
 
-### 2026-09 — Extração pessoal determinística antes de IA
+### 2026-09 — SPEC-001: perfis adicionais de contracheques
+
+**Regra confirmada:** Os layouts Birla Carbon, CETREL, DETEN, ECOLAB, MOEVE,
+OXITENO, Refinaria de Mataripe e VOPAK são processados por perfis posicionais,
+mantendo a extração determinística como primeira opção.
+**Origem:** Implementação e validação local da SPEC-001 com os PDFs de referência
+alterados em 28/09/2026.
+**Aplicação:** DETEN e MOEVE podem conter dois contracheques na mesma página;
+ECOLAB, OXITENO e Mataripe usam o layout ADP e tratam `BASE / OUTROS` como
+informativo; VOPAK trata `OUTROS` como informativo; Birla aceita rubricas sem
+código; CETREL aceita códigos `P`/`D`. Páginas sem camada de texto podem usar o
+fallback de IA autorizado somente nessas páginas.
+**Evitar:** Somar bases informativas, duplicar blocos físicos, descartar páginas
+textuais do mesmo lote por causa de uma página sem texto ou enviar todo o PDF à IA
+quando a leitura determinística já produziu dados estruturados.
+
+### 2026-09 — HRA específico da ECOLAB
+
+**Regra confirmada:** Na ECOLAB, a rubrica `3217 — Adicional Repouso
+Alimentação`, quando lançada em Vencimentos, pertence à família HRA.
+**Origem:** Confirmação de Nodley com o modelo visual do contracheque ECOLAB.
+**Aplicação:** Classificar o par modelo `ecolab` + código `3217` como `hra` na
+Edge Function de contracheques.
+**Evitar:** Tornar o código `3217` uma regra global para outras empresas ou
+classificar ocorrências em Descontos como base HRA.
+
+### 2026-09 — HRA específico da OXITENO
+
+**Regra confirmada:** Na OXITENO, as rubricas `3320 — HRA IR`, `3331 —
+HRA-Dif. Dissídio` e `3453 — HRA-Horas Rep. Alimentação`, quando lançadas em
+Vencimentos, pertencem à família HRA.
+**Origem:** Confirmação de Nodley ao inspecionar visualmente o PDF-modelo da
+OXITENO; a rubrica aparece na primeira página com valor `803,97`.
+**Aplicação:** Classificar os pares modelo `oxiteno` + códigos `3320`, `3331` e
+`3453` como `hra` na Edge Function de contracheques.
+**Evitar:** Tornar esses códigos regras globais para outras empresas ou
+classificar ocorrências em Descontos como base HRA.
+
+### Regra permanente — Isolamento das regras de extração por empresa
+
+**Regra:** Toda mudança identificada na extração de contracheques deve ser
+aplicada somente à empresa cujo PDF confirmou aquela estrutura, código ou
+descrição. Não alterar regras globais nem empresas que já estejam funcionando.
+
+**Confirmação necessária:** Para uma nova rubrica, especialmente HRA ou AHRA,
+aguardar a confirmação explícita da empresa, do código e de como a informação
+aparece no PDF antes de criar ou ampliar o mapeamento.
+
+**Aplicação:** Essa regra vale para a ECOLAB e para todas as demais empresas
+atendidas pela SPEC-001.
+
+### Decisão futura — OCR gratuito e local
+
+**Regra:** A aplicação deverá usar ferramentas gratuitas e preferencialmente
+locais para OCR, sem dependência de Cloud Vision, Document AI ou outro serviço
+OCR pago.
+
+**Direção escolhida:** Manter a extração da camada de texto como primeira
+opção e adicionar OCR por página somente quando não houver texto extraível,
+com Tesseract.js/PDF.js, idioma português, origem da leitura registrada e
+revisão manual para baixa confiança.
+
+**Evitar:** Enviar automaticamente contracheques inteiros a serviços externos,
+substituir a leitura determinística ou aplicar OCR sem preservar coordenadas,
+empresa, página e evidência da origem do dado.
+### 2026-09 — Extração pessoal determinística antes de IA (superada em 30/09/2026)
 
 **Regra confirmada:** Documentos pessoais em PDF devem tentar extração determinística validada antes de qualquer chamada ao Gemini; a IA é fallback individual apenas para o arquivo insuficiente ou escaneado.
 **Origem:** Especificação `Extracao_Pdf - V2` aprovada por Nodley.
@@ -347,3 +441,31 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Correção expressa de Nodley durante a implementação dos relatórios por tema.
 **Aplicação:** Fazer o ciclo local → validações → Git → Lovable, sem editar ou construir funcionalidades no Lovable.
 **Evitar:** Usar o Lovable para implementar, testar ou alterar o código-fonte do projeto.
+
+### 2026-09 — Recibos BASF retificados no cálculo HRA
+
+**Regra confirmada:** Na BASF, `Pagamento Referente a` iniciado por `R` antes do mês marca o recibo retificado. Se houver recibos retificado e original da mesma competência no mesmo caso, somente o retificado compõe o cálculo HRA/AHRA.
+**Origem:** PDF BASF enviado por Nodley em 29/09/2026, com pares original/retificado nas competências analisadas.
+**Aplicação:** Persistir o marcador em `contracheques.retificado`; manter ambos os recibos e aplicar a substituição somente na consolidação da revisão e da planilha HRA do caso.
+**Evitar:** Somar as duas versões, apagar o original ou aplicar a regra a outras empresas.
+
+### 2026-09 — IA exclusiva para comprovantes de residência (superada em 30/09/2026)
+
+**Regra confirmada:** O Gemini deve ser usado exclusivamente para comprovantes de residência, com foco no endereço completo. CNH, RG, CIN e CPF permanecem na extração determinística/revisão manual; contracheques nunca são enviados à IA generativa.
+**Origem:** Correção expressa de Nodley após identificar que a extração determinística passou a dispensar a IA ao encontrar apenas o CEP.
+**Aplicação:** Nos fluxos de extração pessoal e de reprocessamento, encaminhar ao gateway somente arquivos reconhecidos como comprovantes de residência. Não considerar a presença isolada de CEP como substituto da extração do endereço pela IA.
+**Evitar:** Enviar identidade ou contracheques ao Gemini, ou marcar endereço como plenamente extraído apenas porque o CEP foi localizado.
+
+### 2026-09 — Gemini obrigatório em documentos pessoais; confirmação manual em caso de falha
+
+**Regra confirmada:** PDFs enviados como documentos pessoais (comprovante de residência, CNH, RG, CIN, CPF ou outro documento pessoal) devem ser lidos pelo Gemini. Contracheques continuam fora do Gemini e seguem o fluxo específico de contracheques.
+**Origem:** Solicitação de Nodley em 30/09/2026, confirmando que, se a extração do Gemini falhar ou não retornar dados utilizáveis, o PDF original deve permanecer anexado e os campos devem ser preenchidos manualmente.
+**Aplicação:** Usar a leitura determinística somente como complemento à resposta do Gemini; não persistir respostas vazias ou CPF inválido. Se os dados essenciais ficarem incompletos ou a chamada falhar, abrir a confirmação editável, mostrar o aviso e conservar os PDFs no Storage e no registro de arquivos. Ao confirmar os campos manuais, limpar o erro de processamento.
+**Evitar:** Usar Gemini para contracheques, excluir/substituir o documento enviado em caso de falha, ou afirmar que houve extração completa sem dados úteis.
+
+### 2026-09 — CPF válido torna RG opcional na importação
+
+**Regra confirmada:** Um CPF válido extraído da CNH ou de outro documento é suficiente para a identificação do cliente; não exigir RG para confirmar ou concluir a importação.
+**Origem:** Solicitação de Nodley em 30/09/2026.
+**Aplicação:** Gemini deve ler a CNH visualmente e procurar o CPF mesmo em PDF escaneado; enviar PDFs como partes `file` multimodais. Preservar a validação de CPF e os demais requisitos (nome, logradouro, comprovantes, contracheques e rubricas). RG pode ser salvo se impresso, mas fica opcional.
+**Evitar:** Tratar RG como requisito quando o CPF está válido, ou usar RG como substituto de CPF.

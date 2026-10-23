@@ -25,11 +25,12 @@ export function TelaDadosExtraidos({ caso, onCancel }: { caso: CasoData; onCance
     const { error } = await supabase
       .from("casos")
       .update({
+        importacao_concluida: true,
         status: "aguardando_pasta",
       })
       .eq("id", caso.id);
     setSaving(false);
-    if (error) toast.error("Erro ao avançar");
+    if (error) toast.error(`Não foi possível concluir a importação: ${error.message}`);
     else toast.success("Dados extraídos confirmados");
   };
 

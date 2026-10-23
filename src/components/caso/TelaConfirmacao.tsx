@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ContrachequesExtraidos } from "@/components/caso/ContrachequesExtraidos";
 import { toast } from "sonner";
-import { normalizarCpf } from "@/lib/cpf";
+import { cpfValido, normalizarCpf } from "@/lib/cpf";
+import { dadosFaltantesParaCaso } from "@/lib/dados-extraidos";
 
 
 type Empreg = { id: string; razao_social: string; cnpj: string };
@@ -41,6 +42,7 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
       : [],
   );
   const [saving, setSaving] = useState(false);
+  const [erroValidacao, setErroValidacao] = useState<string | null>(null);
   const contrachequesExtraidos = caso.contracheques_extraidos ?? [];
 
   const addEmp = () => setEmpregs((p) => [...p, { id: crypto.randomUUID(), razao_social: "", cnpj: "" }]);
@@ -50,7 +52,25 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
 
   const confirmar = async () => {
     const cpfLimpo = normalizarCpf(cpf);
-    if (!nome.trim() || !cpfLimpo) { toast.error("Informe o nome e um CPF válido (11 dígitos)"); return; }
+    const faltantes = dadosFaltantesParaCaso({
+      nome_cliente: nome,
+      cpf: cpfLimpo,
+      rg,
+      endereco: end,
+      contracheques_extraidos: contrachequesExtraidos,
+    });
+    if (!cpfValido(cpfLimpo)) {
+      setErroValidacao("CPF inválido. Confira os 11 dígitos verificadores.");
+      toast.error("Informe um CPF válido");
+      return;
+    }
+    if (faltantes.length) {
+      const mensagem = `Importação incompleta. Falta: ${faltantes.join(", ")}.`;
+      setErroValidacao(mensagem);
+      toast.error(mensagem);
+      return;
+    }
+    setErroValidacao(null);
     setSaving(true);
     const { error } = await supabase
       .from("casos")
@@ -61,11 +81,16 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         endereco: end,
         qualificacao: qual,
         empregadores: empregs.map((em) => ({ razao_social: em.razao_social, cnpj: em.cnpj })),
+        importacao_concluida: true,
         status: "aguardando_pasta",
+        erro_processamento: null,
       })
       .eq("id", caso.id);
     setSaving(false);
-    if (error) toast.error("Erro ao salvar"); else toast.success("Dados confirmados");
+    if (error) {
+      setErroValidacao(error.message);
+      toast.error(`Não foi possível concluir a importação: ${error.message}`);
+    } else toast.success("Dados confirmados; importação concluída");
   };
 
   return (
@@ -73,6 +98,21 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
       <div>
         <h1 className="text-2xl font-bold">Confirmação dos Dados</h1>
         <p className="text-sm text-muted-foreground">Revise os dados extraídos dos documentos e ajuste o que for necessário.</p>
+        {caso.erro_processamento && (
+          <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            A extração automática não encontrou todos os dados. Confira e preencha manualmente os campos abaixo. Os PDFs enviados continuam anexados ao caso.
+          </p>
+        )}
+        {erroValidacao && (
+          <p role="alert" className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {erroValidacao}
+          </p>
+        )}
+        {!contrachequesExtraidos.some((contra) => (contra.itens_contracheque ?? []).length > 0) && (
+          <p role="alert" className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Os contracheques ainda não geraram rubricas. Esta importação não pode virar um caso até que os documentos sejam processados e os dados salvos.
+          </p>
+        )}
       </div>
 
       <section className="space-y-4 rounded-lg border bg-card p-6">
@@ -80,13 +120,13 @@ export function TelaConfirmacao({ caso, onCancel }: { caso: CasoData; onCancel: 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2"><Label>Nome completo</Label><Input value={nome} onChange={(e) => setNome(e.target.value)} /></div>
           <div className="space-y-2"><Label>CPF</Label><Input value={cpf} onChange={(e) => setCpf(e.target.value)} /></div>
-          <div className="space-y-2"><Label>RG</Label><Input value={rg} onChange={(e) => setRg(e.target.value)} /></div>
+          <div className="space-y-2"><Label>RG (opcional quando o CPF é válido)</Label><Input value={rg} onChange={(e) => setRg(e.target.value)} /></div>
         </div>
       </section>
 
       <section className="space-y-4 rounded-lg border bg-card p-6">
         <h2 className="font-semibold">Qualificação</h2>
-        <p className="text-xs text-muted-foreground">Estado civil e profissão não vêm dos documentos — preencha manualmente.</p>
+        <p className="text-xs text-muted-foreground">Confira e complete manualmente os dados que não estiverem impressos ou não tiverem sido extraídos.</p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="space-y-2"><Label>Nacionalidade</Label><Input value={qual.nacionalidade} onChange={(e) => setQual({ ...qual, nacionalidade: e.target.value })} /></div>
           <div className="space-y-2"><Label>Estado civil</Label><Input value={qual.estado_civil} onChange={(e) => setQual({ ...qual, estado_civil: e.target.value })} placeholder="ex: solteiro(a)" /></div>
