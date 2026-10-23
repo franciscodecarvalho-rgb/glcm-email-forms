@@ -6,6 +6,9 @@ import {
   Calendar,
   Check,
   ChevronDown,
+  Download,
+  FileDown,
+  FileSpreadsheet,
   Filter,
   Layers,
   Loader2,
@@ -26,7 +29,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { exportarExtracaoDataLake, type LinhaExtracaoPessoa } from "@/lib/exportarExcel";
 import {
   acaoViavel,
   calcularMetricasGestao,
@@ -141,6 +152,7 @@ export default function RelatoriosV2() {
   const [pagina, setPagina] = useState(0);
   const [carregando, setCarregando] = useState(false);
   const [consultou, setConsultou] = useState(false);
+  const [extraindo, setExtraindo] = useState(false);
 
   // Combobox popovers
   const [popoverTemasAberto, setPopoverTemasAberto] = useState(false);
@@ -469,6 +481,86 @@ export default function RelatoriosV2() {
       casos: { estado: "ok", dados: [] },
       historico: { estado: "ok", dados: [] },
     });
+  };
+
+  const executarExtracao = async (modo: "pagina" | "todos" = "pagina") => {
+    if (!consultou) {
+      toast.error("Realize uma consulta clicando em Filtrar antes de extrair.");
+      return;
+    }
+
+    try {
+      setExtraindo(true);
+
+      const nomeTemaExportacao =
+        filtros.temas.length === 1
+          ? filtros.temas[0]
+          : filtros.temas.length > 1
+            ? `${filtros.temas.length} Temas`
+            : "DataLake 2.0";
+
+      if (modo === "pagina" && visao === "pessoa") {
+        if (linhasFiltradasLocal.length === 0) {
+          toast.error("Nenhum cliente para exportar nesta página.");
+          return;
+        }
+
+        await exportarExtracaoDataLake(linhasFiltradasLocal as LinhaExtracaoPessoa[], {
+          nomeTema: nomeTemaExportacao,
+          paginaAtual: pagina,
+          tipoExtracao: "pagina",
+        });
+        toast.success(`Planilha extraída com sucesso (${linhasFiltradasLocal.length} clientes)!`);
+        return;
+      }
+
+      // Modo "todos" ou aba diferente de "pessoa": busca consolidada completa de clientes
+      toast.info("Apurando clientes para extração consolidada...");
+      const [lc, historicoPessoas] = await Promise.all([
+        usaCasos
+          ? consultarCasos<Linha>("relatorio_por_pessoa", { ...payload, p_limit: 1000, p_offset: 0 })
+          : Promise.resolve({ estado: "ok" as const, dados: [] as Linha[] }),
+        usaHistorico
+          ? consultarHistorico<ResumoPessoasHistorico>("resumo_pessoas", { ...corpoHistorico, limit: 1000, offset: 0 })
+          : Promise.resolve<Fonte<ResumoPessoasHistorico>>({ estado: "ok", dados: [] }),
+      ]);
+
+      const resumoHistorico = historicoPessoas.dados[0];
+      const lhLinhas = resumoHistorico?.linhas ?? [];
+
+      const todasLinhas: (Linha & { origem: OrigemRelatorio })[] = [
+        ...(usaCasos && lc.estado === "ok" ? deduplicarPessoas(lc.dados).map((d) => ({ ...d, origem: "casos" as const })) : []),
+        ...(usaHistorico && historicoPessoas.estado === "ok" ? deduplicarPessoas(lhLinhas).map((d) => ({ ...d, origem: "historico" as const })) : []),
+      ];
+
+      let dadosFinais = todasLinhas;
+      if (buscaClienteLocal.trim()) {
+        const q = buscaClienteLocal.toLowerCase().trim();
+        dadosFinais = todasLinhas.filter((l) => {
+          const nome = rotuloPessoa(txt(l.pessoa_nome)).toLowerCase();
+          const cpf = txt(l.pessoa_cpf)?.replace(/\D/g, "") ?? "";
+          const emp = rotuloEmpresaModelo(txt(l.empresa) ?? txt(l.empresa_nome)).toLowerCase();
+          return nome.includes(q) || cpf.includes(q) || emp.includes(q);
+        });
+      }
+
+      if (dadosFinais.length === 0) {
+        toast.error("Nenhum registro encontrado para exportar.");
+        return;
+      }
+
+      await exportarExtracaoDataLake(dadosFinais as LinhaExtracaoPessoa[], {
+        nomeTema: nomeTemaExportacao,
+        totalRegistrosGeral: subtotais.somaSimples.pessoas || dadosFinais.length,
+        tipoExtracao: "completo",
+      });
+
+      toast.success(`Planilha consolidada extraída com sucesso (${dadosFinais.length} clientes)!`);
+    } catch (err) {
+      toast.error(`Falha ao exportar planilha: ${(err as Error).message}`);
+    } finally {
+      setExtraindo(false);
+    }
   };
 
   const alternarOrigemAba = (novaOrigem: OrigemRelatorio) => {
@@ -908,7 +1000,7 @@ export default function RelatoriosV2() {
 
             {/* BOTÕES DE AÇÃO */}
             <div className="flex items-center justify-between border-t pt-3">
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button onClick={aplicar} disabled={carregando} size="sm">
                   {carregando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                   Filtrar
@@ -916,6 +1008,23 @@ export default function RelatoriosV2() {
                 <Button variant="outline" onClick={limpar} disabled={carregando} size="sm">
                   <RotateCcw className="mr-2 h-4 w-4" /> Limpar
                 </Button>
+                {consultou && (
+                  <Button
+                    variant="outline"
+                    onClick={() => void executarExtracao("pagina")}
+                    disabled={extraindo || carregando || linhasFiltradasLocal.length === 0}
+                    size="sm"
+                    className="border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900"
+                    title="Exportar planilha Excel no modelo oficial DataLake 2.0"
+                  >
+                    {extraindo ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin text-emerald-700" />
+                    ) : (
+                      <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
+                    )}
+                    Extrair Planilha
+                  </Button>
+                )}
               </div>
               <span className="text-xs text-muted-foreground">
                 {filtros.temas.length === 0 ? "Todos os temas" : `${filtros.temas.length} temas selecionados`}
@@ -1036,12 +1145,12 @@ export default function RelatoriosV2() {
               </div>
 
               {/* ABAS SECUNDÁRIAS E BUSCA LOCAL */}
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   placeholder="Buscar por cliente, CPF ou empresa..."
                   value={buscaClienteLocal}
                   onChange={(e) => setBuscaClienteLocal(e.target.value)}
-                  className="h-8 w-60 text-xs"
+                  className="h-8 w-56 text-xs"
                 />
 
                 <Tabs
@@ -1066,6 +1175,71 @@ export default function RelatoriosV2() {
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
+
+                {/* BOTÃO DE EXTRAÇÃO (MODELO DATALAKE 2.0) */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900 transition-colors shadow-sm"
+                      disabled={!consultou || extraindo}
+                      title="Extrair informações no modelo oficial do DataLake 2.0"
+                    >
+                      {extraindo ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-700" />
+                      ) : (
+                        <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+                      )}
+                      <span>Extrair</span>
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuItem
+                      onClick={() => void executarExtracao("pagina")}
+                      disabled={extraindo || linhasFiltradasLocal.length === 0}
+                      className="cursor-pointer gap-2 py-2"
+                    >
+                      <Download className="h-4 w-4 text-emerald-600" />
+                      <div>
+                        <div className="font-medium text-xs">Página atual ({linhasFiltradasLocal.length} clientes)</div>
+                        <div className="text-[11px] text-muted-foreground">Extrair clientes visíveis na tabela</div>
+                      </div>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={() => void executarExtracao("todos")}
+                      disabled={extraindo}
+                      className="cursor-pointer gap-2 py-2"
+                    >
+                      <FileDown className="h-4 w-4 text-blue-600" />
+                      <div>
+                        <div className="font-medium text-xs">Todos os clientes apurados</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {subtotais.somaSimples.pessoas > 0
+                            ? `${subtotais.somaSimples.pessoas} clientes apurados`
+                            : "Busca consolidada completa"}
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <a
+                        href="/modelos/Modelo_Extração_DataLake2.0.xlsx"
+                        download="Modelo_Extração_DataLake2.0.xlsx"
+                        className="flex cursor-pointer items-center gap-2 py-2 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <div className="font-medium text-xs">Baixar modelo padrão (.xlsx)</div>
+                          <div className="text-[11px] text-muted-foreground">Planilha modelo de referência</div>
+                        </div>
+                      </a>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </CardHeader>
