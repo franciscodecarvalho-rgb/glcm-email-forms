@@ -676,12 +676,6 @@ export type Database = {
           proventos: number
         }[]
       }
-      excluir_tema: {
-        Args: {
-          p_tema_id: string
-        }
-        Returns: boolean
-      }
       salvar_tema: {
         Args: {
           p_ativo?: boolean

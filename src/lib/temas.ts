@@ -7,6 +7,17 @@
  * são escapados e valem como caractere literal.
  */
 import { supabase } from "@/integrations/supabase/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+
+// Contrato da migration de Temas enquanto os tipos gerados não incluem a RPC.
+type DatabaseTemas = Database & {
+  public: {
+    Functions: {
+      excluir_tema: { Args: { p_tema_id: string }; Returns: boolean };
+    };
+  };
+};
 
 export const HISTORICO_PONTE_URL = "https://pcquefluiltrvwjpndvw.supabase.co/functions/v1/relatorios-ponte";
 
@@ -113,7 +124,7 @@ export async function salvarTemaMotor(params: {
  */
 export async function excluirTemaMotor(temaId: string): Promise<void> {
   if (!temaId) throw new Error("ID do tema é obrigatório");
-  const { error } = await supabase.rpc("excluir_tema", {
+  const { error } = await (supabase as SupabaseClient<DatabaseTemas>).rpc("excluir_tema", {
     p_tema_id: temaId,
   });
   if (error) {

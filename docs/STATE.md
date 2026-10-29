@@ -58,6 +58,12 @@ NONE
 
 ## Last Verified
 
+Em 29/10/2026, correção localizada de tipagem: o cliente de Temas declara o
+contrato de `excluir_tema` já versionado na migration, sem editar tipos gerados;
+a função de exclusão de casos cancelados usa o tipo explícito do cliente para
+evitar inferência de schema `never`. Nenhuma lógica, migration ou RLS alterada;
+nenhuma função ou frontend publicado nesta correção.
+
 Na correção local de 30/09/2026, o fluxo manual só promove o registro a Caso após
 a confirmação. PDFs pessoais passam pelo Gemini; a
 leitura determinística complementa os dados sem substituir valores válidos por
