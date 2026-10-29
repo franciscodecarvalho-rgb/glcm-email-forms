@@ -6,7 +6,7 @@
 // finalizacoes_extracao, contracheques e itens_contracheque) são removidos
 // pelo ON DELETE CASCADE das migrations; o Storage não tem cascade e é
 // limpo explicitamente aqui.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +19,7 @@ const BUCKETS = ["casos-arquivos", "casos-documentos"];
 const LOTE_DELETE = 100; // ids por instrução DELETE
 const LOTE_STORAGE = 1000; // limite por chamada de list/remove do Storage
 
-type SupabaseAdmin = ReturnType<typeof createClient>;
+type SupabaseAdmin = SupabaseClient;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
