@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Search, Tag, Trash2, X } from "lucide-react";
+import { Database, Plus, Search, Tag, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +19,15 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { deduplicarTermos, normalizarTermo } from "@/lib/temas";
+import { formatarMoeda } from "@/lib/relatorios";
+import {
+  buscarRubricasDataLake,
+  deduplicarTermos,
+  excluirTemaMotor,
+  normalizarTermo,
+  salvarTemaMotor,
+  type RubricaDataLake,
+} from "@/lib/temas";
 
 type Termo = { id: string; termo: string };
 type Tema = {
@@ -32,15 +39,6 @@ type Tema = {
   tema_termos: Termo[];
 };
 
-type Rubrica = {
-  codigo: string | null;
-  descricao: string | null;
-  tipo: string | null;
-  empresa: string | null;
-  ocorrencias: number | null;
-  total_linhas: number | null;
-};
-
 export const RUBRICAS_POR_PAGINA = 50;
 
 const TIPO_LABEL: Record<string, string> = {
@@ -50,11 +48,10 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 export default function Temas() {
-  
-  const { isAdmin } = useIsAdmin();
   const [temas, setTemas] = useState<Tema[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   const [editorAberto, setEditorAberto] = useState(false);
   const [emEdicao, setEmEdicao] = useState<Tema | null>(null);
@@ -64,8 +61,10 @@ export default function Temas() {
   const [termos, setTermos] = useState<string[]>([]);
   const [novoTermo, setNovoTermo] = useState("");
 
+  const [temaParaExcluir, setTemaParaExcluir] = useState<Tema | null>(null);
+
   const [temaRubricas, setTemaRubricas] = useState<Tema | null>(null);
-  const [rubricas, setRubricas] = useState<Rubrica[]>([]);
+  const [rubricas, setRubricas] = useState<RubricaDataLake[]>([]);
   const [rubricasTotal, setRubricasTotal] = useState(0);
   const [rubricasPagina, setRubricasPagina] = useState(0);
   const [buscandoRubricas, setBuscandoRubricas] = useState(false);
@@ -129,17 +128,15 @@ export default function Temas() {
 
     setSalvando(true);
     try {
-      // Gravação atômica no servidor: tema + termos em uma única transação.
-      const { error } = await supabase.rpc("salvar_tema", {
-        p_nome: nomeLimpo,
-        p_termos: listaTermos,
-        p_descricao: descricao.trim() || null,
-        p_ativo: ativo,
-        p_tema_id: emEdicao?.id ?? null,
+      await salvarTemaMotor({
+        nome: nomeLimpo,
+        termos: listaTermos,
+        descricao: descricao.trim() || null,
+        ativo,
+        temaId: emEdicao?.id ?? null,
       });
-      if (error) throw error;
 
-      toast.success(emEdicao ? "Tema atualizado" : "Tema criado");
+      toast.success(emEdicao ? "Tema atualizado com sucesso" : "Tema criado com sucesso");
       setEditorAberto(false);
       await carregar();
     } catch (e: unknown) {
@@ -147,6 +144,22 @@ export default function Temas() {
       toast.error(msg);
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const confirmarExclusao = async () => {
+    if (!temaParaExcluir) return;
+    setExcluindo(true);
+    try {
+      await excluirTemaMotor(temaParaExcluir.id);
+      toast.success(`Tema "${temaParaExcluir.nome}" excluído`);
+      setTemaParaExcluir(null);
+      await carregar();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Erro ao excluir o tema";
+      toast.error(msg);
+    } finally {
+      setExcluindo(false);
     }
   };
 
@@ -160,8 +173,7 @@ export default function Temas() {
     toast.success(valor ? "Tema ativado" : "Tema inativado");
   };
 
-  // Busca no servidor: comparação normalizada e literal, sem repetições,
-  // com paginação estável. Respostas antigas são descartadas.
+  // Busca rubricas correspondentes diretamente no DataLake 2.0 (241.678 rubricas)
   const buscarRubricas = useCallback(async (tema: Tema, pagina: number) => {
     const requisicao = ++requisicaoRubricas.current;
     setBuscandoRubricas(true);
@@ -174,22 +186,24 @@ export default function Temas() {
       setBuscandoRubricas(false);
       return;
     }
-    const { data, error } = await supabase.rpc("temas_rubricas_correspondentes", {
-      p_termos: termosTema,
-      p_limit: RUBRICAS_POR_PAGINA,
-      p_offset: pagina * RUBRICAS_POR_PAGINA,
-    });
-    if (requisicao !== requisicaoRubricas.current) return;
-    setBuscandoRubricas(false);
-    if (error) {
+
+    try {
+      const { dados, total } = await buscarRubricasDataLake(
+        termosTema,
+        RUBRICAS_POR_PAGINA,
+        pagina * RUBRICAS_POR_PAGINA,
+      );
+      if (requisicao !== requisicaoRubricas.current) return;
+      setBuscandoRubricas(false);
+      setRubricas(dados);
+      setRubricasTotal(total);
+    } catch (e: unknown) {
+      if (requisicao !== requisicaoRubricas.current) return;
+      setBuscandoRubricas(false);
       setRubricas([]);
       setRubricasTotal(0);
-      setErroRubricas("Não foi possível consultar as rubricas correspondentes.");
-      return;
+      setErroRubricas(e instanceof Error ? e.message : "Não foi possível consultar as rubricas no DataLake 2.0.");
     }
-    const linhas = (data ?? []) as Rubrica[];
-    setRubricas(linhas);
-    setRubricasTotal(Number(linhas[0]?.total_linhas ?? 0));
   }, []);
 
   const verRubricas = (tema: Tema) => {
@@ -212,18 +226,16 @@ export default function Temas() {
       <main className="container py-8">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Temas</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Temas Jurídicos</h1>
             <p className="text-sm text-muted-foreground">
               Cada tema reúne rubricas pelos termos que você cadastra. Uma rubrica entra no tema
               quando a descrição contém qualquer um dos termos, sem diferenciar maiúsculas de
-              minúsculas nem espaços repetidos.
+              minúsculas nem espaços repetidos. Os temas cadastrados ficam disponíveis para filtragem analítica no DataLake 2.0.
             </p>
           </div>
-          {isAdmin && (
-            <Button onClick={abrirNovo}>
-              <Plus className="mr-2 h-4 w-4" />Novo tema
-            </Button>
-          )}
+          <Button onClick={abrirNovo}>
+            <Plus className="mr-2 h-4 w-4" />Novo tema
+          </Button>
         </div>
 
         <div className="rounded-lg border bg-card">
@@ -233,7 +245,7 @@ export default function Temas() {
                 <TableHead>Tema</TableHead>
                 <TableHead>Termos de inclusão</TableHead>
                 <TableHead className="w-[120px]">Situação</TableHead>
-                <TableHead className="w-[220px] text-right">Ações</TableHead>
+                <TableHead className="w-[280px] text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -269,7 +281,6 @@ export default function Temas() {
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={tema.ativo}
-                          disabled={!isAdmin}
                           onCheckedChange={(v) => alternarAtivo(tema, v)}
                           aria-label={`Ativar ou inativar ${tema.nome}`}
                         />
@@ -278,15 +289,22 @@ export default function Temas() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => verRubricas(tema)}>
+                    <TableCell className="text-right space-x-1">
+                      <Button variant="ghost" size="sm" onClick={() => verRubricas(tema)} title="Ver rubricas correspondentes no DataLake 2.0">
                         <Search className="mr-1 h-4 w-4" />Rubricas
                       </Button>
-                      {isAdmin && (
-                        <Button variant="ghost" size="sm" onClick={() => abrirEdicao(tema)}>
-                          <Tag className="mr-1 h-4 w-4" />Editar
-                        </Button>
-                      )}
+                      <Button variant="ghost" size="sm" onClick={() => abrirEdicao(tema)} title="Editar tema">
+                        <Tag className="mr-1 h-4 w-4" />Editar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setTemaParaExcluir(tema)}
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        title="Excluir tema"
+                      >
+                        <Trash2 className="mr-1 h-4 w-4" />Excluir
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -296,24 +314,31 @@ export default function Temas() {
         </div>
       </main>
 
+      {/* MODAL DE CRIAÇÃO / EDIÇÃO */}
       <Dialog open={editorAberto} onOpenChange={setEditorAberto}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{emEdicao ? "Editar tema" : "Novo tema"}</DialogTitle>
             <DialogDescription>
               Cadastre os termos que devem aparecer na descrição da rubrica. Vários termos são
-              aceitos: basta que a descrição contenha um deles.
+              aceitos: basta que a descrição contenha um deles para ser capturada no DataLake 2.0.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="tema-nome">Nome</Label>
-              <Input id="tema-nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+              <Label htmlFor="tema-nome">Nome do Tema</Label>
+              <Input
+                id="tema-nome"
+                placeholder="Ex.: Adicional de Periculosidade"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="tema-descricao">Descrição (opcional)</Label>
               <Textarea
                 id="tema-descricao"
+                placeholder="Explicação da tese jurídica ou notas de enquadramento..."
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
                 rows={3}
@@ -321,15 +346,15 @@ export default function Temas() {
             </div>
             <div className="flex items-center gap-3">
               <Switch id="tema-ativo" checked={ativo} onCheckedChange={setAtivo} />
-              <Label htmlFor="tema-ativo">Tema ativo</Label>
+              <Label htmlFor="tema-ativo">Tema ativo (disponível para filtros)</Label>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="tema-termo">Termos de inclusão</Label>
+              <Label htmlFor="tema-termo">Termos de inclusão (palavras-chave)</Label>
               <div className="flex gap-2">
                 <Input
                   id="tema-termo"
                   value={novoTermo}
-                  placeholder="Ex.: banco de horas"
+                  placeholder="Ex.: periculosidade"
                   onChange={(e) => setNovoTermo(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -340,9 +365,12 @@ export default function Temas() {
                 />
                 <Button type="button" variant="outline" onClick={adicionarTermo}>Adicionar</Button>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Dica: Digite o termo e pressione Enter ou clique em Adicionar.
+              </p>
               <div className="flex flex-wrap gap-1 pt-1">
                 {termos.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">Nenhum termo adicionado.</span>
+                  <span className="text-xs text-muted-foreground">Nenhum termo adicionado. Informe ao menos um.</span>
                 ) : (
                   termos.map((t) => (
                     <Badge key={t} variant="secondary" className="gap-1">
@@ -365,23 +393,55 @@ export default function Temas() {
               Cancelar
             </Button>
             <Button onClick={salvar} disabled={salvando}>
-              {salvando ? "Salvando…" : "Salvar"}
+              {salvando ? "Salvando…" : emEdicao ? "Atualizar Tema" : "Salvar Tema"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!temaRubricas} onOpenChange={(o) => !o && setTemaRubricas(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      <Dialog open={!!temaParaExcluir} onOpenChange={(o) => !o && setTemaParaExcluir(null)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rubricas correspondentes — {temaRubricas?.nome}</DialogTitle>
+            <DialogTitle className="text-destructive">Confirmar exclusão de tema</DialogTitle>
             <DialogDescription>
-              Rubricas registradas nos contracheques do sistema cuja descrição contém algum termo
-              do tema.
+              Tem certeza que deseja excluir o tema <strong>"{temaParaExcluir?.nome}"</strong> e todos os seus termos associados? Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setTemaParaExcluir(null)} disabled={excluindo}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmarExclusao} disabled={excluindo}>
+              {excluindo ? "Excluindo…" : "Excluir Definitivamente"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL DE PRÉ-VISUALIZAÇÃO DE RUBRICAS NO DATALAKE 2.0 */}
+      <Dialog open={!!temaRubricas} onOpenChange={(o) => !o && setTemaRubricas(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <DialogTitle className="flex items-center gap-2">
+                  <span>Rubricas correspondentes — {temaRubricas?.nome}</span>
+                  <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 flex items-center gap-1">
+                    <Database className="h-3 w-3" /> DataLake 2.0
+                  </Badge>
+                </DialogTitle>
+                <DialogDescription>
+                  Rubricas localizadas na base histórica do DataLake 2.0 cuja descrição contém algum termo do tema.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
           {buscandoRubricas ? (
-            <p className="py-8 text-center text-muted-foreground">Buscando…</p>
+            <div className="py-12 text-center text-muted-foreground space-y-2">
+              <div className="animate-spin inline-block h-6 w-6 border-2 border-current border-t-transparent rounded-full" />
+              <p>Consultando DataLake 2.0 (2,15M registros)...</p>
+            </div>
           ) : erroRubricas ? (
             <div className="py-8 text-center">
               <p className="text-sm text-destructive">{erroRubricas}</p>
@@ -395,33 +455,48 @@ export default function Temas() {
               </Button>
             </div>
           ) : rubricas.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">Nenhuma rubrica correspondente.</p>
+            <div className="py-10 text-center text-muted-foreground space-y-2">
+              <p>Nenhuma rubrica correspondente no DataLake 2.0 para os termos cadastrados.</p>
+              <p className="text-xs">Verifique os termos de inclusão cadastrados no tema.</p>
+            </div>
           ) : (
             <div className="space-y-3">
               <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[100px]">Código</TableHead>
+                      <TableHead className="w-[90px]">Código</TableHead>
                       <TableHead>Descrição</TableHead>
-                      <TableHead className="w-[120px]">Tipo</TableHead>
-                      <TableHead className="w-[160px]">Empresa/modelo</TableHead>
-                      <TableHead className="w-[110px] text-right">Lançamentos</TableHead>
+                      <TableHead className="w-[110px]">Tipo</TableHead>
+                      <TableHead className="w-[180px]">Empresa / Modelo</TableHead>
+                      <TableHead className="w-[100px] text-right">Lançamentos</TableHead>
+                      <TableHead className="w-[120px] text-right">Proventos</TableHead>
+                      <TableHead className="w-[120px] text-right">Descontos</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rubricas.map((r, i) => (
                       <TableRow key={`${r.codigo ?? ""}-${r.descricao ?? ""}-${r.tipo ?? ""}-${r.empresa ?? ""}-${i}`}>
                         <TableCell className="font-mono text-xs">{r.codigo || "—"}</TableCell>
-                        <TableCell>{r.descricao || "—"}</TableCell>
-                        <TableCell className="text-sm">
-                          {r.tipo ? TIPO_LABEL[r.tipo] ?? r.tipo : "—"}
+                        <TableCell className="font-medium text-xs">{r.descricao || "—"}</TableCell>
+                        <TableCell className="text-xs">
+                          {r.tipo ? (
+                            <Badge variant={r.tipo === "provento" ? "default" : r.tipo === "desconto" ? "secondary" : "outline"} className="text-[10px]">
+                              {TIPO_LABEL[r.tipo] ?? r.tipo}
+                            </Badge>
+                          ) : "—"}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[180px]" title={r.empresa || ""}>
                           {r.empresa || "—"}
                         </TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
-                          {Number(r.ocorrencias ?? 0)}
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {Number(r.itens ?? r.ocorrencias ?? 0).toLocaleString("pt-BR")}
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono text-emerald-700">
+                          {r.proventos != null ? formatarMoeda(r.proventos) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono text-rose-700">
+                          {r.descontos != null ? formatarMoeda(r.descontos) : "—"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -432,7 +507,7 @@ export default function Temas() {
                 <span>
                   {`Mostrando ${rubricasPagina * RUBRICAS_POR_PAGINA + 1}–${
                     rubricasPagina * RUBRICAS_POR_PAGINA + rubricas.length
-                  } de ${rubricasTotal} rubricas distintas`}
+                  } de ${rubricasTotal} rubricas distintas encontradas`}
                 </span>
                 <div className="flex gap-2">
                   <Button

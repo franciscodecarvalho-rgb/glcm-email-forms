@@ -469,3 +469,11 @@ empresa, página e evidência da origem do dado.
 **Origem:** Solicitação de Nodley em 30/09/2026.
 **Aplicação:** Gemini deve ler a CNH visualmente e procurar o CPF mesmo em PDF escaneado; enviar PDFs como partes `file` multimodais. Preservar a validação de CPF e os demais requisitos (nome, logradouro, comprovantes, contracheques e rubricas). RG pode ser salvo se impresso, mas fica opcional.
 **Evitar:** Tratar RG como requisito quando o CPF está válido, ou usar RG como substituto de CPF.
+
+### 2026-10 — Motor de Cadastro de Temas e Integração com DataLake 2.0
+
+**Regra confirmada:** Usuários autenticados podem cadastrar, editar, alternar ativo e excluir temas com seus termos de inclusão diretamente pelo front-end (na tela /Temas e pelo atalho rápido no Painel 2.0 /RelatoriosV2). A pré-visualização de rubricas na tela de Temas consulta a base histórica do DataLake 2.0 (241k rubricas) pela ponte segura 
+elatorios-ponte.
+**Origem:** Solicitação e aprovação de Nodley em 29/10/2026 para permitir a filtragem analítica de teses jurídicas no DataLake 2.0.
+**Aplicação:** Gravar atomicamente via salvar_tema e remover via excluir_tema (SECURITY DEFINER registrando autoria com uth.uid()), sem bloqueio de papel dmin para os usuários internos do escritório. Na tela de Temas, a busca de rubricas utiliza uscarRubricasDataLake com paginação estável e somatórios financeiros. No Painel 2.0, um novo tema pode ser cadastrado diretamente no popover de temas e imediatamente selecionado no filtro sem sair da análise.
+**Evitar:** Travar operações de temas a perfil admin inexistente no cliente, consultar apenas a tabela local de casos no modal de rubricas, ou forçar navegação para fora do Painel 2.0 para adicionar tese.

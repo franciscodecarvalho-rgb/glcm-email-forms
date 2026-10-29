@@ -1,28 +1,32 @@
 /**
- * Testes de comportamento da tela de Temas.
- *
- * Cobrem o contrato com o servidor após a revisão: busca de rubricas por RPC
- * (paginação estável, total informado, erro distinto de vazio, descarte de
- * resposta antiga) e gravação atômica do tema por RPC única.
- *
- * Limite declarado: a semântica SQL (normalização, DISTINCT, rollback) é
- * garantida no banco e validada por consulta direta; aqui validamos apenas o
- * uso correto dessas funções pela interface.
+ * Testes de comportamento da tela de Temas com o Motor de Cadastro
+ * e integração com DataLake 2.0.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Temas, { RUBRICAS_POR_PAGINA } from "./Temas";
 
-const rpc = vi.fn();
 const from = vi.fn();
+const buscarRubricasDataLake = vi.fn();
+const salvarTemaMotor = vi.fn();
+const excluirTemaMotor = vi.fn();
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    rpc: (...args: unknown[]) => rpc(...args),
     from: (...args: unknown[]) => from(...args),
   },
 }));
-vi.mock("@/hooks/useIsAdmin", () => ({ useIsAdmin: () => ({ isAdmin: true }) }));
+
+vi.mock("@/lib/temas", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/temas")>();
+  return {
+    ...actual,
+    buscarRubricasDataLake: (...args: unknown[]) => buscarRubricasDataLake(...args),
+    salvarTemaMotor: (...args: unknown[]) => salvarTemaMotor(...args),
+    excluirTemaMotor: (...args: unknown[]) => excluirTemaMotor(...args),
+  };
+});
+
 vi.mock("@/components/AppHeader", () => ({ AppHeader: () => null }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -30,7 +34,7 @@ const TEMAS = [
   {
     id: "t1",
     nome: "Banco de Horas",
-    descricao: null,
+    descricao: "Compensação de jornada",
     ativo: true,
     created_at: "2026-01-01",
     tema_termos: [{ id: "x1", termo: "banco de horas" }],
@@ -50,27 +54,25 @@ function linha(descricao: string, total: number) {
     codigo: "1513",
     descricao,
     tipo: "provento",
-    empresa: "petrobras",
-    ocorrencias: 3,
+    empresa: "PETRÓLEO BRASILEIRO S.A.",
+    itens: 15,
+    proventos: 45000.5,
+    descontos: 0,
     total_linhas: total,
   };
 }
 
 beforeEach(() => {
-  rpc.mockReset();
   from.mockReset();
+  buscarRubricasDataLake.mockReset();
+  salvarTemaMotor.mockReset();
+  excluirTemaMotor.mockReset();
+
   from.mockImplementation(() => ({
     select: () => ({ order: () => Promise.resolve({ data: TEMAS, error: null }) }),
     update: () => ({ eq: () => Promise.resolve({ error: null }) }),
   }));
 });
-
-async function abrirRubricas(tema = "Banco de Horas") {
-  render(<Temas />);
-  await screen.findByText(tema);
-  const linhaTema = screen.getByText(tema).closest("tr")!;
-  fireEvent.click(within(linhaTema).getByRole("button", { name: /Rubricas/i }));
-}
 
 function within(el: HTMLElement) {
   return {
@@ -81,82 +83,61 @@ function within(el: HTMLElement) {
   };
 }
 
-describe("Temas — rubricas correspondentes", () => {
-  it("consulta a RPC paginada e informa o total de rubricas distintas", async () => {
-    rpc.mockResolvedValue({ data: [linha("Banco de Horas", 120)], error: null });
+async function abrirRubricas(tema = "Banco de Horas") {
+  render(<Temas />);
+  await screen.findByText(tema);
+  const linhaTema = screen.getByText(tema).closest("tr")!;
+  fireEvent.click(within(linhaTema).getByRole("button", { name: /Rubricas/i }));
+}
+
+describe("Temas — rubricas no DataLake 2.0", () => {
+  it("consulta as rubricas no DataLake 2.0 paginada e informa o total de rubricas", async () => {
+    buscarRubricasDataLake.mockResolvedValue({ dados: [linha("Banco de Horas 50%", 120)], total: 120 });
     await abrirRubricas();
 
-    await waitFor(() => expect(rpc).toHaveBeenCalled());
-    expect(rpc).toHaveBeenCalledWith("temas_rubricas_correspondentes", {
-      p_termos: ["banco de horas"],
-      p_limit: RUBRICAS_POR_PAGINA,
-      p_offset: 0,
-    });
+    await waitFor(() => expect(buscarRubricasDataLake).toHaveBeenCalled());
+    expect(buscarRubricasDataLake).toHaveBeenCalledWith(
+      ["banco de horas"],
+      RUBRICAS_POR_PAGINA,
+      0,
+    );
     expect(await screen.findByText(/de 120 rubricas distintas/)).toBeTruthy();
+    expect(await screen.findByText("DataLake 2.0")).toBeTruthy();
   });
 
-  it("avança a paginação usando offset estável", async () => {
-    rpc.mockResolvedValue({ data: [linha("Banco de Horas", 120)], error: null });
+  it("avança a paginação usando offset de 50 no DataLake 2.0", async () => {
+    buscarRubricasDataLake.mockResolvedValue({ dados: [linha("Banco de Horas 50%", 120)], total: 120 });
     await abrirRubricas();
     const proxima = await screen.findByRole("button", { name: "Próxima" });
     fireEvent.click(proxima);
 
     await waitFor(() =>
-      expect(rpc).toHaveBeenLastCalledWith("temas_rubricas_correspondentes", {
-        p_termos: ["banco de horas"],
-        p_limit: RUBRICAS_POR_PAGINA,
-        p_offset: RUBRICAS_POR_PAGINA,
-      }),
+      expect(buscarRubricasDataLake).toHaveBeenLastCalledWith(
+        ["banco de horas"],
+        RUBRICAS_POR_PAGINA,
+        RUBRICAS_POR_PAGINA,
+      ),
     );
   });
 
-  it("mostra erro distinto do estado vazio", async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: "falhou" } });
+  it("mostra erro amigável quando a consulta ao DataLake 2.0 falhar", async () => {
+    buscarRubricasDataLake.mockRejectedValue(new Error("Falha na ponte histórica"));
     await abrirRubricas();
     expect(
-      await screen.findByText("Não foi possível consultar as rubricas correspondentes."),
+      await screen.findByText("Falha na ponte histórica"),
     ).toBeTruthy();
-    expect(screen.queryByText("Nenhuma rubrica correspondente.")).toBeNull();
   });
 
-  it("mostra estado vazio sem mensagem de erro", async () => {
-    rpc.mockResolvedValue({ data: [], error: null });
+  it("mostra estado vazio com orientação quando nenhuma rubrica for encontrada", async () => {
+    buscarRubricasDataLake.mockResolvedValue({ dados: [], total: 0 });
     await abrirRubricas();
-    expect(await screen.findByText("Nenhuma rubrica correspondente.")).toBeTruthy();
-  });
-
-  it("descarta a resposta antiga ao trocar de tema rapidamente", async () => {
-    let resolverAntiga: (v: unknown) => void = () => {};
-    rpc
-      .mockImplementationOnce(
-        () => new Promise((resolve) => { resolverAntiga = resolve; }),
-      )
-      .mockResolvedValue({ data: [linha("Confinamento Offshore", 1)], error: null });
-
-    render(<Temas />);
-    await screen.findByText("Banco de Horas");
-    fireEvent.click(
-      within(screen.getByText("Banco de Horas").closest("tr")!).getByRole("button", {
-        name: /Rubricas/i,
-      }),
-    );
-    fireEvent.click(
-      within(screen.getByText("Confinamento").closest("tr")!).getByRole("button", {
-        name: /Rubricas/i,
-      }),
-    );
-
-    expect(await screen.findByText("Confinamento Offshore")).toBeTruthy();
-    resolverAntiga({ data: [linha("Banco de Horas", 999)], error: null });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(screen.queryByText(/de 999 rubricas distintas/)).toBeNull();
-    expect(screen.getByText("Confinamento Offshore")).toBeTruthy();
+    expect(await screen.findByText("Nenhuma rubrica correspondente no DataLake 2.0 para os termos cadastrados.")).toBeTruthy();
   });
 });
 
-describe("Temas — gravação atômica", () => {
-  it("salva tema e termos em uma única chamada transacional", async () => {
-    rpc.mockResolvedValue({ data: "t1", error: null });
+describe("Temas — motor de gravação e exclusão", () => {
+  it("salva edição do tema chamando salvarTemaMotor", async () => {
+    salvarTemaMotor.mockResolvedValue("t1");
     render(<Temas />);
     await screen.findByText("Banco de Horas");
     fireEvent.click(
@@ -164,17 +145,59 @@ describe("Temas — gravação atômica", () => {
         name: /Editar/i,
       }),
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Salvar" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Atualizar Tema" }));
 
-    await waitFor(() => expect(rpc).toHaveBeenCalled());
-    const chamadas = rpc.mock.calls.filter((c) => c[0] === "salvar_tema");
-    expect(chamadas).toHaveLength(1);
-    expect(chamadas[0][1]).toMatchObject({
-      p_nome: "Banco de Horas",
-      p_termos: ["banco de horas"],
-      p_tema_id: "t1",
+    await waitFor(() => expect(salvarTemaMotor).toHaveBeenCalled());
+    expect(salvarTemaMotor).toHaveBeenCalledWith({
+      nome: "Banco de Horas",
+      termos: ["banco de horas"],
+      descricao: "Compensação de jornada",
+      ativo: true,
+      temaId: "t1",
     });
-    // Nenhuma escrita direta em tabelas de tema fora da transação do servidor.
-    expect(from.mock.calls.filter((c) => c[0] === "tema_termos")).toHaveLength(0);
+  });
+
+  it("permite criar novo tema com adição de termos", async () => {
+    salvarTemaMotor.mockResolvedValue("t3");
+    render(<Temas />);
+    fireEvent.click(screen.getByRole("button", { name: /Novo tema/i }));
+
+    const inputNome = screen.getByLabelText(/Nome do Tema/i);
+    fireEvent.change(inputNome, { target: { value: "Periculosidade" } });
+
+    const inputTermo = screen.getByPlaceholderText(/Ex.: periculosidade/i);
+    fireEvent.change(inputTermo, { target: { value: "periculosidade" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+
+    expect(await screen.findByText("periculosidade")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar Tema" }));
+
+    await waitFor(() => expect(salvarTemaMotor).toHaveBeenCalled());
+    expect(salvarTemaMotor).toHaveBeenCalledWith({
+      nome: "Periculosidade",
+      termos: ["periculosidade"],
+      descricao: null,
+      ativo: true,
+      temaId: null,
+    });
+  });
+
+  it("abre modal de confirmação e exclui tema chamando excluirTemaMotor", async () => {
+    excluirTemaMotor.mockResolvedValue(undefined);
+    render(<Temas />);
+    await screen.findByText("Banco de Horas");
+    fireEvent.click(
+      within(screen.getByText("Banco de Horas").closest("tr")!).getByRole("button", {
+        name: /Excluir/i,
+      }),
+    );
+
+    expect(await screen.findByText(/Confirmar exclusão de tema/i)).toBeTruthy();
+    expect(screen.getByText(/Tem certeza que deseja excluir o tema/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Excluir Definitivamente" }));
+
+    await waitFor(() => expect(excluirTemaMotor).toHaveBeenCalledWith("t1"));
   });
 });

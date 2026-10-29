@@ -313,6 +313,12 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** Em `process-contracheques-pdf`, classificar esses códigos como `hra` somente quando o modelo identificado for, respectivamente, `basf` ou `braskem`.
 **Evitar:** Tornar os códigos globais para outras empresas ou modificar as regras existentes dos demais modelos.
 
+### 2026-09 — Famílias HRA específicas da Petrobras
+
+**Regra confirmada:** Na Petrobras, `Dif/DI AHRA` pertence à família/coluna AHRA; a descrição `Adicional HRA` pertence à família/coluna HRA. `Adic HRA Eventual` permanece em `adicional_hra`.
+**Aplicação:** `process-contracheques-pdf` aplica a exceção somente quando o modelo da página é Petrobras; a revisão e a geração da planilha reconhecem a família `ahra` como AHRA.
+**Evitar:** Aplicar a troca de `Adicional HRA` a outras empresas ou incluir descontos no cálculo.
+
 ### 2026-08 — Unificação: ordenar por página, não pelo arquivo inteiro
 
 **Regra confirmada:** Um único PDF de contracheque pode conter páginas de mais de uma competência (ex.: a BASF costuma emitir o adiantamento quinzenal e o recibo integral de um mês junto com o adiantamento do mês seguinte no mesmo arquivo). Ordenar a unificação pela competência do arquivo inteiro (só a primeira página) arrasta as páginas do mês seguinte para a posição do primeiro mês, embaralhando a ordem cronológica quando outro arquivo desse primeiro mês é selecionado depois na lista.
@@ -320,6 +326,71 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Aplicação:** `src/lib/unificar-pdfs.ts` calcula a competência de cada página (`competenciasPorPagina`), agrupa páginas consecutivas da mesma competência em blocos (`agruparPaginasPorCompetencia`, página sem competência reconhecida vira continuação do bloco anterior) e ordena os blocos com `ordenarPorCompetencia` (`ordenarUnidades`), não mais os arquivos inteiros — `prepararArquivos`/`montarUnificado`/`unificarPdfsEmLotes` usam esse fluxo. Só confia no agrupamento por página quando a extração via pdf.js enxerga o mesmo número de páginas que o pdf-lib real; senão mantém o arquivo inteiro como um bloco único (fallback de segurança para não perder páginas).
 **Evitar:** Voltar a tratar o arquivo inteiro como uma única unidade de ordenação, ou confiar no agrupamento por página quando a contagem de páginas da extração não bate com a do PDF real.
 
+### 2026-09 — SPEC-001: perfis adicionais de contracheques
+
+**Regra confirmada:** Os layouts Birla Carbon, CETREL, DETEN, ECOLAB, MOEVE,
+OXITENO, Refinaria de Mataripe e VOPAK são processados por perfis posicionais,
+mantendo a extração determinística como primeira opção.
+**Origem:** Implementação e validação local da SPEC-001 com os PDFs de referência
+alterados em 28/09/2026.
+**Aplicação:** DETEN e MOEVE podem conter dois contracheques na mesma página;
+ECOLAB, OXITENO e Mataripe usam o layout ADP e tratam `BASE / OUTROS` como
+informativo; VOPAK trata `OUTROS` como informativo; Birla aceita rubricas sem
+código; CETREL aceita códigos `P`/`D`. Páginas sem camada de texto podem usar o
+fallback de IA autorizado somente nessas páginas.
+**Evitar:** Somar bases informativas, duplicar blocos físicos, descartar páginas
+textuais do mesmo lote por causa de uma página sem texto ou enviar todo o PDF à IA
+quando a leitura determinística já produziu dados estruturados.
+
+### 2026-09 — HRA específico da ECOLAB
+
+**Regra confirmada:** Na ECOLAB, a rubrica `3217 — Adicional Repouso
+Alimentação`, quando lançada em Vencimentos, pertence à família HRA.
+**Origem:** Confirmação de Nodley com o modelo visual do contracheque ECOLAB.
+**Aplicação:** Classificar o par modelo `ecolab` + código `3217` como `hra` na
+Edge Function de contracheques.
+**Evitar:** Tornar o código `3217` uma regra global para outras empresas ou
+classificar ocorrências em Descontos como base HRA.
+
+### 2026-09 — HRA específico da OXITENO
+
+**Regra confirmada:** Na OXITENO, as rubricas `3320 — HRA IR`, `3331 —
+HRA-Dif. Dissídio` e `3453 — HRA-Horas Rep. Alimentação`, quando lançadas em
+Vencimentos, pertencem à família HRA.
+**Origem:** Confirmação de Nodley ao inspecionar visualmente o PDF-modelo da
+OXITENO; a rubrica aparece na primeira página com valor `803,97`.
+**Aplicação:** Classificar os pares modelo `oxiteno` + códigos `3320`, `3331` e
+`3453` como `hra` na Edge Function de contracheques.
+**Evitar:** Tornar esses códigos regras globais para outras empresas ou
+classificar ocorrências em Descontos como base HRA.
+
+### Regra permanente — Isolamento das regras de extração por empresa
+
+**Regra:** Toda mudança identificada na extração de contracheques deve ser
+aplicada somente à empresa cujo PDF confirmou aquela estrutura, código ou
+descrição. Não alterar regras globais nem empresas que já estejam funcionando.
+
+**Confirmação necessária:** Para uma nova rubrica, especialmente HRA ou AHRA,
+aguardar a confirmação explícita da empresa, do código e de como a informação
+aparece no PDF antes de criar ou ampliar o mapeamento.
+
+**Aplicação:** Essa regra vale para a ECOLAB e para todas as demais empresas
+atendidas pela SPEC-001.
+
+### Decisão futura — OCR gratuito e local
+
+**Regra:** A aplicação deverá usar ferramentas gratuitas e preferencialmente
+locais para OCR, sem dependência de Cloud Vision, Document AI ou outro serviço
+OCR pago.
+
+**Direção escolhida:** Manter a extração da camada de texto como primeira
+opção e adicionar OCR por página somente quando não houver texto extraível,
+com Tesseract.js/PDF.js, idioma português, origem da leitura registrada e
+revisão manual para baixa confiança.
+
+**Evitar:** Enviar automaticamente contracheques inteiros a serviços externos,
+substituir a leitura determinística ou aplicar OCR sem preservar coordenadas,
+empresa, página e evidência da origem do dado.
 ### 2026-09 — Extração pessoal determinística antes de IA (superada em 30/09/2026)
 
 **Regra confirmada:** Documentos pessoais em PDF devem tentar extração determinística validada antes de qualquer chamada ao Gemini; a IA é fallback individual apenas para o arquivo insuficiente ou escaneado.
@@ -398,3 +469,11 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 **Origem:** Solicitação de Nodley em 30/09/2026.
 **Aplicação:** Gemini deve ler a CNH visualmente e procurar o CPF mesmo em PDF escaneado; enviar PDFs como partes `file` multimodais. Preservar a validação de CPF e os demais requisitos (nome, logradouro, comprovantes, contracheques e rubricas). RG pode ser salvo se impresso, mas fica opcional.
 **Evitar:** Tratar RG como requisito quando o CPF está válido, ou usar RG como substituto de CPF.
+
+### 2026-10 — Motor de Cadastro de Temas e Integração com DataLake 2.0
+
+**Regra confirmada:** Usuários autenticados podem cadastrar, editar, alternar ativo e excluir temas com seus termos de inclusão diretamente pelo front-end (na tela /Temas e pelo atalho rápido no Painel 2.0 /RelatoriosV2). A pré-visualização de rubricas na tela de Temas consulta a base histórica do DataLake 2.0 (241k rubricas) pela ponte segura 
+elatorios-ponte.
+**Origem:** Solicitação e aprovação de Nodley em 29/10/2026 para permitir a filtragem analítica de teses jurídicas no DataLake 2.0.
+**Aplicação:** Gravar atomicamente via salvar_tema e remover via excluir_tema (SECURITY DEFINER registrando autoria com uth.uid()), sem bloqueio de papel dmin para os usuários internos do escritório. Na tela de Temas, a busca de rubricas utiliza uscarRubricasDataLake com paginação estável e somatórios financeiros. No Painel 2.0, um novo tema pode ser cadastrado diretamente no popover de temas e imediatamente selecionado no filtro sem sair da análise.
+**Evitar:** Travar operações de temas a perfil admin inexistente no cliente, consultar apenas a tabela local de casos no modal de rubricas, ou forçar navegação para fora do Painel 2.0 para adicionar tese.
