@@ -2,9 +2,89 @@
 -- Migration: Motor de Cadastro e Gestão de Temas
 -- Permite aos usuários autenticados da banca criar, atualizar e excluir
 -- temas com seus respectivos termos para consulta e filtro no DataLake 2.0.
+-- Aplicação: Banco principal do sistema GLCM (kaopnizsbkzxqdzmocwa / Lovable)
 -- =====================================================================
 
--- 1. Função atômica para salvar ou atualizar tema
+-- 1. Função de normalização de termos para busca e unicidade
+CREATE OR REPLACE FUNCTION public.normalizar_termo_tema(_termo text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT btrim(regexp_replace(lower(coalesce(_termo, '')), '\s+', ' ', 'g'))
+$$;
+
+-- 2. Função utilitária para updated_at automático
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- 3. Garantir existência da tabela public.temas
+CREATE TABLE IF NOT EXISTS public.temas (
+  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  nome text NOT NULL,
+  descricao text,
+  ativo boolean NOT NULL DEFAULT true,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS temas_nome_normalizado_uidx
+  ON public.temas (public.normalizar_termo_tema(nome));
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.temas TO authenticated;
+GRANT ALL ON public.temas TO service_role;
+ALTER TABLE public.temas ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_temas_updated_at'
+  ) THEN
+    CREATE TRIGGER trg_temas_updated_at
+      BEFORE UPDATE ON public.temas
+      FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+  END IF;
+END $$;
+
+-- 4. Garantir existência da tabela public.tema_termos
+CREATE TABLE IF NOT EXISTS public.tema_termos (
+  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  tema_id uuid NOT NULL REFERENCES public.temas(id) ON DELETE CASCADE,
+  termo text NOT NULL,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS tema_termos_tema_termo_uidx
+  ON public.tema_termos (tema_id, public.normalizar_termo_tema(termo));
+CREATE INDEX IF NOT EXISTS tema_termos_tema_id_idx ON public.tema_termos (tema_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.tema_termos TO authenticated;
+GRANT ALL ON public.tema_termos TO service_role;
+ALTER TABLE public.tema_termos ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_tema_termos_updated_at'
+  ) THEN
+    CREATE TRIGGER trg_tema_termos_updated_at
+      BEFORE UPDATE ON public.tema_termos
+      FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+  END IF;
+END $$;
+
+-- 5. Função atômica para salvar ou atualizar tema (SECURITY DEFINER, sem trava de admin)
 CREATE OR REPLACE FUNCTION public.salvar_tema(
   p_nome text,
   p_termos text[],
@@ -74,7 +154,7 @@ BEGIN
 END;
 $$;
 
--- 2. Função para excluir tema e termos associados
+-- 6. Função para excluir tema e termos associados
 CREATE OR REPLACE FUNCTION public.excluir_tema(
   p_tema_id uuid
 ) RETURNS boolean
@@ -97,14 +177,17 @@ BEGIN
 END;
 $$;
 
--- 3. Atualização das permissões RLS para usuários autenticados
+-- 7. Atualização das permissões RLS para usuários autenticados da banca
 DROP POLICY IF EXISTS "admins insert temas" ON public.temas;
 DROP POLICY IF EXISTS "admins update temas" ON public.temas;
 DROP POLICY IF EXISTS "admins delete temas" ON public.temas;
 DROP POLICY IF EXISTS "auth insert temas" ON public.temas;
 DROP POLICY IF EXISTS "auth update temas" ON public.temas;
 DROP POLICY IF EXISTS "auth delete temas" ON public.temas;
+DROP POLICY IF EXISTS "auth read temas" ON public.temas;
 
+CREATE POLICY "auth read temas" ON public.temas
+  FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth insert temas" ON public.temas
   FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth update temas" ON public.temas
@@ -118,7 +201,10 @@ DROP POLICY IF EXISTS "admins delete tema_termos" ON public.tema_termos;
 DROP POLICY IF EXISTS "auth insert tema_termos" ON public.tema_termos;
 DROP POLICY IF EXISTS "auth update tema_termos" ON public.tema_termos;
 DROP POLICY IF EXISTS "auth delete tema_termos" ON public.tema_termos;
+DROP POLICY IF EXISTS "auth read tema_termos" ON public.tema_termos;
 
+CREATE POLICY "auth read tema_termos" ON public.tema_termos
+  FOR SELECT TO authenticated USING (true);
 CREATE POLICY "auth insert tema_termos" ON public.tema_termos
   FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "auth update tema_termos" ON public.tema_termos
@@ -126,9 +212,9 @@ CREATE POLICY "auth update tema_termos" ON public.tema_termos
 CREATE POLICY "auth delete tema_termos" ON public.tema_termos
   FOR DELETE TO authenticated USING (true);
 
+-- 8. Permissões de execução para RPCs
 REVOKE ALL ON FUNCTION public.salvar_tema(text, text[], text, boolean, uuid) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.excluir_tema(uuid) FROM PUBLIC, anon;
 
 GRANT EXECUTE ON FUNCTION public.salvar_tema(text, text[], text, boolean, uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.excluir_tema(uuid) TO authenticated, service_role;
-

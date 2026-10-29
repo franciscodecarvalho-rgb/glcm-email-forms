@@ -140,7 +140,9 @@ export default function Temas() {
       setEditorAberto(false);
       await carregar();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Não foi possível salvar o tema";
+      const msg =
+        (e as { message?: string })?.message ||
+        (e instanceof Error ? e.message : "Não foi possível salvar o tema");
       toast.error(msg);
     } finally {
       setSalvando(false);
@@ -156,7 +158,9 @@ export default function Temas() {
       setTemaParaExcluir(null);
       await carregar();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Erro ao excluir o tema";
+      const msg =
+        (e as { message?: string })?.message ||
+        (e instanceof Error ? e.message : "Erro ao excluir o tema");
       toast.error(msg);
     } finally {
       setExcluindo(false);

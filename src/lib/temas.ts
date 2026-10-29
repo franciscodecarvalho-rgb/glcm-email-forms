@@ -102,7 +102,9 @@ export async function salvarTemaMotor(params: {
     p_tema_id: params.temaId ?? null,
   });
 
-  if (error) throw error;
+  if (error) {
+    throw new Error(error.message || "Erro ao salvar tema");
+  }
   return data as string;
 }
 
@@ -117,7 +119,9 @@ export async function excluirTemaMotor(temaId: string): Promise<void> {
   if (error) {
     // Fallback direto via tabela caso a nova RPC ainda esteja sendo propagada
     const { error: fallbackErr } = await supabase.from("temas").delete().eq("id", temaId);
-    if (fallbackErr) throw fallbackErr;
+    if (fallbackErr) {
+      throw new Error(fallbackErr.message || error.message || "Erro ao excluir tema");
+    }
   }
 }
 
