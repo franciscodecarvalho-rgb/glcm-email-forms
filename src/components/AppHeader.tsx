@@ -1,4 +1,4 @@
-import { Scale, LogOut, FileText, LayoutDashboard, Users, Tag, BarChart3, Database } from "lucide-react";
+import { Scale, LogOut, FileText, LayoutDashboard, Users, Tag, BarChart3, Database, Radar } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
@@ -34,6 +34,9 @@ export function AppHeader() {
           </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link to="/RelatoriosV2"><Database className="mr-2 h-4 w-4" />Painel 2.0</Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/ValidacaoRadar"><Radar className="mr-2 h-4 w-4" />Validação Radar</Link>
           </Button>
           {isAdmin && (
             <Button variant="ghost" size="sm" asChild>
