@@ -15,13 +15,13 @@ export default function ValidacaoTeses() {
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div className="max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
-              <Sparkles className="h-5 w-5 text-emerald-600" />
+              <Sparkles className="h-5 w-5 text-primary" />
               <h1 className="text-2xl font-bold tracking-tight text-foreground">Validação Teses</h1>
-              <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-xs font-semibold">
-                Expansão de Portfólio
+              <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold">
+                Datalake 2.0
               </Badge>
               <Badge variant="outline" className="text-xs text-muted-foreground">
-                Base Reconciliada
+                Expansão de Portfólio
               </Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">

@@ -3,25 +3,12 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
-  Clock,
   Sparkles,
   ShieldAlert,
   Users,
   Scale,
   FileSpreadsheet,
-  RotateCcw,
-  SlidersHorizontal,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,58 +32,15 @@ import {
   TeseExpansao,
 } from "@/data/radarExpansaoData";
 
-const STORAGE_KEY = "glcm_validacao_expansao_teses_v1";
-
-type DecisaoStatus = "aprovar" | "amostra";
-
 export function RadarExpansaoView() {
-  const [decisoes, setDecisoes] = useState<Record<string, DecisaoStatus>>(() => {
-    try {
-      const salvo = localStorage.getItem(STORAGE_KEY);
-      return salvo ? JSON.parse(salvo) : {};
-    } catch {
-      return {};
-    }
-  });
-
   const [ondaAtiva, setOndaAtiva] = useState<"todas" | OndaExpansao>("todas");
   const [amostrasAbertas, setAmostrasAbertas] = useState<Record<string, boolean>>({});
 
-  const salvarDecisao = (id: string, status: DecisaoStatus) => {
-    setDecisoes((prev) => {
-      const novo = { ...prev };
-      if (novo[id] === status) {
-        delete novo[id];
-      } else {
-        novo[id] = status;
-      }
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(novo));
-      } catch {
-        // Ignora erro de cota de armazenamento
-      }
-      return novo;
-    });
-  };
-
-  const limparDecisoes = () => {
-    setDecisoes({});
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Ignora erro
-    }
-  };
-
   const toggleAmostra = (id: string) => {
-    setAmostrasAbertas((prev) => {
-      const aberto = !prev[id];
-      const proximo = { ...prev, [id]: aberto };
-      if (aberto && !decisoes[id]) {
-        salvarDecisao(id, "amostra");
-      }
-      return proximo;
-    });
+    setAmostrasAbertas((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
   const todasAmostrasAbertas = useMemo(() => {
@@ -108,9 +52,6 @@ export function RadarExpansaoView() {
     const proximo: Record<string, boolean> = {};
     NOVAS_TESES.forEach((t) => {
       proximo[t.id] = novoEstado;
-      if (novoEstado && !decisoes[t.id]) {
-        salvarDecisao(t.id, "amostra");
-      }
     });
     setAmostrasAbertas(proximo);
   };
@@ -202,47 +143,10 @@ export function RadarExpansaoView() {
     URL.revokeObjectURL(url);
   };
 
-  const resumo = useMemo(() => {
-    let aprovadas = 0;
-    let emAnalise = 0;
-    let minM = 0;
-    let maxM = 0;
-    const titulosAprovados: string[] = [];
-
-    NOVAS_TESES.forEach((t) => {
-      const st = decisoes[t.id];
-      if (st === "aprovar") {
-        aprovadas++;
-        minM += t.valorMinM;
-        maxM += t.valorMaxM;
-        titulosAprovados.push(t.titulo.split(".")[0]);
-      } else if (st === "amostra") {
-        emAnalise++;
-      }
-    });
-
-    return {
-      aprovadas,
-      emAnalise,
-      minM,
-      maxM,
-      titulosAprovados,
-    };
-  }, [decisoes]);
-
   const tesesFiltradas = useMemo(() => {
     if (ondaAtiva === "todas") return NOVAS_TESES;
     return NOVAS_TESES.filter((t) => t.onda === ondaAtiva);
   }, [ondaAtiva]);
-
-  const chartData = useMemo(() => {
-    return NOVAS_TESES.map((t) => ({
-      nome: t.titulo.split(".")[1]?.split("(")[0]?.trim() || t.id,
-      id: t.id,
-      min: t.valorMinM,
-      max: t.valorMaxM,
-    }));
-  }, []);
 
   return (
     <div className="space-y-8">
@@ -268,10 +172,10 @@ export function RadarExpansaoView() {
             <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Novas Teses Fora do Radar
             </CardTitle>
-            <Sparkles className="h-4 w-4 text-emerald-600" />
+            <Sparkles className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold tracking-tight text-emerald-700">8 Teses + 5 Indicadores</div>
+            <div className="text-2xl font-bold tracking-tight text-foreground">8 Teses + 5 Indicadores</div>
             <p className="mt-1 text-xs text-muted-foreground">
               3 ondas de monetização imediata, nichos captados e consumo.
             </p>
@@ -309,149 +213,8 @@ export function RadarExpansaoView() {
         </Card>
       </section>
 
-      {/* PAINEL DE DELIBERAÇÃO DA SOCIEDADE */}
-      <section className="rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                Painel de Deliberação da Sociedade
-              </h2>
-              <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary text-[11px]">
-                Interativo
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Valide as teses prioritárias para o escritório. A seleção recalcula os honorários e salva automaticamente sua deliberação.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleTodasAmostras}
-              className="h-8 gap-1.5 text-xs bg-background"
-            >
-              <Users className="h-3.5 w-3.5 text-primary" />
-              {todasAmostrasAbertas ? "Recolher Amostras" : "Ver Todas Amostras (40)"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportarTodasAmostrasCsv}
-              className="h-8 gap-1.5 text-xs bg-background"
-            >
-              <Download className="h-3.5 w-3.5 text-emerald-600" />
-              Exportar 40 Casos (CSV)
-            </Button>
-            {resumo.aprovadas > 0 || resumo.emAnalise > 0 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={limparDecisoes}
-                className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <RotateCcw className="h-3 w-3" />
-                Limpar
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 pt-3 border-t border-primary/10">
-          <div className="rounded-lg border bg-background/80 p-3">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase">Teses Aprovadas</span>
-            <div className="mt-0.5 text-xl font-bold text-foreground">
-              {resumo.aprovadas} / {NOVAS_TESES.length}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {resumo.aprovadas > 0
-                ? `Teses (#${resumo.titulosAprovados.join(", #")})`
-                : "Selecione as teses prioritárias abaixo"}
-            </p>
-          </div>
-
-          <div className="rounded-lg border bg-background/80 p-3">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase">Em Análise / Amostra Aberta</span>
-            <div className="mt-0.5 text-xl font-bold text-foreground">{resumo.emAnalise}</div>
-            <p className="text-[11px] text-muted-foreground">Casos abertos para inspeção</p>
-          </div>
-
-          <div className="rounded-lg border bg-background/80 p-3">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase">Potencial Aprovado</span>
-            <div className="mt-0.5 text-xl font-bold text-emerald-700">
-              {resumo.aprovadas > 0
-                ? `R$ ${resumo.minM.toFixed(2).replace(".", ",")}M – R$ ${resumo.maxM.toFixed(2).replace(".", ",")}M`
-                : "R$ 0,00"}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {resumo.aprovadas > 0
-                ? `Honorários: R$ ${(resumo.minM * 0.3).toFixed(2).replace(".", ",")}M a R$ ${(resumo.maxM * 0.3).toFixed(2).replace(".", ",")}M`
-                : "Marque as teses para calcular"}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* GRÁFICO COMPARATIVO HORIZONTAL */}
-      <Card className="border-border/60 shadow-sm">
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 gap-2">
-          <div>
-            <CardTitle className="text-sm font-semibold text-foreground">
-              Comparativo de Potencial Econômico por Tese (R$ Milhões)
-            </CardTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Valores mínimos e máximos calculados diretamente com base na reconciliação dos contracheques.
-            </p>
-          </div>
-          <Badge variant="outline" className="text-[11px] border-emerald-200 bg-emerald-50 text-emerald-800 self-start sm:self-auto">
-            Total: R$ 28,75M a R$ 53,43M
-          </Badge>
-        </CardHeader>
-        <CardContent>
-          <div className="h-64 w-full">
-            {typeof ResizeObserver !== "undefined" ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={chartData}
-                  layout="vertical"
-                  margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.3} />
-                  <XAxis
-                    type="number"
-                    tickFormatter={(val) => `R$ ${val}M`}
-                    domain={[0, 18]}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <YAxis
-                    dataKey="nome"
-                    type="category"
-                    width={140}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    formatter={(val: number) => [`R$ ${val.toFixed(2).replace(".", ",")} Milhões`, "Potencial"]}
-                    labelFormatter={(lbl) => `Tese: ${lbl}`}
-                    contentStyle={{ backgroundColor: "#ffffff", borderRadius: "8px", fontSize: "12px", border: "1px solid #e2e8f0" }}
-                  />
-                  <Bar dataKey="max" fill="#059669" radius={[0, 4, 4, 0]} name="Potencial Máximo" />
-                  <Bar dataKey="min" fill="#0284c7" radius={[0, 4, 4, 0]} name="Potencial Mínimo" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
-                Gráfico comparativo de potencial econômico (8 teses · R$ 28,75M – R$ 53,43M)
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* FILTRO DE ONDAS */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-4">
+      {/* FILTRO DE ONDAS E AÇÕES DAS AMOSTRAS */}
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 border-b pb-4">
         <div>
           <h2 className="text-base font-semibold text-foreground">
             Catálogo das 8 Novas Teses com Amostras Auditadas
@@ -461,71 +224,85 @@ export function RadarExpansaoView() {
           </p>
         </div>
 
-        <div className="inline-flex rounded-lg border bg-muted p-1">
-          <button
-            type="button"
-            onClick={() => setOndaAtiva("todas")}
-            className={`rounded-md px-3 py-1.5 text-xs transition-all ${
-              ondaAtiva === "todas"
-                ? "bg-background font-semibold text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground font-medium"
-            }`}
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleTodasAmostras}
+            className="h-8 gap-1.5 text-xs bg-background"
           >
-            Todas (8)
-          </button>
-          <button
-            type="button"
-            onClick={() => setOndaAtiva("1")}
-            className={`rounded-md px-3 py-1.5 text-xs transition-all ${
-              ondaAtiva === "1"
-                ? "bg-background font-semibold text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground font-medium"
-            }`}
+            <Users className="h-3.5 w-3.5 text-primary" />
+            {todasAmostrasAbertas ? "Recolher Amostras" : "Ver Todas Amostras (40)"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportarTodasAmostrasCsv}
+            className="h-8 gap-1.5 text-xs bg-background"
           >
-            Onda 1 · Monetização (4)
-          </button>
-          <button
-            type="button"
-            onClick={() => setOndaAtiva("2")}
-            className={`rounded-md px-3 py-1.5 text-xs transition-all ${
-              ondaAtiva === "2"
-                ? "bg-background font-semibold text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground font-medium"
-            }`}
-          >
-            Onda 2 · Nichos (3)
-          </button>
-          <button
-            type="button"
-            onClick={() => setOndaAtiva("3")}
-            className={`rounded-md px-3 py-1.5 text-xs transition-all ${
-              ondaAtiva === "3"
-                ? "bg-background font-semibold text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground font-medium"
-            }`}
-          >
-            Onda 3 · Consumo (1)
-          </button>
+            <Download className="h-3.5 w-3.5 text-emerald-600" />
+            Exportar 40 Casos (CSV)
+          </Button>
+
+          <div className="inline-flex rounded-lg border bg-muted p-1">
+            <button
+              type="button"
+              onClick={() => setOndaAtiva("todas")}
+              className={`rounded-md px-3 py-1.5 text-xs transition-all ${
+                ondaAtiva === "todas"
+                  ? "bg-background font-semibold text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground font-medium"
+              }`}
+            >
+              Todas (8)
+            </button>
+            <button
+              type="button"
+              onClick={() => setOndaAtiva("1")}
+              className={`rounded-md px-3 py-1.5 text-xs transition-all ${
+                ondaAtiva === "1"
+                  ? "bg-background font-semibold text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground font-medium"
+              }`}
+            >
+              Onda 1 · Monetização (4)
+            </button>
+            <button
+              type="button"
+              onClick={() => setOndaAtiva("2")}
+              className={`rounded-md px-3 py-1.5 text-xs transition-all ${
+                ondaAtiva === "2"
+                  ? "bg-background font-semibold text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground font-medium"
+              }`}
+            >
+              Onda 2 · Nichos (3)
+            </button>
+            <button
+              type="button"
+              onClick={() => setOndaAtiva("3")}
+              className={`rounded-md px-3 py-1.5 text-xs transition-all ${
+                ondaAtiva === "3"
+                  ? "bg-background font-semibold text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground font-medium"
+              }`}
+            >
+              Onda 3 · Consumo (1)
+            </button>
+          </div>
         </div>
       </div>
 
       {/* LISTA DAS 8 TESES COM GAVETAS DE 5 CLIENTES */}
       <div className="space-y-4">
         {tesesFiltradas.map((tese) => {
-          const status = decisoes[tese.id];
           const aberta = !!amostrasAbertas[tese.id];
           const amostras = AMOSTRAS_CLIENTES[tese.id] || [];
 
           return (
             <Card
               key={tese.id}
-              className={`border transition-all duration-200 overflow-hidden ${
-                status === "aprovar"
-                  ? "border-emerald-300 bg-emerald-50/20 shadow-sm"
-                  : status === "amostra"
-                  ? "border-primary/40 bg-primary/5 shadow-sm"
-                  : "border-border/60 hover:border-border shadow-xs"
-              }`}
+              className="border border-border/60 hover:border-border transition-all duration-200 overflow-hidden shadow-xs"
             >
               {/* CABEÇALHO DO CARD */}
               <div className="border-b bg-muted/20 px-6 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -546,22 +323,8 @@ export function RadarExpansaoView() {
                   </h3>
                 </div>
 
-                {/* BOTÕES DE DELIBERAÇÃO DA TESE */}
+                {/* BOTÕES DE AÇÃO DA TESE */}
                 <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto shrink-0">
-                  <Button
-                    variant={status === "aprovar" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => salvarDecisao(tese.id, "aprovar")}
-                    className={`h-8 gap-1.5 text-xs ${
-                      status === "aprovar"
-                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                        : "border-emerald-200 text-emerald-800 hover:bg-emerald-50 bg-background"
-                    }`}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    {status === "aprovar" ? "Tese Prioritária" : "Priorizar Tese"}
-                  </Button>
-
                   <Button
                     variant="outline"
                     size="sm"
@@ -574,13 +337,13 @@ export function RadarExpansaoView() {
                   </Button>
 
                   <Button
-                    variant={status === "amostra" ? "secondary" : "ghost"}
+                    variant="ghost"
                     size="sm"
-                    onClick={() => salvarDecisao(tese.id, "amostra")}
+                    onClick={() => exportarCsvAmostra(tese)}
                     className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    <Clock className="h-3 w-3" />
-                    {status === "amostra" ? "Em Análise" : "Standby"}
+                    <Download className="h-3 w-3 text-emerald-600" />
+                    CSV
                   </Button>
                 </div>
               </div>
