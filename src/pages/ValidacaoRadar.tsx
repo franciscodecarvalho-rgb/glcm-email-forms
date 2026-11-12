@@ -9,11 +9,13 @@ import {
   Printer,
   Radar,
   Search,
+  Sparkles,
   TrendingUp,
   Zap,
 } from "lucide-react";
 import { Cell, Pie, PieChart, Tooltip } from "recharts";
 import { AppHeader } from "@/components/AppHeader";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -421,7 +423,7 @@ export default function ValidacaoRadar() {
       <AppHeader />
 
       <main className="container max-w-7xl py-8 space-y-6">
-        {/* CABEÇALHO DA PÁGINA (PADRÃO RelatoriosV2.tsx) */}
+        {/* CABEÇALHO DA PÁGINA */}
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div className="max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
@@ -438,6 +440,12 @@ export default function ValidacaoRadar() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto print:hidden">
+            <Button variant="outline" size="sm" asChild className="h-9 text-xs gap-1.5 bg-background">
+              <Link to="/ValidacaoTeses">
+                <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                Validação Teses (8 Teses)
+              </Link>
+            </Button>
             <div className="inline-flex shrink-0 rounded-lg border bg-muted p-1">
               <a
                 href="#casos-reais"
@@ -581,9 +589,7 @@ export default function ValidacaoRadar() {
                 Auditoria de Minutas: Padrão Atual vs. Estratégia Sucessiva Completa
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Inspeção direta nos templates oficiais (
-                <code className="font-mono text-[11px] bg-secondary px-1 py-0.5 rounded">peticao_horas_extras.docx</code> e{" "}
-                <code className="font-mono text-[11px] bg-secondary px-1 py-0.5 rounded">peticao_supressao_folgas.docx</code>).
+                Inspeção direta nos modelos oficiais de petição inicial de horas extras e supressão de folgas.
               </p>
             </div>
             <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold self-start sm:self-auto">
@@ -1046,9 +1052,7 @@ export default function ValidacaoRadar() {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-1 max-w-3xl">
-                Números auditados diretamente no banco normalizado (
-                <code className="font-mono text-[11px] bg-secondary px-1 py-0.5 rounded">datalake-normalizado.sqlite</code>,
-                atualizado em 19/10/2026), com conciliação contábil estrita por competência e filtro prescricional dos
+                Números auditados diretamente na base normalizada e deduplicada (atualizada em 19/10/2026), com conciliação contábil estrita por competência e filtro prescricional dos
                 últimos 5 anos (&ge; 01/2021).
               </p>
             </div>
@@ -1124,3 +1128,4 @@ export default function ValidacaoRadar() {
     </div>
   );
 }
+
