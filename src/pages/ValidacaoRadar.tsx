@@ -442,7 +442,7 @@ export default function ValidacaoRadar() {
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto print:hidden">
             <Button variant="outline" size="sm" asChild className="h-9 text-xs gap-1.5 bg-background">
               <Link to="/ValidacaoTeses">
-                <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
                 Validação Teses (8 Teses)
               </Link>
             </Button>

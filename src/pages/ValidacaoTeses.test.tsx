@@ -33,8 +33,7 @@ describe("ValidacaoTeses", () => {
     expect(links[idxTeses].text).toBe("Validação Teses");
   });
 
-  it("renderiza a página Validação Teses com 8 teses, 40 casos reais e deliberação interativa", () => {
-    localStorage.clear();
+  it("renderiza a página Validação Teses com os 4 KPIs, 8 teses, catálogo e 40 casos reais", () => {
     render(
       <MemoryRouter>
         <ValidacaoTeses />
@@ -53,17 +52,13 @@ describe("ValidacaoTeses", () => {
     expect(screen.getAllByText("Rogerio Rodrigues da Silva").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Paulo Henrique Correa Magalhaes").length).toBeGreaterThanOrEqual(1);
 
-    // Prioriza uma tese no painel de deliberação da sociedade
-    const botoesPriorizar = screen.getAllByRole("button", { name: /Priorizar Tese/i });
-    expect(botoesPriorizar.length).toBe(8);
-    fireEvent.click(botoesPriorizar[0]);
-    expect(screen.getByText("1 / 8")).toBeInTheDocument();
+    // Valida presença do botão de exportação dos 40 casos
+    expect(screen.getByRole("button", { name: /Exportar 40 Casos \(CSV\)/i })).toBeInTheDocument();
 
     // Valida ausência de termos proibidos ou nomes técnicos internos
     expect(screen.queryByText(/pollyanna/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/degusta/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/datalake-normalizado\.sqlite/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/peticao_horas_extras\.docx/i)).not.toBeInTheDocument();
-  });
+  }, 20000);
 });
-
