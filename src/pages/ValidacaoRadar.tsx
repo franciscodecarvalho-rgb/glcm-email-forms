@@ -1735,10 +1735,13 @@ export default function ValidacaoRadar() {
                 </div>
 
                 {turmaAtiva.bloqueioMensagem && (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive-foreground flex items-start gap-2.5">
-                    <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
-                    <div className="leading-relaxed">
-                      <strong>Diretriz Estratégica da Diretoria GLCM:</strong> {turmaAtiva.bloqueioMensagem}
+                  <div className="rounded-md border border-red-200 bg-red-50/90 p-3.5 text-xs text-red-900 flex items-start gap-2.5 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed text-red-900 dark:text-red-200">
+                      <strong className="font-bold text-red-950 dark:text-red-100">
+                        Diretriz Estratégica da Diretoria GLCM:
+                      </strong>{" "}
+                      <span>{turmaAtiva.bloqueioMensagem}</span>
                     </div>
                   </div>
                 )}
