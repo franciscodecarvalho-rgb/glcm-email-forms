@@ -44,11 +44,14 @@ describe("ValidacaoRadar", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Validação Radar" })).toBeInTheDocument();
-    expect(screen.getByText("104.285")).toBeInTheDocument();
-    expect(screen.getByText("0000970-88.2025.5.05.0121")).toBeInTheDocument();
+    expect(screen.getAllByText("104.285").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("0000970-88.2025.5.05.0121").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("0101440-81.2025.5.01.0043")).toBeInTheDocument();
-    expect(screen.getByText("R$ 122.126,96")).toBeInTheDocument();
-    expect(screen.getByText("R$ 344.300,00")).toBeInTheDocument();
+    expect(screen.getByText("R$ 60.762,09")).toBeInTheDocument();
+    expect(screen.getByText("R$ 165.400,00")).toBeInTheDocument();
+    expect(screen.getByText("R$ 61.364,87")).toBeInTheDocument();
+    expect(screen.getByText("R$ 178.900,00")).toBeInTheDocument();
+    expect(screen.getByText(/R\$ 122,1k ajuizado vs\. R\$ 344,3k direito apurado/i)).toBeInTheDocument();
     expect(screen.getByText("R$ 1.963.328.066,28")).toBeInTheDocument();
     expect(screen.getByText("R$ 333.106.578,24")).toBeInTheDocument();
     expect(screen.queryByText(/peticao_horas_extras\.docx/i)).not.toBeInTheDocument();
@@ -56,25 +59,32 @@ describe("ValidacaoRadar", () => {
     expect(screen.queryByText(/nós sabemos exatamente o que o escritório precisa/i)).not.toBeInTheDocument();
   });
 
-  it("alterna o simulador estratégico entre os temas e atualiza precedente e turmas", () => {
+  it("alterna o simulador estratégico entre os temas e atualiza precedente, turmas e evidencias", () => {
     render(
       <MemoryRouter>
         <ValidacaoRadar />
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByText("0100360-54.2021.5.01.0033").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("0100360-54.2021.5.01.0033")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "1. Banco de Horas (Petrobras & Braskem)" })).toBeInTheDocument();
 
+    // Inspeciona evidências documentais de Sergipe (TRT20) demonstrando bloqueio
+    const trt20Btn = screen.getByText("TRT20 (SE) · Jurisdição Bloqueada");
+    fireEvent.click(trt20Btn);
+    expect(screen.getByText(/🔴 JURISDIÇÃO BLOQUEADA \(NÃO AJUIZAR\)/i)).toBeInTheDocument();
+    expect(screen.getByText("0000259-21.2024.5.20.0001")).toBeInTheDocument();
+    expect(screen.getAllByText("Improcedente").length).toBeGreaterThanOrEqual(4);
+
     fireEvent.click(screen.getByRole("button", { name: /2\. Confinamento & Folgas/i }));
-    expect(screen.getAllByText("0100482-12.2022.5.01.0482").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("0100482-12.2022.5.01.0482")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "2. Confinamento & Supressão de Folgas" })).toBeInTheDocument();
     expect(screen.getByText("TRT5 (BA) · 3ª Turma")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /3\. PPSP Petros/i }));
-    expect(screen.getByText("0000412-88.2023.5.05.0014")).toBeInTheDocument();
+    expect(screen.getAllByText("0000412-88.2023.5.05.0014").length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole("button", { name: /4\. HRA/i }));
-    expect(screen.getByText("1028471-55.2024.4.01.3300")).toBeInTheDocument();
+    expect(screen.getAllByText("1028471-55.2024.4.01.3300").length).toBeGreaterThanOrEqual(1);
   });
 });
