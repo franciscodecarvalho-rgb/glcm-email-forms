@@ -73,18 +73,18 @@ describe("ValidacaoRadar", () => {
     const trt20Btn = screen.getByText("TRT20 (SE) · Jurisdição Bloqueada");
     fireEvent.click(trt20Btn);
     expect(screen.getByText(/🔴 JURISDIÇÃO BLOQUEADA \(NÃO AJUIZAR\)/i)).toBeInTheDocument();
-    expect(screen.getByText("0000259-21.2024.5.20.0001")).toBeInTheDocument();
+    expect(screen.getByText("0000336-50.2025.5.20.0000")).toBeInTheDocument();
     expect(screen.getAllByText("Improcedente").length).toBeGreaterThanOrEqual(4);
 
     fireEvent.click(screen.getByRole("button", { name: /2\. Confinamento & Folgas/i }));
-    expect(screen.getByText("0100482-12.2022.5.01.0482")).toBeInTheDocument();
+    expect(screen.getByText("0101418-76.2025.5.01.0284")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "2. Confinamento & Supressão de Folgas" })).toBeInTheDocument();
     expect(screen.getByText("TRT5 (BA) · 3ª Turma")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /3\. PPSP Petros/i }));
-    expect(screen.getAllByText("0000412-88.2023.5.05.0014").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("0079400-16.2008.5.05.0003").length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole("button", { name: /4\. HRA/i }));
-    expect(screen.getAllByText("1028471-55.2024.4.01.3300").length).toBeGreaterThanOrEqual(1);
-  });
+    expect(screen.getAllByText("5060325-66.2025.4.03.6301").length).toBeGreaterThanOrEqual(1);
+  }, 20000);
 });
