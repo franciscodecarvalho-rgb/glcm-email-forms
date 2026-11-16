@@ -20,7 +20,7 @@ export type FamiliaHra =
  * descrição não traz o texto "hra" (ex.: ruído de OCR pesado ou descrição
  * genérica). Complementa a detecção por descrição — não a substitui.
  */
-export const CODIGOS_HRA_CONHECIDOS = ["1062", "0208", "4208", "062A", "2208"] as const;
+export const CODIGOS_HRA_CONHECIDOS = ["1062", "0208", "4208", "062A", "2208", "3219"] as const;
 
 function normalizarCodigo(s: string | null | undefined): string {
   return (s ?? "").trim().toUpperCase();
@@ -65,8 +65,10 @@ export function classificarRubrica(
   );
 
   // Precisa conter "hra" (cobre também "ahra") em qualquer ponto — pega o OCR.
+  // Ou expressar "hora repouso alimentacao" por extenso.
   // Ou ter um código confirmado da tabela CODIGOS_HRA_CONHECIDOS.
-  if (!/hra/.test(n.replace(/\s+/g, "")) && !codigoConhecido) return { familia: null, semIr: false };
+  const ehTextoHra = /hra/.test(n.replace(/\s+/g, "")) || /hora\s*(?:de\s*)?repouso\s*(?:e\s*)?(?:de\s*)?aliment/.test(n);
+  if (!ehTextoHra && !codigoConhecido) return { familia: null, semIr: false };
 
   const semIr = ehSemIr(descricao);
 

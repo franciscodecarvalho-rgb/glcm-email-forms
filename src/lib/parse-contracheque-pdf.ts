@@ -82,6 +82,7 @@ function detectarModelo(texto: string): string {
   if (n.includes("refinaria de mataripe")) return "acelen";
   if (n.includes("itf chemical")) return "itf";
   if (n.includes("tronox")) return "tronox";
+  if (n.includes("dow brasil")) return "dow";
   return "generico";
 }
 
@@ -240,8 +241,15 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       secao = "desconto"; if (modeloOrigem === "birla_carbon") tabelaEncerrada = true; continue;
     }
     if (/total(?:\s+de)?\s+descontos/.test(n)) { totalDescontos = totalNaLinha(linha); continue; }
-    if (/\btotais?\b/.test(n)) {
-      const vals = valoresDaLinha(linha).map((i) => moedaBrasileiraParaNumero(i.str));
+    if (/\bt\s*o\s*t\s*a\s*i\s*s?\b|\btotais?\b/.test(n)) {
+      let vals = valoresDaLinha(linha).map((i) => moedaBrasileiraParaNumero(i.str));
+      if (vals.length < 2) {
+        const proximaLinha = linhas[linhas.indexOf(linha) + 1];
+        if (proximaLinha) {
+          const proxVals = valoresDaLinha(proximaLinha).map((i) => moedaBrasileiraParaNumero(i.str));
+          if (proxVals.length >= 2) vals = proxVals;
+        }
+      }
       if (vals.length >= 2) { totalProventos ??= vals[0]; totalDescontos ??= vals[1]; liquido ??= vals[2] ?? null; if (modeloOrigem === "birla_carbon") tabelaEncerrada = true; continue; }
     }
     if (/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n)) {
@@ -298,9 +306,9 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     if (
       informativo ||
       (["birla_carbon", "vopak"].includes(modeloOrigem) && xInformativo != null && valorItem.x >= xInformativo - larguraLeitura * 0.03) ||
-      (modeloOrigem === "acelen" && (
-        ["5501", "5561", "8000", "8002", "9921", "9920", "8100", "8101", "1300", "1330"].includes(codNormalizado) ||
-        /\b(?:base\s+(?:ir|inss|fgts)|salario\s+contribuicao|fgts\s+recmes|inss\s+empregador|rat)\b/.test(normalizar(descricao))
+      ((modeloOrigem === "acelen" || modeloOrigem === "dow") && (
+        ["5501", "5561", "8000", "8002", "1271", "9921", "9920", "8010", "8100", "8101", "1300", "1330"].includes(codNormalizado) ||
+        /\b(?:base\s+(?:ir|inss|fgts)|salario\s+contribuicao|cred\.\s*trabalhador|fgts\s+recmes|inss\s+empregador|rat)\b/.test(normalizar(descricao))
       ))
     ) tipo = "informativo";
     else if (modeloOrigem === "unigel") tipo = porColuna ?? secao;
