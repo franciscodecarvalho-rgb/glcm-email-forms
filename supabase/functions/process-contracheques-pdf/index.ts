@@ -14,7 +14,7 @@ type Rubrica = { codigo: string; descricao: string; referencia: number | null; v
 type Contra = { competencia: string | null; modelo_origem: string; retificado?: boolean; total_proventos: number | null; total_descontos: number | null; liquido: number | null; itens: Rubrica[]; continua?: boolean };
 type Linha = { y: number; itens: TextItem[]; texto: string };
 const MODELO_IA = "google/gemini-2.5-pro";
-const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por contracheque. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas. Para documentos da BASF, use modelo_origem "basf". Na BASF, retificado=true somente quando o campo "Pagamento Referente a" começar com "R" antes do mês (por exemplo, "R Setembro 202"); caso contrário, retificado=false. Quando o documento for da Refinaria de Mataripe S.A. (Acelen), use obrigatoriamente modelo_origem "acelen" e informe a competência de cada contracheque no formato MM/AAAA (por exemplo 03/2023), convertendo datas completas como 31/03/2023, 2023-03-31 ou "Recibo de Pagamento de Março/2023"; se a competência não estiver legível, use null e nunca deduza o mês.`;
+const PROMPT_IA = `Extraia contracheques deste PDF somente quando a leitura automática/OCR não tiver produzido dados estruturados. Retorne um registro por contracheque. Não invente códigos, descrições, referências, valores ou totais. Classifique cada rubrica como provento, desconto ou informativo conforme a coluna/seção visível. Valores devem ser números positivos; use null para totais ilegíveis. Ignore páginas e cópias repetidas. Para documentos da BASF, use modelo_origem "basf". Na BASF, retificado=true somente quando o campo "Pagamento Referente a" começar com "R" antes do mês (por exemplo, "R Setembro 202"); caso contrário, retificado=false. Quando o documento for da Refinaria de Mataripe S.A. (Acelen), use obrigatoriamente modelo_origem "acelen" e informe a competência de cada contracheque no formato MM/AAAA (por exemplo 03/2023), convertendo datas completas como 31/03/2023, 2023-03-31 ou "Recibo de Pagamento de Março/2023"; se a competência não estiver legível, use null e nunca deduza o mês. Regras obrigatórias de conferência e integridade para Refinaria de Mataripe S.A. (Acelen): 1) Nunca use o carimbo de data impresso no topo da folha pelo navegador (ex: 11/11/26) como competência; a competência correta está exclusivamente no campo REFERÊNCIA. 2) Realize a conferência matemática dos totais: a soma dos itens de provento DEVE ser igual a total_proventos e a soma dos itens de desconto DEVE ser igual a total_descontos, e total_proventos - total_descontos DEVE ser igual a liquido. Se a soma divergir, revise cada dígito com extrema fidelidade óptica, especialmente distinguindo '3' de '5' (ex: 2.137,42 não pode ser lido como 2.157,42) e nunca repita valores de meses anteriores por suposição. 3) Todas as linhas abaixo da linha '-----BASE/OUTROS-----' (Base IR, Base INSS, Salario Contribuicao, Contribuição - Trib. Salário, Base FGTS, Inss Empregador, RAT, FGTS) são bases fiscais e custos da empresa e DEVEM ser classificadas estritamente com tipo 'informativo', JAMAIS como provento ou desconto. 4) Não inclua o valor do cabeçalho da coluna DESCONTOS como item de rubrica; registre-o apenas no campo total_descontos.`;
 const TOOL_IA = { type:"function", function:{ name:"registrar_contracheques", parameters:{ type:"object", properties:{ contracheques:{ type:"array", items:{ type:"object", properties:{
   competencia:{ type:["string","null"] }, modelo_origem:{ type:"string" }, retificado:{ type:"boolean" }, total_proventos:{ type:["number","null"] }, total_descontos:{ type:["number","null"] }, liquido:{ type:["number","null"] },
   itens:{ type:"array", items:{ type:"object", properties:{ codigo:{ type:"string" }, descricao:{ type:"string" }, referencia:{ type:["number","null"] }, valor:{ type:"number" }, tipo:{ type:"string", enum:["provento","desconto","informativo"] } }, required:["codigo","descricao","referencia","valor","tipo"], additionalProperties:false } },
@@ -42,10 +42,18 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     const itens=Array.isArray(contra.itens)?contra.itens.flatMap((item:Record<string,unknown>)=>{
       const descricao=typeof item.descricao==="string"?item.descricao.trim():"";
       const valor=Number(item.valor);
-      const tipo=item.tipo;
+      let tipo=item.tipo;
       if(!descricao||!Number.isFinite(valor)||valor<0||!(tipo==="provento"||tipo==="desconto"||tipo==="informativo"))return [];
       const codigo=typeof item.codigo==="string"?item.codigo.trim().toUpperCase():"";
-      return [{codigo,descricao,referencia:Number.isFinite(Number(item.referencia))?Number(item.referencia):null,valor,tipo,familia_hra:familia(codigo,descricao,typeof contra.modelo_origem==="string"?contra.modelo_origem:"",tipo)} as Rubrica];
+      const modeloNormalizado=typeof contra.modelo_origem==="string"?contra.modelo_origem.trim().toLowerCase():"";
+      if(modeloNormalizado==="acelen"||modeloNormalizado==="refinaria de mataripe"){
+        const nDesc=norm(descricao);
+        if(["5501","5561","8000","8002","9921","9920","8100","8101","1300","1330"].includes(codigo)||
+           /\b(?:base\s+(?:ir|inss|fgts)|salario\s+contribuicao|fgts\s+recmes|inss\s+empregador|rat)\b/.test(nDesc)){
+          tipo="informativo";
+        }
+      }
+      return [{codigo,descricao,referencia:Number.isFinite(Number(item.referencia))?Number(item.referencia):null,valor,tipo,familia_hra:familia(codigo,descricao,modeloNormalizado,tipo as Tipo)} as Rubrica];
     }):[];
     if(!itens.length)return [];
     const numeroOuNull=(valor:unknown)=>valor==null||!Number.isFinite(Number(valor))?null:Math.abs(Number(valor));
@@ -57,7 +65,27 @@ async function extrairComIa(bytes:Uint8Array,nome:string,apiKey:string):Promise<
     // Acelen: a competência devolvida pela IA é normalizada para MM/AAAA ANTES
     // de persistir; formato irreconhecível permanece null (nunca é inventado).
     const competenciaIa=modeloIa==="acelen"?normalizarCompetenciaAcelen(competenciaBruta):competenciaBruta;
-    return [{competencia:competenciaIa,modelo_origem:modeloIa,...(modeloIa==="basf"&&contra.retificado===true?{retificado:true}:{}),total_proventos:numeroOuNull(contra.total_proventos),total_descontos:numeroOuNull(contra.total_descontos),liquido:numeroOuNull(contra.liquido),itens}];
+
+    let totalProventos=numeroOuNull(contra.total_proventos);
+    let totalDescontos=numeroOuNull(contra.total_descontos);
+    let liquido=numeroOuNull(contra.liquido);
+
+    // Reconciliação aritmética de segurança para modelos com totais declarados (ex: Acelen)
+    if(modeloIa==="acelen"&&totalProventos!=null){
+      const somaProventos=itens.filter((i)=>i.tipo==="provento").reduce((acc,i)=>acc+i.valor,0);
+      if(Math.abs(somaProventos-totalProventos)>0.05){
+        for(const it of itens){
+          if(it.tipo==="provento"&&(/base/i.test(it.descricao)||["5501","5561","8000","8002","9921","9920","1300","1330"].includes(it.codigo))){
+            it.tipo="informativo";
+          }
+        }
+      }
+      if(totalDescontos!=null){
+        liquido=Number((totalProventos-totalDescontos).toFixed(2));
+      }
+    }
+
+    return [{competencia:competenciaIa,modelo_origem:modeloIa,...(modeloIa==="basf"&&contra.retificado===true?{retificado:true}:{}),total_proventos:totalProventos,total_descontos:totalDescontos,liquido,itens}];
   });
 }
 

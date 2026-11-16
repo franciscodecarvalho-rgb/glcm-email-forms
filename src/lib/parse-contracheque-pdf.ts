@@ -294,14 +294,22 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
         ? valorItem.x >= xDesconto - larguraLeitura * 0.05 ? "desconto" : "provento"
         : null;
     let tipo: TipoRubrica;
-    if (informativo || (["birla_carbon", "vopak"].includes(modeloOrigem) && xInformativo != null && valorItem.x >= xInformativo - larguraLeitura * 0.03)) tipo = "informativo";
+    const codNormalizado = codigoItem?.str.trim().toUpperCase() ?? "";
+    if (
+      informativo ||
+      (["birla_carbon", "vopak"].includes(modeloOrigem) && xInformativo != null && valorItem.x >= xInformativo - larguraLeitura * 0.03) ||
+      (modeloOrigem === "acelen" && (
+        ["5501", "5561", "8000", "8002", "9921", "9920", "8100", "8101", "1300", "1330"].includes(codNormalizado) ||
+        /\b(?:base\s+(?:ir|inss|fgts)|salario\s+contribuicao|fgts\s+recmes|inss\s+empregador|rat)\b/.test(normalizar(descricao))
+      ))
+    ) tipo = "informativo";
     else if (modeloOrigem === "unigel") tipo = porColuna ?? secao;
     else if (modeloOrigem === "petrobras") tipo = secao;
     else if (modeloOrigem === "elekeiroz") tipo = valorItem.x >= larguraLeitura * 0.78 ? "desconto" : "provento";
     else if (xDesconto != null && Math.abs(valorItem.x - xDesconto) < Math.abs(valorItem.x - (xProvento ?? 0))) tipo = "desconto";
     else tipo = "provento";
     rubricas.push({
-      codigo: codigoItem?.str.trim().toUpperCase() ?? "", descricao,
+      codigo: codNormalizado, descricao,
       referencia: refItem ? numeroReferencia(refItem) : null,
       valor: Math.abs(moedaBrasileiraParaNumero(valorItem.str)), tipo,
     });
