@@ -82,8 +82,8 @@ describe("familia (Edge Function process-contracheques-pdf)", () => {
     expect(familia("3453", "Salário Básico", "generico", "provento")).toBeNull();
   });
 
-  it("classifica a rubrica 3331 da OXITENO como hra, apesar do texto de diferença", () => {
-    expect(familia("3331", "HRA-Dif. Dissídio", "oxiteno", "provento")).toBe("hra");
+  it("classifica a rubrica 3331 da OXITENO como ahra, apesar do texto de diferença", () => {
+    expect(familia("3331", "HRA-Dif. Dissídio", "oxiteno", "provento")).toBe("ahra");
     expect(familia("3331", "HRA-Dif. Dissídio", "generico", "provento")).toBe("dif_ahra");
   });
 

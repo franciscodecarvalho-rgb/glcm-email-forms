@@ -3,7 +3,8 @@
 ## SDD Status
 
 SPEC-001 + SPEC-002 IMPLEMENTED; SPEC-003 BASF RETIFICAÇÃO EM PRODUÇÃO PARCIAL;
-SPEC-004 + SPEC-005 IMPLEMENTED LOCALLY, RELEASE PENDING
+SPEC-004 + SPEC-005 IMPLEMENTED LOCALLY, RELEASE PENDING;
+SPEC-006 IMPLEMENTED LOCALLY, RELEASE PENDING
 
 ## Current State
 
@@ -14,8 +15,8 @@ Lovable; publicação do frontend ainda requer confirmação.
 
 ## Active Spec
 
-SPEC-005 — importações manuais só são promovidas a Casos após o envio,
-processamento, persistência e confirmação dos comprovantes e contracheques.
+SPEC-006 — agente especializado no fallback de contracheques, com memória limitada
+ao arquivo e revisão aritmética antes de concluir lotes.
 
 ## Next Spec
 
@@ -114,3 +115,12 @@ porque o banco local/Docker não estava disponível. ESLint seletivo aponta 12
 ocorrências `no-explicit-any` preexistentes nos arquivos afetados; o diff não
 introduziu novas ocorrências. Esta correção local ainda aguarda confirmação do
 fluxo de release previsto no `context/DEPLOY.md`.
+
+SPEC-006 foi implementada localmente em 2026-11-18: fallback de IA com contexto
+especializado, memória efêmera por arquivo (modelo, competência e hash, sem valores)
+e até uma releitura quando as somas não conferem com os totais impressos. Divergência
+persistente deixa o lote em erro para revisão, preservando os totais do PDF. A suíte
+completa passou: 38 arquivos, 320 testes aprovados e 2 cenários de PDF real ignorados
+por falta das variáveis `GLCM_MOEVE_PDF` e `GLCM_OXITENO_PDF`. `npm run build`,
+`npx tsc --noEmit` e bundling sintático da Edge Function passaram. Nenhum deploy
+remoto realizado.

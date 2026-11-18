@@ -48,9 +48,9 @@ descontos nem a outros modelos de empresa.
 Rubrica HRA específica da OXITENO: código `3453` — `HRA-Horas Rep.
 Alimentação`, quando estiver na coluna de vencimentos.
 
-O modelo também contém a rubrica `3320 — HRA IR`, igualmente classificada
-como HRA para OXITENO, e a rubrica `3331 — HRA-Dif. Dissídio`, que também
-deve permanecer na família HRA para esse modelo.
+O modelo também contém a rubrica `3320 — HRA IR`, classificada como HRA, e a
+rubrica `3331 — HRA-Dif. Dissídio`, classificada como AHRA por Nodley por ser um
+adicional. Ambas as regras são específicas da OXITENO e valem para proventos.
 
 Rubrica HRA específica da CETREL: código `P368` — `ADIC HR REM ALIM
 SUPLEM(HRAS)`, quando estiver na coluna de proventos.

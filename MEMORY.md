@@ -111,10 +111,10 @@ Não apresentar esses itens como prontos sem evidência no código e validação
 
 ### 2026-08 — Extração determinística de contracheques PDF
 
-**Regra confirmada:** Contracheques em PDF devem ser lidos deterministicamente pela camada de texto, sem IA generativa.
+**Regra confirmada:** Contracheques em PDF devem ser lidos deterministicamente pela camada de texto/OCR primeiro. A proibição do fallback de IA foi superada em 2026-11-18 pela SPEC-006.
 **Origem:** Definição de Nodley após revisão do tratamento anterior dos contracheques.
 **Aplicação:** Extrair competência, código, descrição e valor e persistir em `contracheques` e `itens_contracheque`; PDFs sem texto estruturado seguem para revisão manual.
-**Evitar:** Inventar rubricas ausentes, aplicar OCR ou enviar contracheques à IA sem nova decisão explícita.
+**Evitar:** Inventar rubricas ausentes ou chamar IA para lotes já resolvidos pela leitura determinística/OCR.
 
 ### 2026-08 — Variações dos modelos de contracheque
 
@@ -354,13 +354,13 @@ classificar ocorrências em Descontos como base HRA.
 
 ### 2026-09 — HRA específico da OXITENO
 
-**Regra confirmada:** Na OXITENO, as rubricas `3320 — HRA IR`, `3331 —
-HRA-Dif. Dissídio` e `3453 — HRA-Horas Rep. Alimentação`, quando lançadas em
-Vencimentos, pertencem à família HRA.
+**Regra confirmada:** Na OXITENO, `3320 — HRA IR` e `3453 — HRA-Horas Rep.
+Alimentação`, quando em Vencimentos, pertencem à família HRA. `3331 — HRA-Dif.
+Dissídio` pertence à família AHRA por ser um adicional.
 **Origem:** Confirmação de Nodley ao inspecionar visualmente o PDF-modelo da
 OXITENO; a rubrica aparece na primeira página com valor `803,97`.
-**Aplicação:** Classificar os pares modelo `oxiteno` + códigos `3320`, `3331` e
-`3453` como `hra` na Edge Function de contracheques.
+**Aplicação:** Classificar os pares modelo `oxiteno` + códigos `3320` e `3453`
+como `hra`, e `3331` como `ahra`, somente quando estiver em proventos.
 **Evitar:** Tornar esses códigos regras globais para outras empresas ou
 classificar ocorrências em Descontos como base HRA.
 
@@ -451,17 +451,17 @@ empresa, página e evidência da origem do dado.
 
 ### 2026-09 — IA exclusiva para comprovantes de residência (superada em 30/09/2026)
 
-**Regra confirmada:** O Gemini deve ser usado exclusivamente para comprovantes de residência, com foco no endereço completo. CNH, RG, CIN e CPF permanecem na extração determinística/revisão manual; contracheques nunca são enviados à IA generativa.
+**Regra confirmada:** Esta regra de escopo de IA para documentos pessoais não se aplica ao fallback de contracheques autorizado posteriormente pela SPEC-006 em 2026-11-18.
 **Origem:** Correção expressa de Nodley após identificar que a extração determinística passou a dispensar a IA ao encontrar apenas o CEP.
 **Aplicação:** Nos fluxos de extração pessoal e de reprocessamento, encaminhar ao gateway somente arquivos reconhecidos como comprovantes de residência. Não considerar a presença isolada de CEP como substituto da extração do endereço pela IA.
-**Evitar:** Enviar identidade ou contracheques ao Gemini, ou marcar endereço como plenamente extraído apenas porque o CEP foi localizado.
+**Evitar:** Enviar identidade ao Gemini fora do fluxo pessoal autorizado, ou marcar endereço como plenamente extraído apenas porque o CEP foi localizado.
 
 ### 2026-09 — Gemini obrigatório em documentos pessoais; confirmação manual em caso de falha
 
-**Regra confirmada:** PDFs enviados como documentos pessoais (comprovante de residência, CNH, RG, CIN, CPF ou outro documento pessoal) devem ser lidos pelo Gemini. Contracheques continuam fora do Gemini e seguem o fluxo específico de contracheques.
+**Regra confirmada:** PDFs enviados como documentos pessoais (comprovante de residência, CNH, RG, CIN, CPF ou outro documento pessoal) devem ser lidos pelo Gemini. Contracheques seguem a SPEC-006: leitura determinística/OCR primeiro e IA somente como fallback autorizado.
 **Origem:** Solicitação de Nodley em 30/09/2026, confirmando que, se a extração do Gemini falhar ou não retornar dados utilizáveis, o PDF original deve permanecer anexado e os campos devem ser preenchidos manualmente.
 **Aplicação:** Usar a leitura determinística somente como complemento à resposta do Gemini; não persistir respostas vazias ou CPF inválido. Se os dados essenciais ficarem incompletos ou a chamada falhar, abrir a confirmação editável, mostrar o aviso e conservar os PDFs no Storage e no registro de arquivos. Ao confirmar os campos manuais, limpar o erro de processamento.
-**Evitar:** Usar Gemini para contracheques, excluir/substituir o documento enviado em caso de falha, ou afirmar que houve extração completa sem dados úteis.
+**Evitar:** Usar Gemini em contracheques já extraídos deterministicamente, excluir/substituir o documento enviado em caso de falha, ou afirmar que houve extração completa sem dados úteis.
 
 ### 2026-09 — CPF válido torna RG opcional na importação
 

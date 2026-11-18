@@ -11,3 +11,5 @@ do sistema e seus critérios de validação.
   pessoais e confirmação manual quando a extração não for suficiente.
 - [`SPEC-005`](./SPEC-005-importacao-de-casos-validada.md) — manter importações
   provisórias fora dos Casos até a conclusão e validação do fluxo.
+- [`SPEC-006`](./SPEC-006-agente-extrator-contracheques.md) — contexto, memória
+  temporária e revisão aritmética no fallback de IA dos contracheques.

@@ -15,11 +15,18 @@ export type ContrachequePdf = {
   totalDescontos: number | null;
   liquido: number | null;
   itens: RubricaPdf[];
+  identidadeMoeve?: string | null;
+  cnpjMoeve?: string | null;
+  matriculaMoeve?: string | null;
+  rodapeCompletoMoeve?: boolean;
+  rotulosBasesMoeve?: boolean;
+  valoresBasesMoeve?: boolean;
+  paginasOrigemMoeve?: number[];
 };
 
 type Linha = { y: number; itens: TextItemPdf[]; texto: string };
 const CODIGO = /^\/?[A-Z0-9]{1,6}$/i;
-const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}$|^-?(?:R\$)?\s*\d+,\d{2}$/i;
+const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}\]?$|^-?(?:R\$)?\s*\d+,\d{2}\]?$/i;
 const MESES: Record<string, string> = {
   janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
   julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12",
@@ -30,7 +37,7 @@ const MESES: Record<string, string> = {
 const normalizar = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 export function moedaBrasileiraParaNumero(valor: string): number {
-  const numero = Number(valor.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", "."));
+  const numero = Number(valor.replace(/[\[\]]/g, "").replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", "."));
   return Number.isFinite(numero) ? numero : 0;
 }
 
@@ -271,9 +278,10 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       continue;
     }
 
-    const codigoItem = permiteSemCodigo
+  const codigoItem = permiteSemCodigo
       ? undefined
-      : linha.itens.find((i) => i.x < larguraLeitura * 0.22 && CODIGO.test(i.str.trim()));
+      : linha.itens.find((i) => i.x < larguraLeitura * 0.22 && CODIGO.test(i.str.trim()))
+        ?? (modeloOrigem === "oxiteno" ? linha.itens.find((i) => i.x < larguraLeitura * 0.22 && /^\d{4}\D/.test(i.str.trim())) : undefined);
     if (!codigoItem && !permiteSemCodigo) continue;
     const candidatos = valoresDaLinha(linha).filter((i) => i.x > larguraLeitura * 0.28);
     if (!candidatos.length) continue;
@@ -281,20 +289,24 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     const valorItem = valoresNaoNulos[valoresNaoNulos.length - 1] ?? candidatos[candidatos.length - 1];
     // Unigel/Proquigel e Tronox: o rótulo "DESCRIÇÃO" é centralizado sobre a coluna,
     // então a descrição precisa começar logo após o código da rubrica para não ser truncada.
-    const inicioDescricao = (modeloOrigem === "unigel" || modeloOrigem === "tronox") && codigoItem
+    const codigoEmbutido = modeloOrigem === "oxiteno" && codigoItem ? codigoItem.str.trim().match(/^(\d{4})(.+)$/) : null;
+    const inicioDescricao = codigoEmbutido && codigoItem
+      ? codigoItem.x + codigoItem.width
+      : (modeloOrigem === "unigel" || modeloOrigem === "tronox") && codigoItem
       ? codigoItem.x + codigoItem.width
       : xDescricao ?? (codigoItem ? codigoItem.x + codigoItem.width : 0);
     const limiteDescricao = [xReferencia, xProvento, xDesconto, larguraLeitura * 0.82]
       .filter((valor): valor is number => valor != null && valor > inicioDescricao)
       .sort((a, b) => a - b)[0];
-    const descricao = linha.itens
+    const descricao = `${codigoEmbutido?.[2] ?? ""} ${linha.itens
       .filter((i) => i.x >= inicioDescricao - larguraLeitura * 0.01 && i.x < limiteDescricao && i.str !== "|")
-      .map((i) => i.str).join(" ").replace(/\s+/g, " ").trim();
+      .filter((i) => i !== codigoItem)
+      .map((i) => i.str).join(" ").replace(/\s+/g, " ").trim()}`.trim();
     if (!descricao) continue;
     const fimReferencia = [xDescricao, xProvento, xDesconto, larguraLeitura]
       .filter((valor): valor is number => valor != null && xReferencia != null && valor > xReferencia)
       .sort((a, b) => a - b)[0] ?? larguraLeitura;
-    const refItem = xReferencia == null ? null : linha.itens.find((i) => i.x >= xReferencia - larguraLeitura * 0.025 && i.x < fimReferencia);
+    const refItem = xReferencia == null ? null : linha.itens.find((i) => i.x >= xReferencia - larguraLeitura * 0.025 && i.x < fimReferencia && numeroReferencia(i) != null);
     // Unigel/Estireno: com as duas colunas no cabeçalho, a posição x do valor é
     // mais confiável que a seção corrente (que vira "desconto" após os totais).
     const porColuna: TipoRubrica | null =
@@ -313,11 +325,18 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
     ) tipo = "informativo";
     else if (modeloOrigem === "unigel") tipo = porColuna ?? secao;
     else if (modeloOrigem === "petrobras") tipo = secao;
+    else if (modeloOrigem === "oxiteno") {
+      const divisor = linhas.flatMap((l) => l.itens.filter((i) => i.str === "|" && xProvento != null && xDesconto != null && i.x > xProvento && i.x < xDesconto).map((i) => i.x)).sort((a,b)=>a-b)[Math.floor(linhas.flatMap((l) => l.itens.filter((i) => i.str === "|" && xProvento != null && xDesconto != null && i.x > xProvento && i.x < xDesconto).map((i) => i.x)).length/2)];
+      if (divisor == null) throw new Error("OXITENO: limites financeiros ilegíveis; conferir divisórias da tabela.");
+      tipo = valorItem.x < divisor ? "provento" : "desconto";
+      if (codNormalizado === "5501" || /\bbase\s+(?:ir|inss|fgts)\b|salario\s+contribuicao/.test(normalizar(descricao))) informativo = true;
+      if (informativo) tipo = "informativo";
+    }
     else if (modeloOrigem === "elekeiroz") tipo = valorItem.x >= larguraLeitura * 0.78 ? "desconto" : "provento";
     else if (xDesconto != null && Math.abs(valorItem.x - xDesconto) < Math.abs(valorItem.x - (xProvento ?? 0))) tipo = "desconto";
     else tipo = "provento";
     rubricas.push({
-      codigo: codNormalizado, descricao,
+      codigo: codigoEmbutido?.[1] ?? codNormalizado, descricao,
       referencia: refItem ? numeroReferencia(refItem) : null,
       valor: Math.abs(moedaBrasileiraParaNumero(valorItem.str)), tipo,
     });
@@ -425,19 +444,67 @@ function ehInicioDeContracheque(texto: string): boolean {
  * página. O parser tradicional continua responsável por cada bloco; esta
  * função só recorta os blocos físicos antes de delegar a leitura.
  */
-export function parsePaginasContracheque(itens: TextItemPdf[], largura: number): ContrachequePdf[] {
+function metadadosMoeve(itens: TextItemPdf[], pagina?: number) {
+  const texto = normalizar(itens.map((item) => item.str).join(" ")).replace(/[^a-z0-9]+/g, " ");
+  const cnpj = itens.map((item) => item.str).join(" ").match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/)?.[0] ?? null;
+  const matricula = texto.match(/(?:colaborador|matricula)\s*[:#-]?\s*(\d{3,})/)?.[1] ?? null;
+  const rotulos = ["salario base", "sal contri inss", "base cal fgts", "fgts do mes", "base cal irrf", "dep irrf"];
+  const rotulosBasesMoeve = rotulos.every((rotulo) => texto.includes(normalizar(rotulo)));
+  const valoresBasesMoeve = rotulosBasesMoeve && /\d[.,]\d{2}/.test(texto);
+  const rodapeCompletoMoeve = /valor liquido/.test(texto) && valoresBasesMoeve;
+  return {
+    cnpjMoeve: cnpj,
+    matriculaMoeve: matricula,
+    identidadeMoeve: cnpj || matricula ? `${cnpj ?? ""}|${matricula ?? ""}` : null,
+    rotulosBasesMoeve,
+    valoresBasesMoeve,
+    rodapeCompletoMoeve,
+    paginasOrigemMoeve: pagina == null ? [] : [pagina],
+  };
+}
+
+export function parsePaginasContracheque(itens: TextItemPdf[], largura: number, pagina?: number): ContrachequePdf[] {
   const linhas = linhasDaPagina(itens);
   const inicios = linhas.filter((linha) => ehInicioDeContracheque(linha.texto));
   const modeloPagina = detectarModelo(itens.map((item) => item.str).join(" "));
   if (inicios.length <= 1 || !["deten", "moeve"].includes(modeloPagina)) {
-    return [parsePaginaContracheque(itens, largura)];
+    const resultado = parsePaginaContracheque(itens, largura);
+    return resultado.modeloOrigem === "moeve" ? [{ ...resultado, ...metadadosMoeve(itens, pagina) }] : [resultado];
   }
   return inicios.map((inicio, indice) => {
     const proximo = inicios[indice + 1];
     const bloco = itens.filter((item) => item.y <= inicio.y + 4 && (!proximo || item.y > proximo.y + 4));
-    const resultado = parsePaginaDuasColunas(bloco, largura);
-    return resultado.modeloOrigem === "generico" ? { ...resultado, modeloOrigem: modeloPagina } : resultado;
+    const lido = parsePaginaDuasColunas(bloco, largura);
+    const resultado = lido.modeloOrigem === "generico" ? { ...lido, modeloOrigem: modeloPagina } : lido;
+    return resultado.modeloOrigem === "moeve" ? { ...resultado, ...metadadosMoeve(bloco, pagina) } : resultado;
   });
+}
+
+function combinarIdentidadeMoeve(...identidades: Array<string | null | undefined>): string | null {
+  const partes = identidades.map((identidade) => (identidade ?? "").split("|"));
+  const cnpj = partes.map((p) => p[0]).find(Boolean) ?? "";
+  const matricula = partes.map((p) => p[1]).find(Boolean) ?? "";
+  return cnpj || matricula ? `${cnpj}|${matricula}` : null;
+}
+
+function identidadeMoeveCompativel(a: ContrachequePdf, b: ContrachequePdf): boolean {
+  const partes = (contra: ContrachequePdf) => {
+    const [cnpjIdentidade, matriculaIdentidade] = (contra.identidadeMoeve ?? "|").split("|");
+    return [contra.cnpjMoeve ?? cnpjIdentidade ?? "", contra.matriculaMoeve ?? matriculaIdentidade ?? ""];
+  };
+  const pa = partes(a), pb = partes(b);
+  if (!pa.some(Boolean) || !pb.some(Boolean)) return false;
+  return pa.every((valor, indice) => !valor || !pb[indice] || valor === pb[indice]);
+}
+
+export function validarContrachequeMoeve(contra: ContrachequePdf): void {
+  if (contra.modeloOrigem !== "moeve") return;
+  const prefixo = `${contra.competencia ?? "competência ilegível"} (páginas ${(contra.paginasOrigemMoeve ?? []).join(", ") || "não identificadas"})`;
+  const proventos = contra.itens.filter((item) => item.tipo === "provento").reduce((soma, item) => soma + item.valor, 0);
+  const descontos = contra.itens.filter((item) => item.tipo === "desconto").reduce((soma, item) => soma + item.valor, 0);
+  if (contra.totalProventos != null && Math.abs(proventos - contra.totalProventos) > 0.05) throw new Error(`${prefixo}: proventos diverge do total impresso`);
+  if (contra.totalDescontos != null && Math.abs(descontos - contra.totalDescontos) > 0.05) throw new Error(`${prefixo}: descontos diverge do total impresso`);
+  if (contra.totalProventos != null && contra.totalDescontos != null && contra.liquido != null && Math.abs(contra.totalProventos - contra.totalDescontos - contra.liquido) > 0.05) throw new Error(`${prefixo}: líquido diverge dos totais impressos`);
 }
 
 export function consolidarPaginasContracheque(paginas: ContrachequePdf[]): ContrachequePdf[] {
@@ -445,6 +512,32 @@ export function consolidarPaginasContracheque(paginas: ContrachequePdf[]): Contr
   let atual: ContrachequePdf | null = null;
   for (const pagina of paginas) {
     if (!pagina.itens.length && pagina.totalProventos == null) continue;
+    if (atual?.modeloOrigem === "moeve" && pagina.modeloOrigem === "moeve") {
+      const mesmaIdentidade = identidadeMoeveCompativel(atual, pagina);
+      if (atual.rodapeCompletoMoeve && pagina.itens.length && mesmaIdentidade && atual.competencia === pagina.competencia) throw new Error(`${pagina.competencia ?? "competência ilegível"}: novos dados após fechamento do contracheque`);
+      if (!pagina.itens.length && mesmaIdentidade && atual.competencia === pagina.competencia) {
+        atual.paginasOrigemMoeve = [...new Set([...(atual.paginasOrigemMoeve ?? []), ...(pagina.paginasOrigemMoeve ?? [])])];
+        continue;
+      }
+      if (!atual.rodapeCompletoMoeve && mesmaIdentidade && atual.competencia === pagina.competencia) {
+        atual = {
+          ...atual,
+          identidadeMoeve: combinarIdentidadeMoeve(atual.identidadeMoeve, pagina.identidadeMoeve, `${atual.cnpjMoeve ?? pagina.cnpjMoeve ?? ""}|${atual.matriculaMoeve ?? pagina.matriculaMoeve ?? ""}`),
+          cnpjMoeve: atual.cnpjMoeve ?? pagina.cnpjMoeve,
+          matriculaMoeve: atual.matriculaMoeve ?? pagina.matriculaMoeve,
+          itens: [...atual.itens, ...pagina.itens],
+          totalProventos: pagina.totalProventos ?? atual.totalProventos,
+          totalDescontos: pagina.totalDescontos ?? atual.totalDescontos,
+          liquido: pagina.liquido ?? atual.liquido,
+          rodapeCompletoMoeve: pagina.rodapeCompletoMoeve ?? atual.rodapeCompletoMoeve,
+          rotulosBasesMoeve: pagina.rotulosBasesMoeve ?? atual.rotulosBasesMoeve,
+          valoresBasesMoeve: pagina.valoresBasesMoeve ?? atual.valoresBasesMoeve,
+          paginasOrigemMoeve: [...new Set([...(atual.paginasOrigemMoeve ?? []), ...(pagina.paginasOrigemMoeve ?? [])])],
+        };
+        consolidados[consolidados.length - 1] = atual;
+        continue;
+      }
+    }
     const continuaElekeiroz = atual?.modeloOrigem === "elekeiroz"
       && pagina.modeloOrigem === "elekeiroz"
       && atual.competencia === pagina.competencia;

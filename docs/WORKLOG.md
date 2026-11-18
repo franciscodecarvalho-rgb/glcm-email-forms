@@ -1,5 +1,28 @@
 # Worklog
 
+## 2026-11-18 — Agente de fallback para contracheques (SPEC-006)
+
+- Baseline preservado na branch local `backup/contracheque-ai-before-agent-2026-11-18`,
+  SHA `db122253e13c2abbd31d63394b8f60a622955906`, descrito em
+  `docs/ai/BASELINE-EXTRATOR-CONTRACHEQUES-2026-11-18.md`.
+- O fallback recebeu papel especializado, instruções contra inferência e contexto
+  aprovado de Acelen, Dow, Ecolab, Moeve e Oxiteno.
+- Adicionada memória temporária por arquivo, com modelo, competência e hash da
+  assinatura (sem expor valores), usada apenas para continuidade/deduplicação.
+- Divergência entre soma das rubricas e totais impressos aciona uma releitura. Se a
+  divergência persistir, o lote fica em erro para revisão, sem persistir esse
+  resultado como concluído. O líquido impresso é preservado.
+- A validação funcional alinhou Moeve entre páginas/lotes até o rodapé completo,
+  adicionou conferência contra totais impressos e bloqueio de persistência em caso de
+  divergência. Em Oxiteno, a classificação usa a divisória vertical da própria página,
+  conserva limites ilegíveis como erro, reconhece totais com colchetes e classifica
+  `3331` como AHRA e `HRA sem IR` fora da base da planilha.
+- A suíte completa passou: 38 arquivos, 320 testes aprovados e 2 cenários de PDF real
+  ignorados porque `GLCM_MOEVE_PDF` e `GLCM_OXITENO_PDF` não estão configurados.
+- `npm run build`, `npx tsc --noEmit` e compilação sintática da Edge Function passaram.
+- Nenhuma mudança de schema, layout, provedor ou publicação remota.
+- Nenhum deploy remoto realizado.
+
 ## 2026-09-30 — Gemini lê CPF da CNH; RG opcional com CPF válido
 
 - A CNH escaneada era enviada no Chat Completions como `image_url` contendo

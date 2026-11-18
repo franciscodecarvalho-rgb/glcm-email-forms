@@ -113,7 +113,8 @@ export function contrachequesRelacionaisParaRevisao(
       .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))
       .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itens
-      .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
+      .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item)
+        && !(contracheque.modelo_origem === "oxiteno" && /\bhra\s+sem\s+ir\b/i.test(item.descricao ?? "")))
       .reduce((total, item) => total + valorProvento(item), 0);
 
     const competencia = competenciaCanonica(contracheque);
