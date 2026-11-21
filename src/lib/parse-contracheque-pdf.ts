@@ -22,9 +22,12 @@ export type ContrachequePdf = {
   rotulosBasesMoeve?: boolean;
   valoresBasesMoeve?: boolean;
   paginasOrigemMoeve?: number[];
+  continuacaoSemCabecalhoMoeve?: boolean;
+  folhasPetrobras?: FolhasPetrobras;
 };
 
 type Linha = { y: number; itens: TextItemPdf[]; texto: string };
+type FolhasPetrobras = { inicio: number; ultima: number; total: number; matricula: string | null };
 const CODIGO = /^\/?[A-Z0-9]{1,6}$/i;
 const VALOR = /^-?(?:R\$)?\s*\d{1,3}(?:\.\d{3})*,\d{2}\]?$|^-?(?:R\$)?\s*\d+,\d{2}\]?$/i;
 const MESES: Record<string, string> = {
@@ -37,11 +40,11 @@ const MESES: Record<string, string> = {
 const normalizar = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 export function moedaBrasileiraParaNumero(valor: string): number {
-  const numero = Number(valor.replace(/[\[\]]/g, "").replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", "."));
+  const numero = Number(valor.replace(/[[\]]/g, "").replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", "."));
   return Number.isFinite(numero) ? numero : 0;
 }
 
-function linhasDaPagina(itens: TextItemPdf[]): Linha[] {
+export function linhasDaPagina(itens: TextItemPdf[]): Linha[] {
   const linhas: Linha[] = [];
   const expandidos = itens.flatMap((item) => {
     const partes = item.str.trim().split(/\s+/);
@@ -70,7 +73,7 @@ function linhasDaPagina(itens: TextItemPdf[]): Linha[] {
     });
 }
 
-function detectarModelo(texto: string): string {
+export function detectarModelo(texto: string): string {
   const n = normalizar(texto);
   if (n.includes("birla carbon")) return "birla_carbon";
   if (n.includes("cetrel")) return "cetrel";
@@ -195,6 +198,24 @@ function rubricaDoSegmento(segmento: SegmentoColuna): RubricaPdf | null {
   };
 }
 
+function lerPaginacaoPetrobras(texto: string, itens: TextItemPdf[]): FolhasPetrobras | null {
+  const paginacao = normalizar(texto).match(/\bpagina\s+(\d+)\s+de\s+(\d+)\b/);
+  const numero = Number(paginacao?.[1]), total = Number(paginacao?.[2]);
+  if (!(numero >= 1 && numero <= total && total > 1)) return null;
+  const rotulo = itens.find((item) => normalizar(item.str.trim()) === "matricula");
+  const matricula = rotulo && itens.find((item) => item.y < rotulo.y && item.y >= rotulo.y - 18
+    && Math.abs(item.x - rotulo.x) < 12 && /^[\da-z-]{4,}$/i.test(item.str.trim()) && /\d/.test(item.str));
+  return { inicio: numero, ultima: numero, total, matricula: matricula?.str.trim() ?? null };
+}
+
+function lerLiquidoPetrobras(itens: TextItemPdf[]): number | null {
+  const rotulo = itens.find((item) => /valor\s+liquido\s+depositado/.test(normalizar(item.str)));
+  if (!rotulo) return null;
+  const encontrados = new Set(itens.filter((item) => item.x >= rotulo.x - 4 && item.y <= rotulo.y + 2 && item.y >= rotulo.y - 18
+    && itemMonetario(item)).map((item) => moedaBrasileiraParaNumero(item.str)));
+  return encontrados.size === 1 ? [...encontrados][0] : null;
+}
+
 export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): ContrachequePdf {
   const modeloPagina = detectarModelo(itens.map((i) => i.str).join(" "));
   const larguraLeitura = modeloPagina === "termo_bahia" ? largura / 2 : largura;
@@ -209,13 +230,28 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       ? extrairCompetenciaBasf(linhas) ?? extrairCompetencia(texto)
       : extrairCompetencia(texto);
   const retificado = modeloOrigem === "basf" && basfRetificado(linhas);
+  const folhasPetrobras = modeloOrigem === "petrobras" ? lerPaginacaoPetrobras(texto, itensLeitura) : null;
   const cabecalho = linhas.find((l) => {
     const n = normalizar(l.texto);
-    return (/descricao/.test(n) && /provent|venciment|valor/.test(n))
+    const compacto = n.replace(/\s+/g, "");
+    return (/descricao/.test(compacto) && /provent|venciment|valor/.test(compacto))
       || (/venciment/.test(n) && /descont/.test(n))
       || (/rendiment/.test(n) && /descont/.test(n));
   });
-  const acharX = (padrao: RegExp) => cabecalho?.itens.find((i) => padrao.test(normalizar(i.str)))?.x ?? null;
+  const acharX = (padrao: RegExp) => {
+    const itensCabecalho = cabecalho?.itens ?? [];
+    const individual = itensCabecalho.find((item) => padrao.test(normalizar(item.str)));
+    if (individual) return individual.x;
+    for (let inicio = 0; inicio < itensCabecalho.length; inicio++) {
+      let combinado = "";
+      for (let fim = inicio; fim < Math.min(itensCabecalho.length, inicio + 5); fim++) {
+        if (itensCabecalho[fim].str === "|") break;
+        combinado += normalizar(itensCabecalho[fim].str).replace(/\s+/g, "");
+        if (padrao.test(combinado)) return itensCabecalho[inicio].x;
+      }
+    }
+    return null;
+  };
   const xDescricao = acharX(/descricao/);
   const xProvento = acharX(/provent|venciment|valor/);
   const xDesconto = acharX(/descont/);
@@ -225,6 +261,8 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   const duasColunas = colunasCodigo.length >= 2 && /rendiment/.test(normalizar(cabecalho?.texto ?? ""));
   const xCorte = duasColunas ? colunasCodigo[1].x : null;
   let secao: TipoRubrica = "provento";
+  if (folhasPetrobras && folhasPetrobras.inicio > 1 && !/total de proventos/.test(normalizar(texto))
+    && /total de descontos/.test(normalizar(texto))) secao = "desconto";
   let informativo = false;
   let tabelaEncerrada = false;
   const rubricas: RubricaPdf[] = [];
@@ -247,7 +285,11 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
       if (/total(?:\s+de)?\s+descontos/.test(n) && valoresTotais.length > 1) totalDescontos = moedaBrasileiraParaNumero(valoresTotais[valoresTotais.length - 1].str);
       secao = "desconto"; if (modeloOrigem === "birla_carbon") tabelaEncerrada = true; continue;
     }
-    if (/total(?:\s+de)?\s+descontos/.test(n)) { totalDescontos = totalNaLinha(linha); continue; }
+    if (/total(?:\s+de)?\s+descontos/.test(n)) {
+      totalDescontos = totalNaLinha(linha);
+      if (folhasPetrobras) informativo = true;
+      continue;
+    }
     if (/\bt\s*o\s*t\s*a\s*i\s*s?\b|\btotais?\b/.test(n)) {
       let vals = valoresDaLinha(linha).map((i) => moedaBrasileiraParaNumero(i.str));
       if (vals.length < 2) {
@@ -345,25 +387,30 @@ export function parsePaginaContracheque(itens: TextItemPdf[], largura: number): 
   const proventosCalculados = rubricas.filter((i) => i.tipo === "provento").reduce((s, i) => s + i.valor, 0);
   const descontosCalculados = rubricas.filter((i) => i.tipo === "desconto").reduce((s, i) => s + i.valor, 0);
   const paginaContinua = /\bcontinua\b/.test(normalizar(texto));
-  if (!paginaContinua) {
+  if (folhasPetrobras) liquido = lerLiquidoPetrobras(itensLeitura);
+  if (!paginaContinua && !folhasPetrobras) {
     totalProventos ??= proventosCalculados || null;
     totalDescontos ??= descontosCalculados || null;
     if (totalDescontos == null && ["birla_carbon", "cetrel", "vopak"].includes(modeloOrigem)) totalDescontos = descontosCalculados;
     liquido ??= totalProventos != null && totalDescontos != null ? totalProventos - totalDescontos : null;
   }
-  return { competencia, modeloOrigem, ...(retificado ? { retificado: true } : {}), totalProventos, totalDescontos, liquido, itens: rubricas };
+  return { competencia, modeloOrigem, ...(retificado ? { retificado: true } : {}), totalProventos, totalDescontos, liquido,
+    itens: rubricas, ...(folhasPetrobras ? { folhasPetrobras } : {}) };
 }
 
-function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number): ContrachequePdf {
+function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number, moeve = false): ContrachequePdf {
   const linhas = linhasDaPagina(itens);
   const texto = linhas.map((linha) => linha.texto).join("\n");
-  const modeloOrigem = detectarModelo(texto);
+  const modeloOrigem = moeve ? "moeve" : detectarModelo(texto);
   const retificado = modeloOrigem === "basf" && basfRetificado(linhas);
   const metade = largura * 0.45;
   const cabecalho = linhas.find((linha) => {
     const n = normalizar(linha.texto);
     return /descricao/.test(n) && /desconto/.test(n) && /valor/.test(n);
   });
+  if (moeve && !cabecalho) {
+    return { competencia: extrairCompetencia(texto), modeloOrigem, totalProventos: null, totalDescontos: null, liquido: null, itens: [] };
+  }
   if (!cabecalho) return parsePaginaContracheque(itens, largura);
 
   const acharCabecalho = (padrao: RegExp, lado: "esquerdo" | "direito") => cabecalho.itens
@@ -401,13 +448,17 @@ function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number): Contrach
   let candidatoTotais: { linha: Linha; esquerda: TextItemPdf; direita: TextItemPdf } | null = null;
 
   for (const linha of linhas) {
-    if (linha === cabecalho) continue;
+    if (linha === cabecalho || (moeve && linha.y > cabecalho.y)) continue;
     const n = normalizar(linha.texto);
-    const codigoE = linha.itens.find((item) => item.x < metade && item.x < xDescricaoE && CODIGO.test(item.str.trim()));
-    const codigoD = linha.itens.find((item) => item.x >= metade && item.x < xDescricaoD && CODIGO.test(item.str.trim()));
+    const codigoE = linha.itens.find((item) => item.x < metade && item.x < xDescricaoE && (moeve ? /^P\d{3}$/i : CODIGO).test(item.str.trim()));
+    const codigoD = linha.itens.find((item) => item.x >= metade && item.x < xDescricaoD && (moeve ? /^D\d{3}$/i : CODIGO).test(item.str.trim()));
     const valorE = valorNaColuna(linha, xValorE, xCodigoD);
     const valorD = valorNaColuna(linha, xValorD, largura + 1);
-    if (codigoE && valorE) rubricas.push({ codigo: codigoE.str.trim().toUpperCase(), descricao: textoNaColuna(linha, xDescricaoE, xReferenciaE), referencia: referenciaNaColuna(linha, xReferenciaE, xValorE), valor: Math.abs(moedaBrasileiraParaNumero(valorE.str)), tipo: "provento" });
+    if (codigoE && valorE) {
+      const codigo = codigoE.str.trim().toUpperCase();
+      const descricao = textoNaColuna(linha, xDescricaoE, xReferenciaE) || (moeve && codigo === "P003" ? "H. R. A." : "");
+      rubricas.push({ codigo, descricao, referencia: referenciaNaColuna(linha, xReferenciaE, xValorE), valor: Math.abs(moedaBrasileiraParaNumero(valorE.str)), tipo: "provento" });
+    }
     if (codigoD && valorD) rubricas.push({ codigo: codigoD.str.trim().toUpperCase(), descricao: textoNaColuna(linha, xDescricaoD, xReferenciaD), referencia: referenciaNaColuna(linha, xReferenciaD, xValorD), valor: Math.abs(moedaBrasileiraParaNumero(valorD.str)), tipo: "desconto" });
     const valoresDaLinhaAtual = valoresDaLinha(linha);
     if (/valor\s+liquido|liquido\s+creditado|total\s+liquido/.test(n) && valoresDaLinhaAtual.length) {
@@ -424,6 +475,11 @@ function parsePaginaDuasColunas(itens: TextItemPdf[], largura: number): Contrach
       if (esquerda && direita && (!candidatoTotais || (linhaLiquido && Math.abs(linha.y - linhaLiquido.y) < Math.abs(candidatoTotais.linha.y - linhaLiquido.y)))) candidatoTotais = { linha, esquerda, direita };
     }
   }
+  if (moeve) {
+    const rodape = lerRodapeMoeve(linhas, (linha) => valorNaColuna(linha, xValorE, xCodigoD),
+      (linha) => valorNaColuna(linha, xValorD, largura + 1));
+    return { competencia: extrairCompetencia(texto), modeloOrigem, ...rodape, itens: rubricas };
+  }
   if (candidatoTotais) {
     totalProventos ??= moedaBrasileiraParaNumero(candidatoTotais.esquerda.str);
     totalDescontos ??= moedaBrasileiraParaNumero(candidatoTotais.direita.str);
@@ -439,6 +495,21 @@ function ehInicioDeContracheque(texto: string): boolean {
   return n.includes("demonstrativo de pagamento") || n.includes("aviso de credito");
 }
 
+function lerRodapeMoeve(
+  linhas: Linha[], proventos: (linha: Linha) => TextItemPdf | undefined, descontos: (linha: Linha) => TextItemPdf | undefined,
+) {
+  const linhaLiquido = linhas.find((linha) => /\bvalor\b.*\bliquido\b/.test(normalizar(linha.texto)) && descontos(linha));
+  const linhaTotais = [...linhas].reverse().find((linha) => (!linhaLiquido || linha.y > linhaLiquido.y)
+    && valoresDaLinha(linha).length === 2
+    && !linha.itens.some((item) => /^[PD]\d{3}$/i.test(item.str.trim()))
+    && proventos(linha) && descontos(linha));
+  return {
+    totalProventos: linhaTotais ? moedaBrasileiraParaNumero(proventos(linhaTotais)!.str) : null,
+    totalDescontos: linhaTotais ? moedaBrasileiraParaNumero(descontos(linhaTotais)!.str) : null,
+    liquido: linhaLiquido ? moedaBrasileiraParaNumero(descontos(linhaLiquido)!.str) : null,
+  };
+}
+
 /**
  * Alguns emissores colocam dois ou mais contracheques completos na mesma
  * página. O parser tradicional continua responsável por cada bloco; esta
@@ -450,8 +521,14 @@ function metadadosMoeve(itens: TextItemPdf[], pagina?: number) {
   const matricula = texto.match(/(?:colaborador|matricula)\s*[:#-]?\s*(\d{3,})/)?.[1] ?? null;
   const rotulos = ["salario base", "sal contri inss", "base cal fgts", "fgts do mes", "base cal irrf", "dep irrf"];
   const rotulosBasesMoeve = rotulos.every((rotulo) => texto.includes(normalizar(rotulo)));
-  const valoresBasesMoeve = rotulosBasesMoeve && /\d[.,]\d{2}/.test(texto);
-  const rodapeCompletoMoeve = /valor liquido/.test(texto) && valoresBasesMoeve;
+  const linhas = linhasDaPagina(itens);
+  const linhaBases = linhas.find((linha) => {
+    const rotulo = normalizar(linha.texto).replace(/[^a-z0-9]+/g, " ");
+    return rotulos.every((base) => rotulo.includes(base));
+  });
+  const valoresBasesMoeve = linhaBases != null && linhas.some((linha) => linha.y < linhaBases.y
+    && linha.y >= linhaBases.y - 28 && valoresDaLinha(linha).length === rotulos.length);
+  const rodapeCompletoMoeve = linhas.some((linha) => /\bvalor\b.*\bliquido\b/.test(normalizar(linha.texto))) && valoresBasesMoeve;
   return {
     cnpjMoeve: cnpj,
     matriculaMoeve: matricula,
@@ -467,6 +544,19 @@ export function parsePaginasContracheque(itens: TextItemPdf[], largura: number, 
   const linhas = linhasDaPagina(itens);
   const inicios = linhas.filter((linha) => ehInicioDeContracheque(linha.texto));
   const modeloPagina = detectarModelo(itens.map((item) => item.str).join(" "));
+  if (modeloPagina === "moeve" && inicios.length) {
+    const partes: ContrachequePdf[] = inicios.map((inicio, indice) => {
+      const proximo = inicios[indice + 1];
+      const bloco = itens.filter((item) => item.y <= inicio.y + 4 && (!proximo || item.y > proximo.y + 4));
+      return { ...parsePaginaDuasColunas(bloco, largura, true), ...metadadosMoeve(bloco, pagina) };
+    });
+    const topo = itens.filter((item) => item.y > inicios[0].y + 4);
+    const continuacao = parsePaginaDuasColunas(topo, largura, true);
+    if (continuacao.itens.length || continuacao.liquido != null) {
+      partes.unshift({ ...continuacao, ...metadadosMoeve(topo, pagina), competencia: null, continuacaoSemCabecalhoMoeve: true });
+    }
+    return partes;
+  }
   if (inicios.length <= 1 || !["deten", "moeve"].includes(modeloPagina)) {
     const resultado = parsePaginaContracheque(itens, largura);
     return resultado.modeloOrigem === "moeve" ? [{ ...resultado, ...metadadosMoeve(itens, pagina) }] : [resultado];
@@ -505,21 +595,48 @@ export function validarContrachequeMoeve(contra: ContrachequePdf): void {
   if (contra.totalProventos != null && Math.abs(proventos - contra.totalProventos) > 0.05) throw new Error(`${prefixo}: proventos diverge do total impresso`);
   if (contra.totalDescontos != null && Math.abs(descontos - contra.totalDescontos) > 0.05) throw new Error(`${prefixo}: descontos diverge do total impresso`);
   if (contra.totalProventos != null && contra.totalDescontos != null && contra.liquido != null && Math.abs(contra.totalProventos - contra.totalDescontos - contra.liquido) > 0.05) throw new Error(`${prefixo}: líquido diverge dos totais impressos`);
+  if (!contra.itens.length || contra.totalProventos == null || contra.totalDescontos == null || contra.liquido == null) {
+    throw new Error(`${prefixo}: rubricas ou totais impressos incompletos`);
+  }
 }
 
 export function consolidarPaginasContracheque(paginas: ContrachequePdf[]): ContrachequePdf[] {
   const consolidados: ContrachequePdf[] = [];
   let atual: ContrachequePdf | null = null;
   for (const pagina of paginas) {
-    if (!pagina.itens.length && pagina.totalProventos == null) continue;
+    if (!pagina.itens.length && pagina.totalProventos == null && !pagina.folhasPetrobras
+      && !(pagina.modeloOrigem === "moeve" && (pagina.liquido != null || (pagina.competencia && pagina.identidadeMoeve)))) continue;
+    if (atual?.folhasPetrobras || pagina.folhasPetrobras) {
+      const anterior = atual?.folhasPetrobras, proxima = pagina.folhasPetrobras;
+      if (atual && anterior && proxima && atual.competencia && atual.competencia === pagina.competencia
+        && anterior.total === proxima.total && anterior.ultima + 1 === proxima.inicio
+        && anterior.matricula && anterior.matricula === proxima.matricula) {
+        atual.itens.push(...pagina.itens);
+        atual.totalProventos = pagina.totalProventos ?? atual.totalProventos;
+        atual.totalDescontos = pagina.totalDescontos ?? atual.totalDescontos;
+        atual.liquido = pagina.liquido ?? atual.liquido;
+        atual.folhasPetrobras = { ...anterior, ultima: proxima.ultima };
+      } else {
+        atual = { ...pagina, itens: [...pagina.itens] };
+        consolidados.push(atual);
+      }
+      continue;
+    }
     if (atual?.modeloOrigem === "moeve" && pagina.modeloOrigem === "moeve") {
       const mesmaIdentidade = identidadeMoeveCompativel(atual, pagina);
+      const ultimaPagina = atual.paginasOrigemMoeve?.at(-1);
+      const primeiraPagina = pagina.paginasOrigemMoeve?.[0];
+      const fimSemCabecalho = pagina.continuacaoSemCabecalhoMoeve && !atual.rodapeCompletoMoeve
+        && atual.identidadeMoeve && atual.competencia && ultimaPagina != null && primeiraPagina === ultimaPagina + 1
+        && (!pagina.identidadeMoeve || mesmaIdentidade);
       if (atual.rodapeCompletoMoeve && pagina.itens.length && mesmaIdentidade && atual.competencia === pagina.competencia) throw new Error(`${pagina.competencia ?? "competência ilegível"}: novos dados após fechamento do contracheque`);
-      if (!pagina.itens.length && mesmaIdentidade && atual.competencia === pagina.competencia) {
+      if (atual.rodapeCompletoMoeve && !pagina.itens.length && mesmaIdentidade && atual.competencia === pagina.competencia
+        && ((!pagina.rodapeCompletoMoeve && pagina.totalProventos == null && pagina.totalDescontos == null && pagina.liquido == null)
+          || (pagina.totalProventos === atual.totalProventos && pagina.totalDescontos === atual.totalDescontos && pagina.liquido === atual.liquido))) {
         atual.paginasOrigemMoeve = [...new Set([...(atual.paginasOrigemMoeve ?? []), ...(pagina.paginasOrigemMoeve ?? [])])];
         continue;
       }
-      if (!atual.rodapeCompletoMoeve && mesmaIdentidade && atual.competencia === pagina.competencia) {
+      if (fimSemCabecalho || (!atual.rodapeCompletoMoeve && mesmaIdentidade && atual.competencia === pagina.competencia)) {
         atual = {
           ...atual,
           identidadeMoeve: combinarIdentidadeMoeve(atual.identidadeMoeve, pagina.identidadeMoeve, `${atual.cnpjMoeve ?? pagina.cnpjMoeve ?? ""}|${atual.matriculaMoeve ?? pagina.matriculaMoeve ?? ""}`),
@@ -538,10 +655,25 @@ export function consolidarPaginasContracheque(paginas: ContrachequePdf[]): Contr
         continue;
       }
     }
+    if (pagina.continuacaoSemCabecalhoMoeve) {
+      throw new Error(`Moeve: continuação sem recibo anterior compatível (página ${pagina.paginasOrigemMoeve?.[0] ?? "ilegível"}).`);
+    }
+    if (pagina.modeloOrigem === "moeve" || atual?.modeloOrigem === "moeve") {
+      atual = { ...pagina, itens: [...pagina.itens] };
+      consolidados.push(atual);
+      continue;
+    }
     const continuaElekeiroz = atual?.modeloOrigem === "elekeiroz"
       && pagina.modeloOrigem === "elekeiroz"
       && atual.competencia === pagina.competencia;
-    if (!atual || (!continuaElekeiroz && atual.totalProventos != null && atual.totalDescontos != null)) {
+    // Alguns recibos BASF/TRONOX sem descontos têm totalDescontos nulo, mas
+    // possuem líquido impresso. O líquido encerra o bloco; não unir a próxima
+    // página só porque a competência se repetiu.
+    const fechamentoImpresso = atual != null && (
+      (atual.totalProventos != null && atual.liquido != null)
+      || (["basf", "tronox"].includes(atual.modeloOrigem) && atual.totalProventos != null)
+    );
+    if (!atual || (!continuaElekeiroz && fechamentoImpresso)) {
       atual = { ...pagina, itens: [...pagina.itens] };
       consolidados.push(atual);
     } else {
@@ -553,6 +685,7 @@ export function consolidarPaginasContracheque(paginas: ContrachequePdf[]): Contr
   }
   const vistos = new Set<string>();
   return consolidados.filter((c) => {
+    if (c.folhasPetrobras && (c.folhasPetrobras.inicio !== 1 || c.folhasPetrobras.ultima !== c.folhasPetrobras.total)) return true;
     const chave = `${c.competencia}|${c.totalProventos}|${c.totalDescontos}|${c.itens.map((i) => `${i.codigo}:${i.valor}`).join(",")}`;
     if (vistos.has(chave)) return false;
     vistos.add(chave);

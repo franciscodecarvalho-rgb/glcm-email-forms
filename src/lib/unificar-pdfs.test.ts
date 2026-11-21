@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { PDFDocument } from "pdf-lib";
+import * as ocr from "./ocr-pdf";
 import {
   unificarPdfs,
   competenciaDoArquivo,
@@ -265,6 +266,40 @@ describe("ordenarPorCompetencia", () => {
 });
 
 describe("unificarPdfsEmLotes", () => {
+  it("reutiliza uma sessão de OCR entre os PDFs digitalizados de Mataripe", async () => {
+    const reconhecerPagina = vi.fn().mockResolvedValue({ itens: [], texto: "", confianca: 0 });
+    const encerrar = vi.fn().mockResolvedValue(undefined);
+    const sessao = vi.spyOn(ocr, "criarSessaoOcr").mockResolvedValue({ reconhecerPagina, encerrar });
+    pdfjsMocks.getDocument.mockReset().mockImplementation(() => {
+      const doc = documentoFake([[]]);
+      return { promise: Promise.resolve({
+        ...doc,
+        getPage: async (numero: number) => ({
+          ...await doc.getPage(numero), getViewport: vi.fn(), render: vi.fn(),
+        }),
+      }) };
+    });
+    try {
+      const arquivos = [await criarPdf(1, "primeiro.pdf"), await criarPdf(1, "segundo.pdf")];
+      await unificarPdfsEmLotes(arquivos, undefined, undefined, "acelen");
+      expect(sessao).toHaveBeenCalledTimes(1);
+      expect(reconhecerPagina).toHaveBeenCalledTimes(2);
+      expect(encerrar).toHaveBeenCalledTimes(1);
+    } finally {
+      sessao.mockRestore();
+    }
+  });
+
+  it("identifica o PDF e a página de outra empresa antes de enviar o lote", async () => {
+    const paginas = [paginaComMesAno("01/2026"), [
+      { str: "Refinaria de Mataripe S.A.", x: 70, y: 745, width: 130, height: 12 },
+      ...paginaComMesAno("02/2026"),
+    ]];
+    pdfjsMocks.getDocument.mockReset().mockImplementation(() => ({ promise: Promise.resolve(documentoFake(paginas)) }));
+    const arquivo = await criarPdf(2, "folhas.pdf");
+    await expect(unificarPdfsEmLotes([arquivo], undefined, undefined, "oxiteno"))
+      .rejects.toThrow(/folhas\.pdf, página 2/);
+  });
   beforeEach(() => {
     pdfjsMocks.getDocument.mockReset();
     pdfjsMocks.getDocument.mockImplementation(() => ({ promise: Promise.resolve(documentoVazio()) }));

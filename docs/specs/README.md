@@ -13,3 +13,5 @@ do sistema e seus critérios de validação.
   provisórias fora dos Casos até a conclusão e validação do fluxo.
 - [`SPEC-006`](./SPEC-006-agente-extrator-contracheques.md) — contexto, memória
   temporária e revisão aritmética no fallback de IA dos contracheques.
+- [`SPEC-007`](./SPEC-007-empresa-declarada-na-extracao.md) — seleção de empresa
+  e piloto dos perfis Oxiteno e Refinaria de Mataripe na família ADP.

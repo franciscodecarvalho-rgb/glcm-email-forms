@@ -15,8 +15,23 @@ Lovable; publicação do frontend ainda requer confirmação.
 
 ## Active Spec
 
-SPEC-006 — agente especializado no fallback de contracheques, com memória limitada
-ao arquivo e revisão aritmética antes de concluir lotes.
+SPEC-007 — catálogo de empresas no cadastro manual, perfil de extração por
+empresa e homologação do piloto de contracheques ADP. Mataripe e
+Oxiteno conciliadas nos conjuntos locais. Petrobras concluída no teste
+de 60 PDFs. Moeve tem as 69 competências recuperadas; a auditoria confirmou
+que as 14 pendências são da própria fonte (12 totais que duplicam rubricas,
+01/2020 com linhas ausentes e 01/2022 sem totais impressos), não um erro de
+leitura do parser. O PDF de Franque mistura TRONOX e BASF e não é elegível para o piloto
+de empresa única sem separação ou regra de agregação aprovada. A separação por
+empregador foi concluída para a validação e produziu duas planilhas independentes:
+47 competências BASF e 10 competências TRONOX, sem divergências financeiras
+após a correção do fechamento por líquido/proventos. A SPEC-006
+documenta o fallback de IA. A planilha Oxiteno foi regenerada pela leitura
+vetorial homologada com 36 competências, AHRA de R$ 50,75 em 11/2025 e valor
+histórico de R$ 6.894,95; o arquivo antigo de 25 linhas permanece preservado
+como histórico, fora da validação atual. As versões antigas da pasta de
+validação foram preservadas na subpasta `Historico`, evitando que sejam
+confundidas com os quatro artefatos atuais.
 
 ## Next Spec
 
@@ -115,6 +130,10 @@ porque o banco local/Docker não estava disponível. ESLint seletivo aponta 12
 ocorrências `no-explicit-any` preexistentes nos arquivos afetados; o diff não
 introduziu novas ocorrências. Esta correção local ainda aguarda confirmação do
 fluxo de release previsto no `context/DEPLOY.md`.
+
+SPEC-007 implementada localmente em 2026-11-19. O piloto de Oxiteno e Mataripe
+está desligado por padrão. A ativação em teste e as condições de expansão
+estão na [SPEC-007](specs/SPEC-007-empresa-declarada-na-extracao.md).
 
 SPEC-006 foi implementada localmente em 2026-11-18: fallback de IA com contexto
 especializado, memória efêmera por arquivo (modelo, competência e hash, sem valores)

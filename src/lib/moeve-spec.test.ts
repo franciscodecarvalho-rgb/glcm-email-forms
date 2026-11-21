@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { consolidarPaginasContracheque, parsePaginasContracheque, validarContrachequeMoeve, type ContrachequePdf, type TextItemPdf } from "./parse-contracheque-pdf";
+import { competenciasPorPagina } from "./unificar-pdfs";
 
 type ContraEdge = {
   competencia: string | null; modelo_origem: string; total_proventos: number | null;
@@ -94,6 +95,47 @@ describe("SPEC-001 — Moeve", () => {
     })).toThrow(/01\/2022 \(páginas 12, 13\).*proventos diverge/);
   });
 
+  it("preserva o cabeçalho sozinho e vincula a tabela sem cabeçalho do lote seguinte", () => {
+    const item = (str: string, x: number, y: number): TextItemPdf => ({ str, x, y, width: 55, height: 9 });
+    const cabecalho = (mes: string, y: number) => [
+      item("MOEVE QUIMICA BRASIL S A", 348, y + 20), item("Aviso de Crédito", 171, y),
+      item(`FOLHA MENSAL ${mes}`, 414, y - 7), item("13.546.106/0001-37", 350, y - 20),
+      item("Colaborador 1064", 20, y - 29),
+    ];
+    const primeira = cabecalho("03/2020", 70);
+    const segunda = [
+      item("COD", 22, 810), item("DESCRIÇÃO", 46, 810), item("REF", 221, 810), item("VALOR", 252, 810),
+      item("CODIGO", 303, 810), item("DESCONTO", 344, 810), item("REF", 500, 810), item("VALOR", 545, 810),
+      item("P003", 23, 796), item("H. R. A.", 50, 796), item("100,00", 260, 796),
+      item("D206", 312, 796), item("VITALMED", 345, 796), item("10,00", 545, 796),
+      item("100,00", 278, 775), item("10,00", 532, 775),
+      item("Valor Líquido", 331, 758), item("90,00", 531, 758),
+      item("Salário Base", 23, 735), item("Sal. Contri. INSS", 110, 735),
+      item("Base Cál. FGTS", 220, 735), item("FGTS do mês", 320, 735),
+      item("Base Cál. IRRF", 414, 735), item("Dep. IRRF", 520, 735),
+      ...[33, 125, 236, 329, 423, 520].map((x) => item("0,00", x, 722)),
+      ...cabecalho("04/2020", 590),
+    ];
+    const [aberto] = parsePaginasContracheque(primeira, 615, 5);
+    const [continuacao, outro] = parsePaginasContracheque(segunda, 615, 6);
+    expect(competenciasPorPagina([primeira, segunda])).toEqual(["03/2020", "03/2020"]);
+    expect(aberto.itens).toEqual([]);
+    expect(continuacao.continuacaoSemCabecalhoMoeve).toBe(true);
+    expect(outro.competencia).toBe("04/2020");
+    const [recibo] = consolidarPaginasContracheque([aberto, continuacao, outro]);
+    expect(recibo).toMatchObject({ competencia: "03/2020", paginasOrigemMoeve: [5, 6], totalProventos: 100, totalDescontos: 10, liquido: 90 });
+    expect(recibo.itens.map((rubrica) => rubrica.codigo)).toEqual(["P003", "D206"]);
+    expect(() => consolidarPaginasContracheque([continuacao])).toThrow(/sem recibo anterior compatível/);
+
+    const primeiroLote = edge.consolidarLote(edge.parsePaginas(primeira, 615, 5), null);
+    const segundoLote = edge.consolidarLote(edge.parsePaginas(segunda, 615, 6), primeiroLote.aberto);
+    expect(segundoLote.fechados[0]).toMatchObject({
+      competencia: "03/2020", paginas_origem_moeve: [5, 6], total_proventos: 100, total_descontos: 10, liquido: 90,
+    });
+    expect(segundoLote.fechados[0].itens.map((rubrica) => rubrica.codigo)).toEqual(["P003", "D206"]);
+    expect(() => edge.consolidarLote(edge.parsePaginas(segunda, 615, 7), primeiroLote.aberto)).toThrow(/sem recibo anterior compatível/);
+  });
+
   it.skipIf(!process.env.GLCM_MOEVE_PDF)("reconcilia o PDF real nos dois parsers", async () => {
     const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const pdf = await getDocument({ data: new Uint8Array(readFileSync(process.env.GLCM_MOEVE_PDF!)), useSystemFonts: true }).promise;
@@ -133,7 +175,9 @@ describe("SPEC-001 — Moeve", () => {
       const marco = recibos.find((contra) => contra.competencia === "03/2024");
       expect(marco?.itens.find((rubrica) => rubrica.codigo === "P003")?.descricao).toBe("H. R. A.");
       const maio = recibos.find((contra) => contra.competencia === "05/2020");
-      expect("paginasOrigemMoeve" in maio! ? maio?.paginasOrigemMoeve : maio?.paginas_origem_moeve).toEqual([2, 3]);
+      const paginasMaio = maio && ("paginasOrigemMoeve" in maio ? maio.paginasOrigemMoeve
+        : "paginas_origem_moeve" in maio ? maio.paginas_origem_moeve : undefined);
+      expect(paginasMaio).toEqual([2, 3]);
     }
     const pendenciasFront = frontConsolidados.flatMap((contra) => {
       try { validarContrachequeMoeve(contra); return []; } catch { return [contra.competencia]; }

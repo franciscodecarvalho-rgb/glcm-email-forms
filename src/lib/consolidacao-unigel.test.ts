@@ -95,6 +95,23 @@ describe("consolidação Unigel — regra geral CONTINUA... + mesma competência
     expect(soma(recibos[0], "adicional_hra")).toBe(100);
   });
 
+  it("não une recibos BASF fechados pela competência quando só não há desconto", () => {
+    const adiantamento: Contra = {
+      competencia: "11/2022", modelo_origem: "basf", total_proventos: 877.12,
+      total_descontos: null, liquido: 877.12,
+      itens: [{ codigo: "/332", descricao: "1ª parcela 13º salário", referencia: 1.5, valor: 877.12, tipo: "provento", familia_hra: null }],
+    };
+    const mensal: Contra = {
+      competencia: "11/2022", modelo_origem: "basf", total_proventos: 1756.14,
+      total_descontos: 1016.99, liquido: 739.15,
+      itens: [{ codigo: "/333", descricao: "2ª parcela 13º salário", referencia: 6, valor: 930.63, tipo: "provento", familia_hra: null }],
+    };
+    const resultado = consolidarLote([adiantamento, mensal], null);
+    const recibos = [...resultado.fechados, ...(resultado.aberto ? [resultado.aberto] : [])];
+    expect(recibos).toHaveLength(2);
+    expect(recibos.map((recibo) => recibo.itens.map((item) => item.codigo))).toEqual([["/332"], ["/333"]]);
+  });
+
   it("duas folhas da mesma competência com CONTINUA formam um recibo só", () => {
     const recibos = consolidar(
       folha("Janeiro/2023", "1.000,00", "100,00", true),

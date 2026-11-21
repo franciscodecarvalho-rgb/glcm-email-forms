@@ -11,6 +11,33 @@ import {
 const item = (str: string, x: number, y: number): TextItemPdf => ({ str, x, y, width: str.length * 5, height: 10 });
 
 describe("parsePaginaContracheque", () => {
+  it("consolida as folhas numeradas Petrobras e preserva rubricas iguais impressas em linhas distintas", () => {
+    const cabecalho = (pagina: number, matricula = "1000000") => [
+      item("Petrobras", 35, 750), item("06/2023", 35, 700),
+      item("Matrícula", 405, 679), item(matricula, 406, 669), item(`Página ${pagina} de 3`, 510, 30),
+    ];
+    const folhas = [
+      [...cabecalho(1), item("1062", 52, 610), item("Adicional HRA", 101, 610), item("100,00", 505, 610),
+        item("Total de Proventos", 372, 580), item("100,00", 505, 580)],
+      [...cabecalho(2), ...[610, 590].flatMap((y) => [
+        item("062B", 52, y), item("Ajuste HRA", 101, y), item("10,00", 506, y),
+      ]), item("Total de Descontos", 372, 565), item("20,00", 506, 565)],
+      [...cabecalho(3), item("Valor Líquido Depositado", 452, 547), item("80,00", 473, 535)],
+    ].map((pagina) => parsePaginaContracheque(pagina, 595));
+
+    expect(folhas[0].totalDescontos).toBeNull();
+    expect(folhas[1].itens.map((rubrica) => rubrica.tipo)).toEqual(["desconto", "desconto"]);
+    expect(folhas[2]).toMatchObject({ liquido: 80, itens: [] });
+    const consolidados = consolidarPaginasContracheque(folhas);
+    expect(consolidados).toHaveLength(1);
+    expect(consolidados[0]).toMatchObject({ totalProventos: 100, totalDescontos: 20, liquido: 80,
+      folhasPetrobras: { inicio: 1, ultima: 3, total: 3 } });
+    expect(consolidados[0].itens.map((rubrica) => rubrica.codigo)).toEqual(["1062", "062B", "062B"]);
+    const outraPessoa = parsePaginaContracheque(cabecalho(2, "2000000"), 595);
+    expect(consolidarPaginasContracheque([folhas[0], outraPessoa, folhas[2]])).toHaveLength(3);
+    expect(consolidarPaginasContracheque([folhas[0], folhas[2]])).toHaveLength(2);
+  });
+
   it("usa colunas para classificar códigos numéricos e alfanuméricos", () => {
     const resultado = parsePaginaContracheque([
       item("BASF", 20, 500), item("Junho", 300, 480), item("2026", 350, 480),
@@ -132,6 +159,27 @@ describe("parsePaginaContracheque", () => {
     ], 842);
 
     expect(resultado.competencia).toBe("04/2021");
+  });
+
+  it("reconhece o cabeçalho BASF fragmentado e respeita a coluna de descontos", () => {
+    const resultado = parsePaginaContracheque([
+      item("BASF", 20, 500), item("Pagamento Referente", 20, 430), item("a", 180, 430),
+      item("Abril", 300, 410), item("2021", 340, 410),
+      item("|", 14, 380), item("Rubrica", 20, 380), item("|", 86, 380), item("Qtde.", 110, 380),
+      item("|", 158, 380), item("Descri çã o", 180, 380), item("|", 410, 380),
+      item("Proventos", 580, 380), item("|", 669, 380), item("Descontos", 700, 380), item("|", 799, 380),
+      item("3A20", 20, 360), item("Hs. Repouso Alimentação", 180, 360), item("100,00", 590, 360),
+      item("/314", 20, 340), item("Contr. INSS", 180, 340), item("25,50", 730, 340),
+      item("TOTAIS", 20, 100), item("100,00", 590, 100), item("25,50", 730, 100),
+    ], 842);
+
+    expect(resultado.competencia).toBe("04/2021");
+    expect(resultado.itens.map((item) => [item.codigo, item.tipo, item.valor])).toEqual([
+      ["3A20", "provento", 100],
+      ["/314", "desconto", 25.5],
+    ]);
+    expect(resultado.totalProventos).toBe(100);
+    expect(resultado.totalDescontos).toBe(25.5);
   });
 
   it("usa a Data de Crédito do rodapé (BASF) mesmo quando Pagamento Referente está truncado", () => {
@@ -369,6 +417,23 @@ describe("consolidarPaginasContracheque", () => {
     expect(resultado[0].itens).toHaveLength(2);
     expect(resultado[0].totalDescontos).toBe(15019.27);
     expect(resultado[0].liquido).toBe(7415.99);
+  });
+
+  it("não une recibos BASF fechados pela competência quando só não há desconto", () => {
+    const adiantamento: ContrachequePdf = {
+      competencia: "11/2022", modeloOrigem: "basf",
+      totalProventos: 877.12, totalDescontos: null, liquido: 877.12,
+      itens: [{ codigo: "/332", descricao: "1ª parcela 13º salário", referencia: 1.5, valor: 877.12, tipo: "provento" }],
+    };
+    const mensal: ContrachequePdf = {
+      competencia: "11/2022", modeloOrigem: "basf",
+      totalProventos: 1756.14, totalDescontos: 1016.99, liquido: 739.15,
+      itens: [{ codigo: "/333", descricao: "2ª parcela 13º salário", referencia: 6, valor: 930.63, tipo: "provento" }],
+    };
+
+    const resultado = consolidarPaginasContracheque([adiantamento, mensal]);
+    expect(resultado).toHaveLength(2);
+    expect(resultado.map((recibo) => recibo.itens.map((item) => item.codigo))).toEqual([["/332"], ["/333"]]);
   });
 });
 

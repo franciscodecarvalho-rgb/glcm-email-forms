@@ -4,6 +4,7 @@ import { Upload, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeStorageName } from "@/lib/storage";
 import { unificarPdfsEmLotes } from "@/lib/unificar-pdfs";
+import { empresaContrachequeHomologada, PERFIS_CONTRACHEQUE } from "@/lib/perfis-contracheque";
 import { mensagemErroFuncao } from "@/lib/edge-function-error";
 import { dadosFaltantesParaCaso } from "@/lib/dados-extraidos";
 import { AppHeader } from "@/components/AppHeader";
@@ -14,6 +15,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+
+const PILOTO_CONTRACHEQUES = import.meta.env.VITE_PILOTO_EMPRESA_CONTRACHEQUE === "true";
 
 const TIPOS_ACAO = [
   { id: "ir_sobre_hra", label: "IR sobre HRA (Tema 306)" },
@@ -83,10 +86,10 @@ async function aguardarConclusaoLote(casoId: string, loteId: string): Promise<vo
   throw new Error("O lote continua em processamento após o tempo limite de acompanhamento");
 }
 
-async function processarLoteComRetomada(casoId: string, loteId: string): Promise<void> {
-  const statusAtual = await consultarStatusLote(casoId, loteId);
-  if (statusAtual.status === "concluido") return;
-  if (statusAtual.status === "processando") {
+async function processarLoteComRetomada(casoId: string, loteId: string, statusPlanejado?: string): Promise<void> {
+  const statusAtual = statusPlanejado ?? (await consultarStatusLote(casoId, loteId)).status;
+  if (statusAtual === "concluido") return;
+  if (statusAtual === "processando") {
     await aguardarConclusaoLote(casoId, loteId);
     return;
   }
@@ -117,6 +120,8 @@ export default function NovoCaso() {
   const [contracheques, setContracheques] = useState<File[]>([]);
   const [comprovantesPessoais, setComprovantesPessoais] = useState<File[]>([]);
   const [nomeCliente, setNomeCliente] = useState("");
+  const [empresaDeclarada, setEmpresaDeclarada] = useState("");
+  const [empresaBloqueada, setEmpresaBloqueada] = useState(false);
   const [tipoAcao, setTipoAcao] = useState("ir_sobre_hra");
   const [escritorios, setEscritorios] = useState<string[]>(["glcm", "polkowski"]);
   const [honorarios, setHonorarios] = useState("20");
@@ -127,6 +132,7 @@ export default function NovoCaso() {
   const [etapa, setEtapa] = useState("");
   const etapaRef = useRef("");
   const importacaoIdRef = useRef<string | null>(null);
+  const importandoRef = useRef(false);
 
   const atualizarEtapa = (valor: string) => {
     etapaRef.current = valor;
@@ -148,6 +154,12 @@ export default function NovoCaso() {
   };
 
   const submit = async () => {
+    if (importandoRef.current) return;
+    const empresa = PILOTO_CONTRACHEQUES && empresaContrachequeHomologada(empresaDeclarada) ? empresaDeclarada : undefined;
+    if (PILOTO_CONTRACHEQUES && !empresa) {
+      toast.error("Selecione a empresa dos contracheques");
+      return;
+    }
     if (contracheques.length === 0) {
       toast.error("Anexe ao menos um contracheque");
       return;
@@ -169,18 +181,23 @@ export default function NovoCaso() {
       toast.error("Informe um limite de viabilidade válido");
       return;
     }
+    importandoRef.current = true;
+    const inicioProcessamento = performance.now();
     setLoading(true);
     setProgresso(5);
     atualizarEtapa("Unificando contracheques");
+    let origemPaginas: Awaited<ReturnType<typeof unificarPdfsEmLotes>>["origemPaginas"] = [];
     try {
-      const { unificado: contrachequeUnificado, lotes: lotesPdf } = await unificarPdfsEmLotes(
+      const { unificado: contrachequeUnificado, lotes: lotesPdf, origemPaginas: paginas } = await unificarPdfsEmLotes(
         contracheques,
         undefined,
         ({ pagina, totalPaginas, confianca }) => {
           atualizarEtapa(`OCR local: página ${pagina}/${totalPaginas} (${Math.round(confianca)}% confiança)`);
           setProgresso(Math.min(15, 5 + Math.round((pagina / totalPaginas) * 10)));
         },
+        empresa,
       );
+      origemPaginas = paginas;
       const arquivos = [
         { file: contrachequeUnificado, tipo: "contracheque" },
         ...comprovantesPessoais.map((file) => ({ file, tipo: "informacoes_pessoais" })),
@@ -195,6 +212,7 @@ export default function NovoCaso() {
             status: "novo",
             origem: "manual",
             importacao_concluida: false,
+            ...(empresa ? { empresa_contracheque_declarada: empresa } : {}),
             nome_cliente: nomeCliente || null,
             tipo_acao: tipoAcao,
             escritorios,
@@ -207,6 +225,7 @@ export default function NovoCaso() {
         if (error) throw error;
         casoId = caso.id;
         importacaoIdRef.current = casoId;
+        if (empresa) setEmpresaBloqueada(true);
       }
 
       // Mantém os mesmos caminhos se houver falha de rede e o usuário retomar.
@@ -283,14 +302,18 @@ export default function NovoCaso() {
       const erroPlano = erroRetornadoNoPayload(plano);
       if (erroPlano) throw new Error(erroPlano);
 
-      const lotesPlanejados: Array<{ id: string }> = plano?.lotes ?? [];
+      const lotesPlanejados: Array<{ id: string; status?: string }> = plano?.lotes ?? [];
       for (let indice = 0; indice < lotesPlanejados.length; indice++) {
+        const lote = lotesPlanejados[indice];
         atualizarEtapa(`Extraindo contracheques (lote ${indice + 1}/${lotesPlanejados.length})`);
-        await processarLoteComRetomada(casoId, lotesPlanejados[indice].id);
+        // O backend relê e reivindica o lote antes de processar. O estado do
+        // plano evita uma consulta adicional no caminho normal do piloto.
+        await processarLoteComRetomada(casoId, lote.id, empresa ? lote.status : undefined);
         setProgresso(55 + Math.round(((indice + 1) / lotesPlanejados.length) * 25));
       }
 
 
+      performance.measure("glcm:contracheques:ate-ultimo-lote", { start: inicioProcessamento, end: performance.now() });
       atualizarEtapa("Extraindo dados pessoais com Gemini");
       setProgresso(85);
       const { data: pessoais, error: pessoaisError } = await supabase.functions.invoke("process-documentos-pessoais-pdf", {
@@ -345,9 +368,14 @@ export default function NovoCaso() {
       const mensagem = /^failed to fetch$/i.test(mensagemOriginal.trim())
         ? "Falha de rede: o servidor não retornou resposta. Os arquivos enviados até aqui foram preservados; tente novamente."
         : mensagemOriginal;
+      const mensagemComOrigem = mensagem.replace(/página (\d+) do PDF unificado/gi, (trecho, numero) => {
+        const origem = origemPaginas[Number(numero) - 1];
+        return origem ? `página ${origem.pagina} de ${origem.arquivo}` : trecho;
+      });
       const etapaAtual = etapaRef.current || "Importação";
-      toast.error(`${etapaAtual}: ${mensagem}`, { duration: 15000 });
+      toast.error(`${etapaAtual}: ${mensagemComOrigem}`, { duration: 15000 });
     } finally {
+      importandoRef.current = false;
       setLoading(false);
     }
   };
@@ -365,6 +393,27 @@ export default function NovoCaso() {
             <Label htmlFor="nome">Nome do cliente (opcional)</Label>
             <Input id="nome" value={nomeCliente} onChange={(e) => setNomeCliente(e.target.value)} placeholder="Será preenchido automaticamente" />
           </div>
+
+          {PILOTO_CONTRACHEQUES && (
+            <div className="space-y-2">
+              <Label htmlFor="empresa-contracheque">Empresa *</Label>
+              <Select value={empresaDeclarada} onValueChange={setEmpresaDeclarada} disabled={loading || empresaBloqueada} required>
+                <SelectTrigger id="empresa-contracheque"><SelectValue placeholder="Selecione a empresa" /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PERFIS_CONTRACHEQUE).map(([id, perfil]) => (
+                    <SelectItem key={id} value={id}>{perfil.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {empresaBloqueada && !loading && (
+                <Button type="button" variant="link" className="h-auto p-0" onClick={() => {
+                  importacaoIdRef.current = null;
+                  setEmpresaBloqueada(false);
+                  setEmpresaDeclarada("");
+                }}>Iniciar outra importação para alterar a empresa ou os contracheques</Button>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
@@ -422,6 +471,7 @@ export default function NovoCaso() {
                   multiple
                   accept="application/pdf"
                   className="hidden"
+                  disabled={PILOTO_CONTRACHEQUES && (loading || empresaBloqueada)}
                   onChange={(e) => {
                     adicionarContracheques(Array.from(e.target.files ?? []));
                     e.currentTarget.value = "";
@@ -434,6 +484,12 @@ export default function NovoCaso() {
                     <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 rounded border bg-muted/40 px-3 py-2">
                       <span className="min-w-0 truncate">{f.name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</span>
+                      {PILOTO_CONTRACHEQUES && !empresaBloqueada && !loading && (
+                        <Button type="button" size="sm" variant="ghost" aria-label={`Remover ${f.name}`}
+                          onClick={() => setContracheques((atuais) => atuais.filter((_, indice) => indice !== i))}>
+                          Remover
+                        </Button>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -44,12 +44,15 @@ export function montarContrachequesRelacionais(
 
 // Descontos nunca compõem a base HRA/AHRA (nem como valor negativo):
 // somente proventos entram no cálculo.
-function ehProventoHra(item: ItemContrachequeRelacional): boolean {
-  return (item.tipo ?? "provento") === "provento";
+function ehProventoHra(item: ItemContrachequeRelacional, modeloOrigem?: string | null): boolean {
+  return (item.tipo ?? "provento") === "provento"
+    && !(modeloOrigem === "oxiteno" && /\bhra\b[\s./-]+sem[\s./-]+ir(?:rf)?\b/i.test(item.descricao ?? ""));
 }
 
-function ehFamiliaAhra(item: ItemContrachequeRelacional): boolean {
-  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra" || item.familia_hra === "ahra";
+function ehFamiliaAhra(item: ItemContrachequeRelacional, modeloOrigem: string | null | undefined): boolean {
+  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra" || item.familia_hra === "ahra"
+    || (modeloOrigem === "acelen" && item.codigo?.trim() === "3557")
+    || (modeloOrigem === "oxiteno" && item.codigo?.trim() === "3331");
 }
 
 function valorProvento(item: ItemContrachequeRelacional): number {
@@ -69,7 +72,8 @@ function competenciaCanonica(contracheque: ContrachequeRelacional): string | nul
 
 function temRubricaHraCalculavel(contracheque: ContrachequeRelacional): boolean {
   return (contracheque.itens_contracheque ?? []).some(
-    (item) => item.familia_hra && ehProventoHra(item) && valorProvento(item) > 0,
+    (item) => (item.familia_hra || ehFamiliaAhra(item, contracheque.modelo_origem))
+      && ehProventoHra(item) && valorProvento(item) > 0,
   );
 }
 
@@ -110,11 +114,11 @@ export function contrachequesRelacionaisParaRevisao(
   ).flatMap((contracheque, index) => {
     const itens = contracheque.itens_contracheque ?? [];
     const valorAhra = itens
-      .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))
+      .filter((item) => ehFamiliaAhra(item, contracheque.modelo_origem) && ehProventoHra(item, contracheque.modelo_origem))
       .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itens
-      .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item)
-        && !(contracheque.modelo_origem === "oxiteno" && /\bhra\s+sem\s+ir\b/i.test(item.descricao ?? "")))
+      .filter((item) => item.familia_hra && !ehFamiliaAhra(item, contracheque.modelo_origem)
+        && ehProventoHra(item, contracheque.modelo_origem))
       .reduce((total, item) => total + valorProvento(item), 0);
 
     const competencia = competenciaCanonica(contracheque);

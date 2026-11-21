@@ -1148,12 +1148,15 @@ async function buscarItensContrachequePaginado(
 }
 
 // Descontos nunca compoem a base HRA/AHRA (nem como valor negativo).
-function ehProventoHra(item: ItemContrachequeRelacional): boolean {
-  return (item.tipo ?? "provento") === "provento";
+function ehProventoHra(item: ItemContrachequeRelacional, modeloOrigem?: string | null): boolean {
+  return (item.tipo ?? "provento") === "provento"
+    && !(modeloOrigem === "oxiteno" && /\bhra\b[\s./-]+sem[\s./-]+ir(?:rf)?\b/i.test(item.descricao ?? ""));
 }
 
-function ehFamiliaAhra(item: ItemContrachequeRelacional): boolean {
-  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra" || item.familia_hra === "ahra";
+function ehFamiliaAhra(item: ItemContrachequeRelacional, modeloOrigem: string | null | undefined): boolean {
+  return item.familia_hra === "ahra_dobra" || item.familia_hra === "adicional_hra" || item.familia_hra === "ahra"
+    || (modeloOrigem === "acelen" && item.codigo?.trim() === "3557")
+    || (modeloOrigem === "oxiteno" && item.codigo?.trim() === "3331");
 }
 
 function valorProvento(item: ItemContrachequeRelacional): number {
@@ -1169,10 +1172,11 @@ function montarContrasRelacionais(
       (item) => item.contracheque_id === contracheque.id,
     );
     const valorAhra = itensDoContra
-      .filter((item) => ehFamiliaAhra(item) && ehProventoHra(item))
+      .filter((item) => ehFamiliaAhra(item, contracheque.modelo_origem) && ehProventoHra(item, contracheque.modelo_origem))
       .reduce((total, item) => total + valorProvento(item), 0);
     const valorHra = itensDoContra
-      .filter((item) => item.familia_hra && !ehFamiliaAhra(item) && ehProventoHra(item))
+      .filter((item) => item.familia_hra && !ehFamiliaAhra(item, contracheque.modelo_origem)
+        && ehProventoHra(item, contracheque.modelo_origem))
       .reduce((total, item) => total + valorProvento(item), 0);
     const competencia = competenciaCanonicaContra(contracheque);
     // Acelen sem competência canônica: pendência de revisão técnica, nunca
@@ -1318,7 +1322,10 @@ Deno.serve(async (req) => {
     }
 
     const contrasRelacionais = montarContrasRelacionais(contrasRel, itensRel);
-    const contras: Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> = contrasRelacionais.length
+    // Recibos de Oxiteno com itens "HRA sem IR" podem ter base igual a zero.
+    const idsOxiteno = new Set(contrasRel.filter((c) => c.modelo_origem === "oxiteno").map((c) => c.id));
+    const temItensOxiteno = itensRel.some((i) => i.contracheque_id && idsOxiteno.has(i.contracheque_id));
+    const contras: Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }> = contrasRelacionais.length || temItensOxiteno
       ? contrasRelacionais
       : Array.isArray(caso.contracheques)
         ? (caso.contracheques as Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }>)

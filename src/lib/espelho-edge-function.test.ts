@@ -64,8 +64,8 @@ const edgePlanilha = carregarTrechoDaFuncao<{
 
 const edgeCalculos = carregarTrechoDaFuncao<{
   montarContrasRelacionais: (
-    contracheques: Array<{ id: string; competencia?: string | null; arquivo_origem?: string | null }>,
-    itens: Array<{ contracheque_id?: string | null; valor?: number | null; tipo?: string | null; familia_hra?: string | null }>,
+    contracheques: Array<{ id: string; competencia?: string | null; arquivo_origem?: string | null; modelo_origem?: string | null }>,
+    itens: Array<{ contracheque_id?: string | null; codigo?: string | null; descricao?: string | null; valor?: number | null; tipo?: string | null; familia_hra?: string | null }>,
   ) => Array<{ id: string; label: string; valor_hra: number; valor_ahra: number }>;
 }>("type ContrachequeRelacional = { id:", "// ---------------- função principal", ["montarContrasRelacionais"]);
 
@@ -195,6 +195,28 @@ describe("guarda do espelho src/lib ↔ generate-documents", () => {
     }]);
     expect(edgeCalculos.montarContrasRelacionais(contracheques, itens)).toEqual(fonte);
     expect(fonte).toEqual([{ id: "a", label: "04/2026", valor_hra: 50, valor_ahra: 125 }]);
+  });
+
+  it("leva a diferença de AHRA de Mataripe à coluna AHRA, inclusive em dados anteriores", () => {
+    const contracheque = { id: "mat", competencia: "12/2025", modelo_origem: "acelen" };
+    const itens = [
+      { contracheque_id: "mat", codigo: "3008", tipo: "provento", familia_hra: "ahra", valor: 100 },
+      { contracheque_id: "mat", codigo: "3557", tipo: "provento", familia_hra: "dif_ahra", valor: 25 },
+      { contracheque_id: "mat", codigo: "3557", tipo: "desconto", familia_hra: "dif_ahra", valor: 10 },
+    ];
+    const esperado = [{ id: "mat", label: "12/2025", valor_hra: 0, valor_ahra: 125 }];
+    expect(contrachequesRelacionaisParaRevisao([{ ...contracheque, itens_contracheque: itens }])).toEqual(esperado);
+    expect(edgeCalculos.montarContrasRelacionais([contracheque], itens)).toEqual(esperado);
+  });
+
+  it("leva a 3331 legada a AHRA e exclui HRA sem IR da planilha Oxiteno", () => {
+    const recibo = { id: "oxi", competencia: "11/2025", modelo_origem: "oxiteno" };
+    const semIr = { contracheque_id: "oxi", codigo: "3320", descricao: "HRA - sem IR", tipo: "provento", familia_hra: "hra", valor: 563.05 };
+    const itens = [semIr, { contracheque_id: "oxi", codigo: "3331", descricao: "HRA-Dif. Dissídio", tipo: "provento", familia_hra: "dif_ahra", valor: 50.75 }];
+    const esperado = [{ id: "oxi", label: "11/2025", valor_hra: 0, valor_ahra: 50.75 }];
+    expect(contrachequesRelacionaisParaRevisao([{ ...recibo, itens_contracheque: itens }])).toEqual(esperado);
+    expect(edgeCalculos.montarContrasRelacionais([recibo], itens)).toEqual(esperado);
+    expect(edgeCalculos.montarContrasRelacionais([recibo], [semIr])).toEqual([]);
   });
 
   it("ir_sobre_hra gera planilha complementar de contribuição extraordinária só quando há rubricas", () => {

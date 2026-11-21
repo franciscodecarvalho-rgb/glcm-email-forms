@@ -1,4 +1,6 @@
-import type { TextItemPdf } from "./parse-contracheque-pdf";
+import { detectarModelo, type TextItemPdf } from "./parse-contracheque-pdf";
+import { conferirCabecalhoContracheque, type EmpresaContracheque } from "./perfis-contracheque";
+import { conferirValoresInformativosMataripe, leituraMataripeReconcilia, limparGradeOcrMataripe, recuperarTotaisMataripe, relerCelulasOcrMataripe, relerFaixasOcrMataripe, relerTotaisOcrMataripe } from "./ocr-mataripe";
 import type { PDFPageProxy } from "pdfjs-dist";
 import type Tesseract from "tesseract.js";
 
@@ -89,6 +91,7 @@ export async function ocrPaginaPdf(
 
 export async function criarSessaoOcr(
   onProgress?: (status: string, progresso: number) => void,
+  empresa?: EmpresaContracheque,
 ): Promise<OcrSessao> {
   const worker = await criarWorker(onProgress);
   await worker.setParameters({
@@ -97,21 +100,140 @@ export async function criarSessaoOcr(
     user_defined_dpi: "200",
   });
 
+  const renderizar = async (pagina: PDFPageProxy, escala: number) => {
+    const viewport = pagina.getViewport({ scale: escala });
+    const canvas = criarCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const contexto = canvas.getContext("2d") as CanvasRenderingContext2D | null;
+    if (!contexto) throw new Error("Não foi possível criar o contexto Canvas para OCR");
+    await pagina.render({ canvasContext: contexto, viewport }).promise;
+    return canvas;
+  };
+
+  const ler = async (canvas: HTMLCanvasElement | OffscreenCanvas, escala: number): Promise<OcrPageResult> => {
+    const { data } = await worker.recognize(canvas, {}, { blocks: true });
+    const itens = palavrasOcrParaItens(data, canvas.width, canvas.height, escala);
+    return {
+      itens,
+      texto: data.text?.trim() ?? itens.map((item) => item.str).join(" "),
+      confianca: Number.isFinite(Number(data.confidence)) ? Number(data.confidence) : 0,
+    };
+  };
+
+  const identidadeMataripe = (resultado: OcrPageResult) =>
+    conferirCabecalhoContracheque(resultado.itens, "acelen", detectarModelo);
+  const confereMataripe = (resultado: OcrPageResult, largura: number) =>
+    resultado.confianca >= OCR_MIN_CONFIDENCE
+    && identidadeMataripe(resultado) === "confirmada"
+    && leituraMataripeReconcilia(resultado.itens, largura);
+
   return {
     async reconhecerPagina(pagina: PDFPageProxy) {
-      const viewport = pagina.getViewport({ scale: OCR_RENDER_SCALE });
-      const canvas = criarCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
-      const contexto = canvas.getContext("2d") as CanvasRenderingContext2D | null;
-      if (!contexto) throw new Error("Não foi possível criar o contexto Canvas para OCR");
-      await pagina.render({ canvasContext: contexto, viewport }).promise;
-      const resultado = await worker.recognize(canvas, {}, { blocks: true });
-      const itens = palavrasOcrParaItens(resultado.data, viewport.width, viewport.height, OCR_RENDER_SCALE);
-      const confianca = Number.isFinite(Number(resultado.data.confidence)) ? Number(resultado.data.confidence) : 0;
-      return {
-        itens,
-        texto: resultado.data.text?.trim() ?? itens.map((item) => item.str).join(" "),
-        confianca,
+      const canvas = await renderizar(pagina, OCR_RENDER_SCALE);
+      const inicial = await ler(canvas, OCR_RENDER_SCALE);
+      if (empresa !== "acelen" || identidadeMataripe(inicial) === "divergente") return inicial;
+
+      type CanvasOcr = Awaited<ReturnType<typeof renderizar>>;
+      let telaTres: CanvasOcr | undefined;
+      let telaQuatro: CanvasOcr | undefined;
+      const renderizarMataripe = (escala: number) => {
+        const existente = escala === 3 ? telaTres : telaQuatro;
+        return existente ? Promise.resolve(existente) : renderizar(pagina, escala);
       };
+      const conferirInformativos = async (resultado: OcrPageResult) => {
+        await worker.setParameters({ tessedit_pageseg_mode: "7" as unknown as import("tesseract.js").PSM,
+          tessedit_char_whitelist: "0123456789.,-" });
+        try {
+          const itens = await conferirValoresInformativosMataripe(
+            resultado.itens, canvas, OCR_RENDER_SCALE, renderizarMataripe, criarCanvas,
+            async (recorte, escala) => (await ler(recorte, escala)).itens,
+          );
+          return { ...resultado, itens };
+        } finally {
+          await worker.setParameters({ tessedit_pageseg_mode: "3" as unknown as import("tesseract.js").PSM,
+            tessedit_char_whitelist: "" });
+        }
+      };
+
+      const selecionarLeituraMataripe = async (): Promise<OcrPageResult> => {
+        if (confereMataripe(inicial, canvas.width / OCR_RENDER_SCALE)) return inicial;
+        try {
+          const escala = 3;
+          const alta = telaTres = await renderizar(pagina, escala);
+          const largura = alta.width / escala;
+          const preliminar = await ler(alta, escala);
+          if (confereMataripe(preliminar, largura)) return preliminar;
+          if (identidadeMataripe(preliminar) === "divergente") return inicial;
+
+          limparGradeOcrMataripe(alta, escala);
+          const corrigida = await ler(alta, escala);
+          if (confereMataripe(corrigida, largura)) return corrigida;
+          if (identidadeMataripe(corrigida) !== "confirmada") return inicial;
+
+          const lerItens = async (recorte: HTMLCanvasElement | OffscreenCanvas, escalaRecorte: number) =>
+            (await ler(recorte, escalaRecorte)).itens;
+          await worker.setParameters({ tessedit_pageseg_mode: "6" as unknown as import("tesseract.js").PSM,
+            tessedit_char_whitelist: "0123456789.,-" });
+          try {
+            const itens = await relerFaixasOcrMataripe(alta, corrigida.itens, escala, criarCanvas,
+              (recorte) => lerItens(recorte, escala));
+            const refinada = { ...corrigida, itens };
+            if (confereMataripe(refinada, largura)) return refinada;
+            await worker.setParameters({ tessedit_pageseg_mode: "7" as unknown as import("tesseract.js").PSM });
+            const itensPorCelula = await relerCelulasOcrMataripe(alta, itens, escala, criarCanvas, lerItens);
+            const porCelula = { ...corrigida, itens: itensPorCelula };
+            if (confereMataripe(porCelula, largura)) return porCelula;
+            for (const anterior of [inicial, preliminar, corrigida]) {
+              if (identidadeMataripe(anterior) !== "confirmada") continue;
+              const reutilizada = { ...porCelula, itens: recuperarTotaisMataripe(itensPorCelula, anterior.itens, largura) };
+              if (confereMataripe(reutilizada, largura)) return reutilizada;
+            }
+
+            const escalaTotais = 4;
+            telaQuatro = await renderizar(pagina, escalaTotais);
+            const itensComTotais = await relerTotaisOcrMataripe(telaQuatro, itensPorCelula, escalaTotais, criarCanvas, lerItens);
+            const comTotais = { ...corrigida, itens: itensComTotais };
+            if (confereMataripe(comTotais, largura)) return comTotais;
+            const totaisNaOutraEscala = await relerTotaisOcrMataripe(alta, itensPorCelula, escala, criarCanvas, lerItens);
+            const outraEscala = { ...corrigida, itens: totaisNaOutraEscala };
+            if (confereMataripe(outraEscala, largura)) return outraEscala;
+          } finally {
+            await worker.setParameters({ tessedit_pageseg_mode: "3" as unknown as import("tesseract.js").PSM,
+              tessedit_char_whitelist: "" });
+          }
+
+          // Uma folha digitalizada pode exigir a resolução maior também no
+          // corpo. Aproveita a mesma imagem que já foi criada para o rodapé.
+          if (telaQuatro) {
+            const ampliada = await ler(telaQuatro, 4);
+            const larguraAmpliada = telaQuatro.width / 4;
+            if (confereMataripe(ampliada, larguraAmpliada)) return ampliada;
+            if (identidadeMataripe(ampliada) === "confirmada") {
+              await worker.setParameters({ tessedit_pageseg_mode: "7" as unknown as import("tesseract.js").PSM,
+                tessedit_char_whitelist: "0123456789.,-" });
+              try {
+                const itensAmpliados = await relerCelulasOcrMataripe(telaQuatro, ampliada.itens, 4, criarCanvas, lerItens);
+                const candidata = { ...ampliada, itens: itensAmpliados };
+                if (confereMataripe(candidata, larguraAmpliada)) return candidata;
+                for (const anterior of [inicial, preliminar, corrigida]) {
+                  if (identidadeMataripe(anterior) !== "confirmada") continue;
+                  const reaproveitada = { ...candidata, itens: recuperarTotaisMataripe(itensAmpliados, anterior.itens, larguraAmpliada) };
+                  if (confereMataripe(reaproveitada, larguraAmpliada)) return reaproveitada;
+                }
+              } finally {
+                await worker.setParameters({ tessedit_pageseg_mode: "3" as unknown as import("tesseract.js").PSM,
+                  tessedit_char_whitelist: "" });
+              }
+            }
+          }
+        } catch {
+          // Preserva a primeira leitura se não houver outro candidato íntegro.
+        }
+        return inicial;
+      };
+      const selecionada = await selecionarLeituraMataripe();
+      return confereMataripe(selecionada, canvas.width / OCR_RENDER_SCALE)
+        ? conferirInformativos(selecionada)
+        : selecionada;
     },
     encerrar: () => worker.terminate().then(() => undefined),
   };

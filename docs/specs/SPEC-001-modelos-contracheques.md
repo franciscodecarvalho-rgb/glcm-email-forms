@@ -52,6 +52,33 @@ O modelo também contém a rubrica `3320 — HRA IR`, classificada como HRA, e a
 rubrica `3331 — HRA-Dif. Dissídio`, classificada como AHRA por Nodley por ser um
 adicional. Ambas as regras são específicas da OXITENO e valem para proventos.
 
+### Continuação da folha Moeve
+
+Um Aviso de Crédito sem rubricas pode iniciar uma competência no fim da
+página. Uma tabela Moeve que aparece antes do primeiro aviso da página
+seguinte pode completar o recibo anterior, desde que ele esteja aberto,
+identificado e na página imediatamente anterior. O vínculo é preservado
+na ordenação dos PDFs, inclusive na troca de lote. Cabeçalhos repetidos
+sem novos dados financeiros também podem ocorrer depois do fechamento.
+
+O rodapé é identificado pelo líquido junto às bases. Os valores de
+proventos e descontos são lidos na última linha de totais antes do
+líquido e podem aparecer na página anterior. Somente códigos `P` ou `D`
+seguidos de três dígitos, em suas colunas, são rubricas financeiras.
+Se a imagem do recibo e os totais impressos divergirem, a validação
+identifica a competência e as páginas para revisão.
+
+### Continuação da folha Petrobras
+
+O parser vincula as folhas de um mesmo recibo pela competência,
+matrícula e numeração consecutiva impressa. A folha final pode conter
+apenas o líquido. Quando a continuação traz o total de descontos sem o
+total de proventos, as rubricas anteriores a esse total continuam na
+seção de descontos. Cada linha financeira impressa é preservada,
+inclusive quando código e valor aparecem em duas linhas distintas.
+O recibo paginado exige a sequência completa e a conciliação dos três
+totais impressos antes da gravação.
+
 Rubrica HRA específica da CETREL: código `P368` — `ADIC HR REM ALIM
 SUPLEM(HRAS)`, quando estiver na coluna de proventos.
 

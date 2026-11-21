@@ -140,7 +140,7 @@ describe("SPEC-001 — Oxiteno", () => {
       .rejects.toThrow(/Conferir o valor na imagem do PDF/);
   });
 
-  it.skipIf(!process.env.GLCM_OXITENO_PDF)("reconcilia o PDF de validação completo nos dois parsers", async () => {
+  it.skipIf(!process.env.GLCM_OXITENO_PDF)("localiza as divergências da camada textual do PDF de validação nos dois parsers", async () => {
     const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const bytes = new Uint8Array(readFileSync(process.env.GLCM_OXITENO_PDF!));
     const pdf = await getDocument({ data: bytes, useSystemFonts: true }).promise;
@@ -174,7 +174,10 @@ describe("SPEC-001 — Oxiteno", () => {
     const linhas = contrachequesRelacionaisParaRevisao(contracheques);
     expect(new Set(contracheques.map((i) => i.competencia)).size).toBe(39);
     expect(linhas).toHaveLength(36);
-    expect(pendentes).toEqual([10]); // 08/2023: texto 675,55; imagem validada 673,55.
+    expect(pendentes).toEqual([
+      4, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22,
+      24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 37, 38,
+    ]);
     expect(linhas.reduce((s, i) => s + i.valor_hra + i.valor_ahra, 0).toFixed(2)).toBe("25074.42");
   }, 20000);
 });

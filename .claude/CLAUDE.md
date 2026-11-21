@@ -352,6 +352,29 @@ Edge Function de contracheques.
 **Evitar:** Tornar o código `3217` uma regra global para outras empresas ou
 classificar ocorrências em Descontos como base HRA.
 
+### 2026-11 — PDF com empregadores misturados
+
+**Regra confirmada:** Um PDF que contenha empregadores diferentes não pode ser
+homologado como uma empresa única. A extração deve separar os empregadores ou
+manter o caso pendente até existir regra explícita de agregação.
+
+**Origem:** Validação do arquivo `contracheques-unificados-4362- Franque.pdf`,
+que mistura TRONOX e BASF e cuja planilha soma valores dos dois empregadores em
+algumas competências.
+
+**Evitar:** Somar rubricas de empresas diferentes por competência apenas porque
+o nome do cliente é o mesmo.
+
+**Implementação confirmada:** No layout BASF, rótulos de coluna podem chegar
+fragmentados na camada de texto. A identificação dos limites deve recompor
+rótulos consecutivos, preservando as divisórias impressas e sem alterar a
+classificação das demais empresas.
+
+**Regra complementar:** Em BASF e TRONOX, o total de proventos já impresso
+encerra um recibo mesmo quando não existe desconto. Não unir a página seguinte
+apenas porque a competência se repete; continuar somente quando o leiaute
+indicar uma continuação real.
+
 ### 2026-09 — HRA específico da OXITENO
 
 **Regra confirmada:** Na OXITENO, as rubricas `3320 — HRA IR`, `3331 —

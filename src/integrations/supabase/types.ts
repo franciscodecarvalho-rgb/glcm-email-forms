@@ -65,6 +65,7 @@ export type Database = {
           created_by: string | null
           documentos_gerados: Json | null
           empregadores: Json
+          empresa_contracheque_declarada: string | null
           endereco: Json | null
           erro_processamento: string | null
           escritorios: Json
@@ -96,6 +97,7 @@ export type Database = {
           created_by?: string | null
           documentos_gerados?: Json | null
           empregadores?: Json
+          empresa_contracheque_declarada?: string | null
           endereco?: Json | null
           erro_processamento?: string | null
           escritorios?: Json
@@ -127,6 +129,7 @@ export type Database = {
           created_by?: string | null
           documentos_gerados?: Json | null
           empregadores?: Json
+          empresa_contracheque_declarada?: string | null
           endereco?: Json | null
           erro_processamento?: string | null
           escritorios?: Json
@@ -509,6 +512,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      planejar_lotes_contracheque_piloto: {
+        Args: { p_arquivo: string; p_caso: string; p_lotes: Json }
+        Returns: Database["public"]["Tables"]["lotes_contracheques"]["Row"][]
+      }
+      concluir_lote_contracheque_piloto: {
+        Args: {
+          p_arquivo: string
+          p_caso: string
+          p_estado: Json
+          p_lote: string
+          p_recibos: Json
+          p_usou_ia: boolean
+        }
+        Returns: number
+      }
       competencia_para_data: { Args: { _valor: string }; Returns: string }
       cpf_valido: { Args: { _cpf: string }; Returns: boolean }
       has_role: {
